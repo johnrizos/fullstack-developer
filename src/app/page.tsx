@@ -136,9 +136,9 @@ const curriculum: CurriculumSection[] = [
       {
         id: "typescript",
         title: "TypeScript",
-        description: "Τύποι, interfaces και πιο ασφαλής JavaScript.",
-        project: "Typed task model.",
-        skills: ["types", "interfaces", "narrowing"],
+        description: "Τύποι, interfaces, generics και πιο ασφαλής JavaScript σε frontend και backend.",
+        project: "Typed task model και API response types.",
+        skills: ["types", "interfaces", "generics"],
       },
       {
         id: "testing-debugging",
@@ -152,21 +152,28 @@ const curriculum: CurriculumSection[] = [
   {
     id: "frontend-apps",
     title: "Frontend App Development",
-    description: "Μετατρέπεις HTML/CSS/JS γνώση σε component-based εφαρμογές.",
+    description: "Μετατρέπεις HTML/CSS/JS γνώση σε React εφαρμογές με TypeScript και production patterns.",
     lessons: [
       {
         id: "react-ecosystem",
-        title: "React.js & State Management",
-        description: "Components, props, hooks και state σε πραγματικές οθόνες.",
-        project: "Todo app με φίλτρα.",
-        skills: ["components", "props", "state"],
+        title: "React + TypeScript",
+        description: "Components, props, hooks, typed state και event handlers σε πραγματικές οθόνες.",
+        project: "Typed todo app με φίλτρα.",
+        skills: ["components", "props", "typed state"],
       },
       {
         id: "nextjs-app-router",
-        title: "Next.js App Router",
-        description: "Pages, layouts, routing, server/client components και metadata.",
+        title: "Next.js App Router + TypeScript",
+        description: "Pages, layouts, routing, server/client components, metadata και typed data loading.",
         project: "Multi-page portfolio app.",
         skills: ["routing", "layouts", "server components"],
+      },
+      {
+        id: "frontend-testing",
+        title: "React Testing",
+        description: "Component tests, user flows και βασική κάλυψη με React Testing Library ή Playwright.",
+        project: "Tested form and todo interactions.",
+        skills: ["RTL", "Playwright", "user flows"],
       },
     ],
   },
@@ -177,10 +184,10 @@ const curriculum: CurriculumSection[] = [
     lessons: [
       {
         id: "backend-node",
-        title: "Node.js & Express",
-        description: "Backend server, routes και middleware.",
+        title: "Node.js, Express & NestJS",
+        description: "Backend server, routes, middleware και structured APIs με Express ή NestJS.",
         project: "Μικρό tasks API.",
-        skills: ["routes", "JSON", "middleware"],
+        skills: ["routes", "JSON", "NestJS"],
       },
       {
         id: "rest-apis",
@@ -195,6 +202,13 @@ const curriculum: CurriculumSection[] = [
         description: "Queries, mutations και πότε έχει νόημα σε σχέση με REST.",
         project: "Simple GraphQL schema.",
         skills: ["schema", "queries", "mutations"],
+      },
+      {
+        id: "api-integrations",
+        title: "API Integrations",
+        description: "Σύνδεση με τρίτα APIs, auth headers, retries, rate limits και error handling.",
+        project: "External API dashboard.",
+        skills: ["fetch", "auth headers", "rate limits"],
       },
     ],
   },
@@ -233,17 +247,24 @@ const curriculum: CurriculumSection[] = [
     lessons: [
       {
         id: "deployment",
-        title: "Deployment",
-        description: "Build, environment variables και deploy σε Vercel/AWS.",
+        title: "Deployment & Cloud",
+        description: "Build, environment variables, deploy σε Vercel/AWS/Azure/GCP και basic cloud services.",
         project: "Deploy του fullstack project.",
-        skills: ["build", "env vars", "hosting"],
+        skills: ["AWS", "Azure/GCP", "env vars"],
       },
       {
         id: "docker-ci-cd",
         title: "Docker & CI/CD",
-        description: "Containers, automated checks και release workflow.",
+        description: "Containers, GitHub Actions, automated checks και release workflow.",
         project: "Dockerized app with CI.",
-        skills: ["Docker", "CI", "CD"],
+        skills: ["Docker", "GitHub Actions", "CI/CD"],
+      },
+      {
+        id: "observability",
+        title: "Logs, Monitoring & Observability",
+        description: "Διαβάζεις logs, παρακολουθείς errors και καταλαβαίνεις τι συμβαίνει στην παραγωγή.",
+        project: "App with structured logs and error tracking.",
+        skills: ["logs", "Sentry", "metrics"],
       },
       {
         id: "capstone",
