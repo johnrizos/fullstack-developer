@@ -47,6 +47,7 @@ interface CodeChallengeProps {
   initialHtml: string;
   initialCss: string;
   initialJs?: string;
+  initialTs?: string;
   checks: ChallengeCheck[];
 }
 
@@ -109,15 +110,18 @@ export function CodeChallenge({
   initialHtml,
   initialCss,
   initialJs = "",
+  initialTs = "",
   checks,
 }: CodeChallengeProps) {
   const [html, setHtml] = useState(initialHtml);
   const [css, setCss] = useState(initialCss);
   const [js, setJs] = useState(initialJs);
+  const [ts, setTs] = useState(initialTs);
+  const codeForChecks = initialTs === "" ? js : ts;
 
   const results = useMemo(
-    () => checks.map((check) => ({ ...check, passed: runCheck(html, css, js, check) })),
-    [checks, html, css, js],
+    () => checks.map((check) => ({ ...check, passed: runCheck(html, css, codeForChecks, check) })),
+    [checks, html, css, codeForChecks],
   );
   const passedCount = results.filter((result) => result.passed).length;
   const isComplete = passedCount === checks.length;
@@ -130,7 +134,7 @@ export function CodeChallenge({
   </head>
   <body>
     ${html}
-    <script>${js}</script>
+    ${initialTs === "" ? `<script>${js}</script>` : ""}
   </body>
 </html>`;
 
@@ -187,6 +191,20 @@ export function CodeChallenge({
               />
             </>
           )}
+
+          {initialTs !== "" && (
+            <>
+              <div className="border-y border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700">
+                TypeScript
+              </div>
+              <textarea
+                value={ts}
+                onChange={(event) => setTs(event.target.value)}
+                spellCheck={false}
+                className="min-h-80 w-full resize-y bg-gray-950 p-4 font-mono text-sm leading-6 text-gray-50 outline-none"
+              />
+            </>
+          )}
         </div>
 
         <div className="flex flex-col">
@@ -196,7 +214,7 @@ export function CodeChallenge({
           <iframe
             title={`${title} preview`}
             srcDoc={preview}
-            sandbox={initialJs === "" ? "" : "allow-scripts"}
+            sandbox={initialJs === "" || initialTs !== "" ? "" : "allow-scripts"}
             className="min-h-80 w-full flex-1 bg-white"
           />
 

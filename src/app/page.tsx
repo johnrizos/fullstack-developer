@@ -187,6 +187,7 @@ const curriculum: CurriculumSection[] = [
         description: "Τύποι, interfaces, generics και πιο ασφαλής JavaScript σε frontend και backend.",
         project: "Typed task model και API response types.",
         skills: ["types", "interfaces", "generics"],
+        href: "/lessons/typescript",
       },
       {
         id: "testing-debugging",

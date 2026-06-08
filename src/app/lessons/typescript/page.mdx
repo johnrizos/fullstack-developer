@@ -1,0 +1,173 @@
+export const tsHtml = `<main>
+  <h1>TypeScript model</h1>
+  <p>Το preview είναι στατικό. Το TypeScript ελέγχεται από το checklist.</p>
+</main>`;
+
+export const tsCss = `body {
+  font-family: Arial, sans-serif;
+  background: #f3f4f6;
+  padding: 40px;
+}
+
+main {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 24px;
+  background: white;
+  border-radius: 12px;
+}`;
+
+export const taskTs = `type TaskStatus = "todo" | "doing" | "done";
+
+interface Task {
+  id: string;
+  title: string;
+  status: TaskStatus;
+  estimateHours?: number;
+}
+
+interface ApiResponse<T> {
+  data: T;
+  error?: string;
+}
+
+function formatTask(task: Task): string {
+  return \`\${task.title} [\${task.status}]\`;
+}
+
+function getCompletedTasks(tasks: Task[]): Task[] {
+  return tasks.filter((task) => task.status === "done");
+}
+
+const response: ApiResponse<Task[]> = {
+  data: [
+    { id: "1", title: "Learn TypeScript", status: "doing", estimateHours: 3 },
+    { id: "2", title: "Build typed React app", status: "todo" }
+  ]
+};
+
+const completed = getCompletedTasks(response.data);
+console.log(completed.map(formatTask));`;
+
+# TypeScript: types, interfaces, unions και generics
+
+TypeScript είναι JavaScript με στατικό type checking. Δεν αντικαθιστά τη JavaScript. Σε βοηθά να βρεις λάθη νωρίτερα και να κάνεις τον κώδικα πιο ξεκάθαρο.
+
+Σε fullstack αγγελίες, TypeScript ζητείται συχνά μαζί με React και Node. Για συνέντευξη πρέπει να μπορείς να εξηγήσεις όχι μόνο τι είναι, αλλά και πώς το χρησιμοποιείς σε πραγματικό app.
+
+## Type aliases
+
+Με `type` μπορείς να ορίσεις δικό σου σχήμα ή union.
+
+```ts
+type TaskStatus = "todo" | "doing" | "done";
+```
+
+Αυτό λέει ότι το status επιτρέπεται να είναι μόνο μία από αυτές τις τιμές.
+
+## Interfaces
+
+Τα interfaces περιγράφουν το σχήμα ενός object.
+
+```ts
+interface Task {
+  id: string;
+  title: string;
+  status: TaskStatus;
+}
+```
+
+Αν ένα object λείπει `title` ή έχει λάθος `status`, το TypeScript θα το πιάσει.
+
+## Optional properties
+
+Το `?` σημαίνει ότι μια property είναι προαιρετική.
+
+```ts
+estimateHours?: number;
+```
+
+## Generics
+
+Τα generics κάνουν ένα type επαναχρησιμοποιήσιμο.
+
+```ts
+interface ApiResponse<T> {
+  data: T;
+  error?: string;
+}
+```
+
+Έτσι μπορείς να έχεις `ApiResponse<Task[]>`, `ApiResponse<User>` κ.λπ.
+
+## Mini project: typed task model
+
+Το challenge δεν εκτελεί TypeScript στον browser. Ελέγχει αν έχεις τα βασικά κομμάτια ενός typed model που θα χρησιμοποιούσες σε React ή Node app.
+
+<CodeChallenge
+  title="Typed task model challenge"
+  description="Οργάνωσε task model, API response type και typed functions."
+  initialHtml={tsHtml}
+  initialCss={tsCss}
+  initialTs={taskTs}
+  checks={[
+    {
+      id: "has-status-union",
+      label: "Υπάρχει union type TaskStatus.",
+      type: "jsIncludes",
+      value: "type TaskStatus"
+    },
+    {
+      id: "has-task-interface",
+      label: "Υπάρχει interface Task.",
+      type: "jsIncludes",
+      value: "interface Task"
+    },
+    {
+      id: "has-optional",
+      label: "Υπάρχει optional property με ?.",
+      type: "jsIncludes",
+      value: "estimateHours?"
+    },
+    {
+      id: "has-generic-response",
+      label: "Υπάρχει generic ApiResponse<T>.",
+      type: "jsIncludes",
+      value: "ApiResponse<T>"
+    },
+    {
+      id: "typed-function",
+      label: "Υπάρχει function με typed parameter και return type.",
+      type: "jsIncludes",
+      value: "function formatTask(task: Task): string"
+    },
+    {
+      id: "typed-array",
+      label: "Χρησιμοποιείται Task[] για typed array.",
+      type: "jsIncludes",
+      value: "Task[]"
+    }
+  ]}
+/>
+
+## Interview answer template
+
+Αν σε ρωτήσουν “why TypeScript?”, απάντησε:
+
+> TypeScript catches type-related mistakes before runtime, documents object shapes, improves refactoring, and makes API contracts clearer across frontend and backend.
+
+Αν σε ρωτήσουν “type vs interface;”, πες:
+
+> Both can describe object shapes. Interfaces are commonly used for object contracts and can be extended or merged. Type aliases are more flexible for unions, primitives, tuples, and complex compositions.
+
+<Exercise
+  question="Ποιο TypeScript feature χρησιμοποιούμε για τιμές όπως 'todo' | 'doing' | 'done';"
+  options={["Union type", "CSS grid", "HTTP header"]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Το union type περιορίζει την τιμή σε συγκεκριμένες επιλογές."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="typescript" />
+</div>
