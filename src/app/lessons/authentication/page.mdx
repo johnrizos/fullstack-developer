@@ -1,0 +1,69 @@
+# Authentication & Authorization
+
+Authentication και authorization δεν είναι το ίδιο.
+
+- **Authentication**: ποιος είσαι;
+- **Authorization**: τι επιτρέπεται να κάνεις;
+
+## Sessions
+
+Session-based auth κρατά state στον server ή σε session store. Ο browser κρατά session cookie.
+
+Πλεονεκτήματα:
+
+- εύκολο revoke,
+- καλό για server-rendered apps,
+- τα secrets μένουν server-side.
+
+## JWT
+
+JWT είναι signed token που περιέχει claims.
+
+Προσοχή:
+
+- μην βάζεις ευαίσθητα δεδομένα μέσα,
+- χρειάζεσαι strategy για expiration/revocation,
+- πρόσεχε πού το αποθηκεύεις.
+
+## OAuth
+
+OAuth χρησιμοποιείται για login με third-party providers όπως Google/GitHub.
+
+Συνέντευξη: μην πεις “OAuth είναι password login”. Είναι delegation/authorization flow.
+
+## Protected routes
+
+Σε fullstack app πρέπει να προστατεύεις και:
+
+- UI routes,
+- API routes,
+- database queries.
+
+Μην βασίζεσαι μόνο στο frontend για security.
+
+## Interview answer template
+
+> Authentication verifies identity, authorization checks permissions. I enforce authorization on the server, protect API routes, store secrets server-side, and choose sessions or JWT depending on the app requirements.
+
+<Exercise
+  question="Ποια είναι η διαφορά authentication και authorization;"
+  options={[
+    "Authentication είναι ποιος είσαι, authorization είναι τι επιτρέπεται να κάνεις.",
+    "Είναι ακριβώς το ίδιο.",
+    "Authentication είναι CSS και authorization είναι HTML."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Είναι διαφορετικά επίπεδα ασφάλειας."
+/>
+
+<Exercise
+  question="Πού πρέπει να γίνεται ο τελικός authorization έλεγχος;"
+  options={["Server-side", "Μόνο στο CSS", "Μόνο στο localStorage"]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Το frontend μπορεί να κρύβει UI, αλλά ο server πρέπει να προστατεύει τα δεδομένα."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="authentication" />
+</div>

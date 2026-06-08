@@ -1,0 +1,63 @@
+# Web Security Basics
+
+Security δεν είναι “θα το δούμε στο τέλος”. Κάθε fullstack developer πρέπει να ξέρει τα βασικά.
+
+## XSS
+
+Cross-site scripting συμβαίνει όταν untrusted input εκτελείται σαν JavaScript στο browser.
+
+Άμυνες:
+
+- escaping/sanitization,
+- όχι raw HTML από χρήστη,
+- Content Security Policy,
+- frameworks που κάνουν escaping by default.
+
+## CSRF
+
+CSRF είναι όταν τρίτο site προσπαθεί να κάνει request με τα cookies του χρήστη.
+
+Άμυνες:
+
+- SameSite cookies,
+- CSRF tokens,
+- έλεγχος origin/referer σε sensitive actions.
+
+## Validation
+
+Πρέπει να κάνεις validation server-side. Client-side validation είναι για UX, όχι για security.
+
+## Secrets
+
+API keys, database URLs, OAuth secrets:
+
+- όχι στο frontend bundle,
+- όχι σε Git,
+- χρήση environment variables/secret manager.
+
+## Interview answer template
+
+> I validate input on the server, avoid exposing secrets to the client, rely on framework escaping to reduce XSS risk, use secure cookies and CSRF protection where needed, and enforce authorization server-side.
+
+<Exercise
+  question="Γιατί δεν αρκεί client-side validation;"
+  options={[
+    "Επειδή ο client μπορεί να παρακαμφθεί, άρα χρειάζεται server-side validation.",
+    "Επειδή δεν δουλεύει σε Chrome.",
+    "Επειδή αλλάζει το font."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Ο server δεν πρέπει να εμπιστεύεται ποτέ input επειδή πέρασε frontend validation."
+/>
+
+<Exercise
+  question="Πού δεν πρέπει να μπαίνουν API secrets;"
+  options={["Στο public frontend bundle", "Σε server env vars", "Σε secret manager"]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Ό,τι μπει στο frontend μπορεί να το δει ο χρήστης."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="web-security" />
+</div>

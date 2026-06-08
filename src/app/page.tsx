@@ -281,6 +281,7 @@ const curriculum: CurriculumSection[] = [
         description: "SQL, NoSQL, schema design και βασικά queries.",
         project: "Persistent tasks database.",
         skills: ["SQL", "NoSQL", "schema"],
+        href: "/lessons/databases",
       },
       {
         id: "authentication",
@@ -288,6 +289,7 @@ const curriculum: CurriculumSection[] = [
         description: "Login, sessions, JWT/OAuth και προστατευμένες σελίδες.",
         project: "Protected dashboard.",
         skills: ["sessions", "JWT", "OAuth"],
+        href: "/lessons/authentication",
       },
       {
         id: "web-security",
@@ -295,6 +297,7 @@ const curriculum: CurriculumSection[] = [
         description: "XSS, CSRF, secrets, validation και ασφαλή server-side όρια.",
         project: "Secure form handling.",
         skills: ["XSS", "CSRF", "validation"],
+        href: "/lessons/web-security",
       },
     ],
   },
