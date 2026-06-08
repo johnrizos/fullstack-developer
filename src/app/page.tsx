@@ -180,6 +180,7 @@ const curriculum: CurriculumSection[] = [
         description: "Commits, branches, pull requests και συνεργασία σε κώδικα.",
         project: "Πρώτο repository με καθαρό README.",
         skills: ["commit", "branch", "pull request"],
+        href: "/lessons/git-github",
       },
       {
         id: "typescript",
@@ -195,6 +196,7 @@ const curriculum: CurriculumSection[] = [
         description: "Πώς βρίσκεις bugs και πώς γράφεις βασικά tests.",
         project: "Tested utility functions.",
         skills: ["debugger", "unit tests", "errors"],
+        href: "/lessons/testing-debugging",
       },
     ],
   },

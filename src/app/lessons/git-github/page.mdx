@@ -1,0 +1,109 @@
+# Git & GitHub
+
+Fullstack developer χωρίς Git δεν στέκεται σε ομάδα. Σε συνέντευξη πρέπει να μπορείς να εξηγήσεις πώς δουλεύεις με commits, branches και pull requests.
+
+## Mental model
+
+Το Git είναι local version control. Το GitHub είναι remote platform για collaboration.
+
+Βασική ροή:
+
+```bash
+git status
+git add .
+git commit -m "Add login form"
+git push
+```
+
+## Commit
+
+Ένα commit είναι snapshot αλλαγών με μήνυμα. Καλό commit:
+
+- είναι μικρό,
+- έχει ξεκάθαρο σκοπό,
+- δεν ανακατεύει άσχετες αλλαγές.
+
+Παράδειγμα καλού μηνύματος:
+
+```txt
+Add validated contact form
+```
+
+## Branch
+
+Branch είναι απομονωμένη γραμμή δουλειάς.
+
+```bash
+git switch -c feature/contact-form
+```
+
+Δουλεύεις σε branch ώστε το main να μένει σταθερό.
+
+## Pull request
+
+Pull request είναι πρόταση αλλαγής. Εκεί γίνονται:
+
+- code review,
+- automated checks,
+- discussion,
+- merge.
+
+## Merge conflicts
+
+Conflict συμβαίνει όταν δύο αλλαγές ακουμπάνε το ίδιο σημείο. Η σωστή απάντηση σε interview δεν είναι “φοβάμαι τα conflicts”, αλλά:
+
+1. Διαβάζω και τις δύο αλλαγές.
+2. Κρατάω τη σωστή τελική εκδοχή.
+3. Τρέχω tests/build.
+4. Κάνω commit το resolved conflict.
+
+## GitHub Actions
+
+Συχνά στις αγγελίες ζητάνε CI/CD. Με GitHub Actions μπορείς να τρέχεις lint/build/tests σε κάθε PR.
+
+```yaml
+name: CI
+on: [pull_request]
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+```
+
+## Interview answer template
+
+Αν σε ρωτήσουν “how do you work with Git in a team?”, απάντησε:
+
+> I create focused branches, make small meaningful commits, open pull requests for review, rely on CI checks, and keep main stable. If conflicts happen, I resolve them by understanding both changes and rerunning tests.
+
+<Exercise
+  question="Τι είναι pull request;"
+  options={[
+    "Πρόταση αλλαγής που περνά από review και checks πριν γίνει merge.",
+    "CSS property για responsive layout.",
+    "Τρόπος να τρέξεις JavaScript στο browser."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Το pull request είναι workflow συνεργασίας και ελέγχου αλλαγών."
+/>
+
+<Exercise
+  question="Γιατί θέλουμε μικρά commits;"
+  options={[
+    "Για να είναι πιο εύκολο review, debugging και rollback.",
+    "Για να μεγαλώνει το bundle.",
+    "Για να μη χρειάζεται README."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Μικρά focused commits κάνουν το ιστορικό πιο χρήσιμο."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="git-github" />
+</div>

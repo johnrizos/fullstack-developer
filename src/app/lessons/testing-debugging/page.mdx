@@ -1,0 +1,159 @@
+export const testHtml = `<main>
+  <h1>Testing logic</h1>
+  <p>Το challenge ελέγχει αν ο κώδικας είναι οργανωμένος για tests.</p>
+</main>`;
+
+export const testCss = `body {
+  font-family: Arial, sans-serif;
+  background: #f3f4f6;
+  padding: 40px;
+}
+
+main {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 24px;
+  background: white;
+  border-radius: 12px;
+}`;
+
+export const testTs = `type CartItem = {
+  price: number;
+  quantity: number;
+};
+
+export function calculateTotal(items: CartItem[]): number {
+  return items.reduce((total, item) => {
+    return total + item.price * item.quantity;
+  }, 0);
+}
+
+export function applyDiscount(total: number, discountPercent: number): number {
+  if (discountPercent < 0 || discountPercent > 100) {
+    throw new Error("Discount must be between 0 and 100");
+  }
+
+  return total - total * (discountPercent / 100);
+}
+
+describe("cart utilities", () => {
+  it("calculates total", () => {
+    expect(calculateTotal([
+      { price: 10, quantity: 2 },
+      { price: 5, quantity: 1 }
+    ])).toBe(25);
+  });
+
+  it("throws for invalid discount", () => {
+    expect(() => applyDiscount(100, 120)).toThrow();
+  });
+});`;
+
+# Testing & Debugging
+
+Testing δεν σημαίνει “γράφω tests για να γράψω tests”. Σημαίνει ότι μπορώ να αλλάζω κώδικα χωρίς να φοβάμαι ότι έσπασα βασική συμπεριφορά.
+
+Debugging δεν σημαίνει “βάζω console.log παντού”. Σημαίνει ότι απομονώνω το πρόβλημα, φτιάχνω υπόθεση και την ελέγχω.
+
+## Unit tests
+
+Unit test ελέγχει μικρή μονάδα λογικής, συνήθως function.
+
+```ts
+expect(calculateTotal(items)).toBe(25);
+```
+
+Οι pure functions είναι εύκολες για unit tests γιατί έχουν input και output χωρίς side effects.
+
+## Integration και UI tests
+
+Για frontend apps θα δεις συχνά:
+
+- React Testing Library για component behavior,
+- Playwright ή Cypress για end-to-end user flows.
+
+Παράδειγμα user-flow σκέψης:
+
+> Ο χρήστης γράφει email, πατά submit, βλέπει success ή validation error.
+
+## Debugging workflow
+
+Καλός τρόπος debugging:
+
+1. Αναπαράγω το bug.
+2. Μικραίνω το πρόβλημα.
+3. Διαβάζω error message και stack trace.
+4. Ελέγχω inputs/state/network.
+5. Γράφω test αν το bug είναι σημαντικό.
+
+## Mini project: tested utility functions
+
+Το challenge ζητά κώδικα που έχει pure functions και tests.
+
+<CodeChallenge
+  title="Testing utilities challenge"
+  description="Οργάνωσε utility functions και tests με expect/describe/it."
+  initialHtml={testHtml}
+  initialCss={testCss}
+  initialTs={testTs}
+  checks={[
+    {
+      id: "has-calculate",
+      label: "Υπάρχει calculateTotal function.",
+      type: "jsFunction",
+      name: "calculateTotal"
+    },
+    {
+      id: "has-discount",
+      label: "Υπάρχει applyDiscount function.",
+      type: "jsFunction",
+      name: "applyDiscount"
+    },
+    {
+      id: "throws-error",
+      label: "Υπάρχει throw new Error για invalid input.",
+      type: "jsIncludes",
+      value: "throw new Error"
+    },
+    {
+      id: "has-describe",
+      label: "Υπάρχει describe block.",
+      type: "jsIncludes",
+      value: "describe("
+    },
+    {
+      id: "has-expect",
+      label: "Υπάρχει expect assertion.",
+      type: "jsIncludes",
+      value: "expect("
+    },
+    {
+      id: "has-to-throw",
+      label: "Υπάρχει test για throw.",
+      type: "jsIncludes",
+      value: "toThrow"
+    }
+  ]}
+/>
+
+## Interview answer template
+
+Αν σε ρωτήσουν “how do you test frontend/fullstack code?”, απάντησε:
+
+> I test pure business logic with unit tests, component behavior with React Testing Library, and critical user flows with Playwright or Cypress. I also use CI so tests run before code is merged.
+
+<Exercise
+  question="Τι είναι unit test;"
+  options={[
+    "Test μικρής μονάδας λογικής, όπως μια function.",
+    "Deploy σε AWS.",
+    "HTML tag για φόρμες."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Unit tests ελέγχουν μικρά απομονωμένα κομμάτια συμπεριφοράς."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="testing-debugging" />
+</div>
