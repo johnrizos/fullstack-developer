@@ -1,0 +1,188 @@
+export const nextHtml = `<main>
+  <h1>Next.js App Router</h1>
+  <p>Το challenge ελέγχει typed App Router patterns.</p>
+</main>`;
+
+export const nextCss = `body {
+  font-family: Arial, sans-serif;
+  background: #f3f4f6;
+  padding: 40px;
+}
+
+main {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 24px;
+  background: white;
+  border-radius: 12px;
+}`;
+
+export const nextTs = `import type { Metadata } from "next";
+import Link from "next/link";
+
+type Project = {
+  slug: string;
+  title: string;
+  summary: string;
+};
+
+export const metadata: Metadata = {
+  title: "Projects",
+  description: "Selected fullstack projects"
+};
+
+async function getProjects(): Promise<Project[]> {
+  return [
+    { slug: "roadmap", title: "Learning Roadmap", summary: "Interactive curriculum app" },
+    { slug: "tasks", title: "Tasks API", summary: "Fullstack CRUD project" }
+  ];
+}
+
+export default async function ProjectsPage() {
+  const projects = await getProjects();
+
+  return (
+    <main>
+      <h1>Projects</h1>
+      <ul>
+        {projects.map((project) => (
+          <li key={project.slug}>
+            <Link href={\`/projects/\${project.slug}\`}>
+              {project.title}
+            </Link>
+            <p>{project.summary}</p>
+          </li>
+        ))}
+      </ul>
+    </main>
+  );
+}`;
+
+# Next.js App Router + TypeScript
+
+Next.js είναι πολύ συχνό σε fullstack αγγελίες γιατί ενώνει frontend, routing, server rendering, data loading και deployment.
+
+Στο App Router πρέπει να καταλαβαίνεις:
+
+- file-based routing,
+- `layout.tsx` και `page.tsx`,
+- Server Components και Client Components,
+- metadata,
+- typed data loading,
+- dynamic routes.
+
+## Pages και layouts
+
+Στο App Router κάθε route χτίζεται με folders.
+
+```txt
+app/
+  projects/
+    page.tsx
+  layout.tsx
+```
+
+Το `layout.tsx` τυλίγει τις σελίδες. Το `page.tsx` είναι το actual route UI.
+
+## Server Components
+
+Στο App Router, components είναι Server Components by default. Αυτό σημαίνει ότι μπορείς να κάνεις server-side data loading χωρίς να στείλεις όλη τη λογική στον browser.
+
+```tsx
+export default async function Page() {
+  const data = await getData();
+  return <main>{data.title}</main>;
+}
+```
+
+## Client Components
+
+Αν χρειάζεσαι state, effects ή browser APIs, βάζεις:
+
+```tsx
+"use client";
+```
+
+Μην το βάζεις παντού. Χρησιμοποίησέ το μόνο όταν χρειάζεται interactivity.
+
+## Metadata
+
+```tsx
+export const metadata: Metadata = {
+  title: "Projects"
+};
+```
+
+Καλό για SEO και social previews.
+
+## Mini project: typed projects page
+
+Το challenge ελέγχει typed App Router page με metadata, async data loading και `Link`.
+
+<CodeChallenge
+  title="Next.js App Router challenge"
+  description="Χτίσε typed server page με metadata, data loading και links."
+  initialHtml={nextHtml}
+  initialCss={nextCss}
+  initialTs={nextTs}
+  checks={[
+    {
+      id: "metadata",
+      label: "Υπάρχει Metadata type.",
+      type: "jsIncludes",
+      value: "Metadata"
+    },
+    {
+      id: "link",
+      label: "Χρησιμοποιείται next/link.",
+      type: "jsIncludes",
+      value: "next/link"
+    },
+    {
+      id: "project-type",
+      label: "Υπάρχει type Project.",
+      type: "jsIncludes",
+      value: "type Project"
+    },
+    {
+      id: "async-data",
+      label: "Υπάρχει async data function.",
+      type: "jsFunction",
+      name: "getProjects"
+    },
+    {
+      id: "promise-type",
+      label: "Το data loading επιστρέφει Promise<Project[]>.",
+      type: "jsIncludes",
+      value: "Promise<Project[]>"
+    },
+    {
+      id: "server-page",
+      label: "Το page component είναι async.",
+      type: "jsIncludes",
+      value: "export default async function"
+    }
+  ]}
+/>
+
+## Interview answer template
+
+Αν σε ρωτήσουν “Server Component vs Client Component;”, απάντησε:
+
+> Server Components render on the server and are good for data fetching and non-interactive UI. Client Components run in the browser and are needed for state, effects, event handlers, and browser APIs.
+
+<Exercise
+  question="Πότε χρειάζεται 'use client';"
+  options={[
+    "Όταν το component χρειάζεται state, effects, event handlers ή browser APIs.",
+    "Σε κάθε component πάντα.",
+    "Μόνο για CSS files."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Το use client είναι boundary για browser-side interactivity."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="nextjs-app-router" />
+</div>

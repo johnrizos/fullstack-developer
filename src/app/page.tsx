@@ -219,6 +219,7 @@ const curriculum: CurriculumSection[] = [
         description: "Pages, layouts, routing, server/client components, metadata και typed data loading.",
         project: "Multi-page portfolio app.",
         skills: ["routing", "layouts", "server components"],
+        href: "/lessons/nextjs-app-router",
       },
       {
         id: "frontend-testing",
@@ -226,6 +227,7 @@ const curriculum: CurriculumSection[] = [
         description: "Component tests, user flows και βασική κάλυψη με React Testing Library ή Playwright.",
         project: "Tested form and todo interactions.",
         skills: ["RTL", "Playwright", "user flows"],
+        href: "/lessons/frontend-testing",
       },
     ],
   },

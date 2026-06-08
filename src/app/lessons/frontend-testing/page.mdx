@@ -1,0 +1,168 @@
+export const frontendTestHtml = `<main>
+  <h1>Frontend testing</h1>
+  <p>Το challenge ελέγχει testing patterns για React UI.</p>
+</main>`;
+
+export const frontendTestCss = `body {
+  font-family: Arial, sans-serif;
+  background: #f3f4f6;
+  padding: 40px;
+}
+
+main {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 24px;
+  background: white;
+  border-radius: 12px;
+}`;
+
+export const frontendTestTs = `import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+
+type LoginFormProps = {
+  onSubmit: (email: string) => void;
+};
+
+function LoginForm({ onSubmit }: LoginFormProps) {
+  return (
+    <form onSubmit={(event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const email = new FormData(form).get("email") as string;
+      onSubmit(email);
+    }}>
+      <label htmlFor="email">Email</label>
+      <input id="email" name="email" type="email" />
+      <button type="submit">Login</button>
+    </form>
+  );
+}
+
+test("submits email", async () => {
+  const user = userEvent.setup();
+  const onSubmit = vi.fn();
+
+  render(<LoginForm onSubmit={onSubmit} />);
+
+  await user.type(screen.getByLabelText("Email"), "ada@example.com");
+  await user.click(screen.getByRole("button", { name: "Login" }));
+
+  expect(onSubmit).toHaveBeenCalledWith("ada@example.com");
+});`;
+
+# React Testing
+
+Frontend testing πρέπει να ελέγχει συμπεριφορά χρήστη, όχι implementation details.
+
+Καλή ερώτηση για κάθε test:
+
+> Αν ήμουν χρήστης, τι βλέπω και τι κάνω;
+
+## React Testing Library
+
+Η React Testing Library σε σπρώχνει να βρίσκεις elements όπως θα τα έβρισκε ο χρήστης ή screen reader:
+
+```ts
+screen.getByLabelText("Email");
+screen.getByRole("button", { name: "Login" });
+```
+
+Αυτό ενισχύει και accessibility.
+
+## userEvent
+
+Το `userEvent` προσομοιώνει αλληλεπιδράσεις πιο κοντά στον χρήστη από απλά fire events.
+
+```ts
+await user.type(input, "ada@example.com");
+await user.click(button);
+```
+
+## Τι να τεστάρεις
+
+Τέσταρε:
+
+- submit flows,
+- validation messages,
+- loading/error states,
+- conditional rendering,
+- critical user journeys.
+
+Μην τεστάρεις:
+
+- internal state variables απευθείας,
+- private implementation details,
+- styling που αλλάζει συχνά χωρίς business σημασία.
+
+## Mini project: tested login interaction
+
+Το challenge ελέγχει component test με render, screen, userEvent και expect.
+
+<CodeChallenge
+  title="React testing challenge"
+  description="Γράψε test που συμπεριφέρεται σαν χρήστης και ελέγχει submit flow."
+  initialHtml={frontendTestHtml}
+  initialCss={frontendTestCss}
+  initialTs={frontendTestTs}
+  checks={[
+    {
+      id: "render",
+      label: "Χρησιμοποιείται render.",
+      type: "jsIncludes",
+      value: "render("
+    },
+    {
+      id: "screen",
+      label: "Χρησιμοποιείται screen query.",
+      type: "jsIncludes",
+      value: "screen."
+    },
+    {
+      id: "user-event",
+      label: "Χρησιμοποιείται userEvent.",
+      type: "jsIncludes",
+      value: "userEvent"
+    },
+    {
+      id: "label-query",
+      label: "Υπάρχει getByLabelText.",
+      type: "jsIncludes",
+      value: "getByLabelText"
+    },
+    {
+      id: "role-query",
+      label: "Υπάρχει getByRole.",
+      type: "jsIncludes",
+      value: "getByRole"
+    },
+    {
+      id: "expect-submit",
+      label: "Το submit ελέγχεται με expect.",
+      type: "jsIncludes",
+      value: "toHaveBeenCalledWith"
+    }
+  ]}
+/>
+
+## Interview answer template
+
+Αν σε ρωτήσουν “what do you test in React?”, απάντησε:
+
+> I test user-visible behavior: rendering, interactions, validation, loading and error states. I prefer queries by role or label because they match accessibility and user intent.
+
+<Exercise
+  question="Γιατί προτιμάμε getByRole/getByLabelText στα tests;"
+  options={[
+    "Επειδή προσεγγίζουν καλύτερα το πώς βρίσκει στοιχεία ο χρήστης ή screen reader.",
+    "Επειδή είναι CSS properties.",
+    "Επειδή απενεργοποιούν το TypeScript."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Testing με accessible queries οδηγεί σε καλύτερα και πιο ρεαλιστικά tests."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="frontend-testing" />
+</div>
