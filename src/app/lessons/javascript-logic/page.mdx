@@ -1,0 +1,85 @@
+export const scoreHtml = `<main class="checker">
+  <h1>Score checker</h1>
+  <p id="result">Πάτα το κουμπί για έλεγχο.</p>
+  <button id="check">Έλεγχος</button>
+</main>`;
+
+export const scoreCss = `body {
+  font-family: Arial, sans-serif;
+  background: #f3f4f6;
+  padding: 40px;
+}
+
+.checker {
+  max-width: 360px;
+  margin: 0 auto;
+  padding: 24px;
+  background: white;
+  border-radius: 12px;
+  text-align: center;
+}`;
+
+export const scoreJs = `const score = 72;
+
+function checkScore() {
+  const result = document.querySelector("#result");
+
+  if (score >= 60) {
+    result.textContent = "Πέρασες!";
+  } else {
+    result.textContent = "Δοκίμασε ξανά.";
+  }
+}
+
+document.querySelector("#check").addEventListener("click", checkScore);`;
+
+# JavaScript Logic: conditions και αποφάσεις
+
+Τα προγράμματα δεν κάνουν πάντα το ίδιο πράγμα. Παίρνουν αποφάσεις με βάση δεδομένα.
+
+Η πιο βασική δομή απόφασης είναι το `if / else`.
+
+```js
+if (score >= 60) {
+  console.log("Πέρασες");
+} else {
+  console.log("Δοκίμασε ξανά");
+}
+```
+
+Αυτό σημαίνει: αν η συνθήκη είναι αληθινή, τρέξε το πρώτο block. Αλλιώς, τρέξε το δεύτερο.
+
+## Mini project: pass/fail score checker
+
+Άλλαξε το `score` και πάτα το κουμπί στο preview. Αν το score είναι 60 ή μεγαλύτερο, πρέπει να δείχνει μήνυμα επιτυχίας.
+
+<CodeChallenge
+  title="Score checker challenge"
+  description="Χρησιμοποίησε if/else για να εμφανίσεις διαφορετικό αποτέλεσμα."
+  initialHtml={scoreHtml}
+  initialCss={scoreCss}
+  initialJs={scoreJs}
+  checks={[
+    { id: "has-function", label: "Υπάρχει function checkScore.", type: "jsFunction", name: "checkScore" },
+    { id: "has-if", label: "Υπάρχει if.", type: "jsIncludes", value: "if" },
+    { id: "has-else", label: "Υπάρχει else.", type: "jsIncludes", value: "else" },
+    { id: "has-comparison", label: "Υπάρχει σύγκριση >= 60.", type: "jsIncludes", value: ">= 60" },
+    { id: "updates-result", label: "Ο κώδικας ενημερώνει textContent.", type: "jsIncludes", value: "textContent" }
+  ]}
+/>
+
+<Exercise
+  question="Τι κάνει το else;"
+  options={[
+    "Τρέχει όταν η συνθήκη του if δεν είναι αληθινή.",
+    "Δημιουργεί νέο HTML element.",
+    "Αλλάζει πάντα το χρώμα ενός button."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Το else είναι η εναλλακτική διαδρομή όταν το if δεν περνάει."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="javascript-logic" />
+</div>

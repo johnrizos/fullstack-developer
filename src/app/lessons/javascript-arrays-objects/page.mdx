@@ -1,0 +1,92 @@
+export const tasksHtml = `<main>
+  <h1>Tasks</h1>
+  <ul id="tasks"></ul>
+</main>`;
+
+export const tasksCss = `body {
+  font-family: Arial, sans-serif;
+  background: #f9fafb;
+  padding: 40px;
+}
+
+main {
+  max-width: 420px;
+  margin: 0 auto;
+  background: white;
+  padding: 24px;
+  border-radius: 12px;
+}
+
+li {
+  margin: 8px 0;
+}`;
+
+export const tasksJs = `const tasks = [
+  { title: "Μάθε HTML", done: true },
+  { title: "Μάθε CSS", done: true },
+  { title: "Μάθε JavaScript", done: false }
+];
+
+function renderTasks() {
+  const list = document.querySelector("#tasks");
+
+  list.innerHTML = tasks
+    .map((task) => \`<li>\${task.done ? "✅" : "⬜"} \${task.title}</li>\`)
+    .join("");
+}
+
+renderTasks();`;
+
+# JavaScript Arrays & Objects
+
+Σχεδόν κάθε πραγματική εφαρμογή δουλεύει με λίστες δεδομένων: προϊόντα, χρήστες, tasks, μηνύματα.
+
+Ένα **array** κρατά πολλά items:
+
+```js
+const names = ["Ada", "Grace", "Linus"];
+```
+
+Ένα **object** κρατά ιδιότητες για ένα πράγμα:
+
+```js
+const task = {
+  title: "Μάθε HTML",
+  done: true
+};
+```
+
+## Mini project: task list renderer
+
+Εδώ έχεις array από task objects. Η function τα μετατρέπει σε HTML και τα βάζει στη λίστα.
+
+<CodeChallenge
+  title="Task list challenge"
+  description="Χρησιμοποίησε array, objects και map για να εμφανίσεις λίστα tasks."
+  initialHtml={tasksHtml}
+  initialCss={tasksCss}
+  initialJs={tasksJs}
+  checks={[
+    { id: "has-array", label: "Υπάρχει array tasks.", type: "jsIncludes", value: "const tasks = [" },
+    { id: "has-title", label: "Τα objects έχουν title.", type: "jsIncludes", value: "title" },
+    { id: "has-done", label: "Τα objects έχουν done.", type: "jsIncludes", value: "done" },
+    { id: "has-map", label: "Χρησιμοποιείται map.", type: "jsIncludes", value: ".map" },
+    { id: "has-render", label: "Υπάρχει function renderTasks.", type: "jsFunction", name: "renderTasks" }
+  ]}
+/>
+
+<Exercise
+  question="Πότε χρησιμοποιούμε array;"
+  options={[
+    "Όταν θέλουμε να κρατήσουμε πολλά items σε σειρά.",
+    "Μόνο όταν γράφουμε CSS.",
+    "Μόνο για να αλλάξουμε font."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Τα arrays είναι για λίστες δεδομένων."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="javascript-arrays-objects" />
+</div>

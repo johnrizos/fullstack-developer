@@ -1,0 +1,148 @@
+export const example1 = {
+  "index.html": `<h1>Καλώς ήρθες στο site μου!</h1>
+<p>Αυτή είναι η πρώτη μου ιστοσελίδα. Γράφω HTML.</p>
+<button>Πάτα με</button>`
+};
+
+export const profileHtml = `<main class="card">
+  <h1>Το όνομά μου</h1>
+  <p>Γράψε εδώ μια μικρή περιγραφή για εσένα.</p>
+  <button>Επικοινωνία</button>
+</main>`;
+
+export const profileCss = `body {
+  font-family: Arial, sans-serif;
+  background: #f3f4f6;
+  padding: 40px;
+}
+
+.card {
+  max-width: 360px;
+  margin: 0 auto;
+  padding: 24px;
+  background: white;
+  border-radius: 12px;
+  text-align: center;
+}
+
+h1 {
+  color: black;
+}
+
+button {
+  background-color: gray;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}`;
+
+# HTML & CSS: χτίζοντας την πρώτη σελίδα
+
+Στο προηγούμενο μάθημα είδες πώς ταξιδεύει μια ιστοσελίδα από τον server στον browser. Τώρα θα δούμε από τι αποτελείται η σελίδα που τελικά εμφανίζεται.
+
+Το μάθημα έχει τρία βήματα: καταλαβαίνεις τη βασική ιδέα, πειράζεις κώδικα, και μετά περνάς μια μικρή αποστολή με αυτόματο checklist.
+
+## 1. Η HTML δίνει δομή
+
+Η **HTML** (HyperText Markup Language) περιγράφει τη δομή της σελίδας. Με απλά λόγια, λέει στον browser τι είναι τίτλος, τι είναι παράγραφος, τι είναι κουμπί και ούτω καθεξής.
+
+Τα στοιχεία της HTML γράφονται με tags:
+
+- Για μεγάλο τίτλο χρησιμοποιούμε `<h1>Κείμενο τίτλου</h1>`.
+- Για παράγραφο χρησιμοποιούμε `<p>Κείμενο παραγράφου</p>`.
+- Για κουμπί χρησιμοποιούμε `<button>Κλικ εδώ</button>`.
+
+Δοκίμασε πρώτα να αλλάξεις το κείμενο μέσα στον editor. Το αποτέλεσμα ενημερώνεται live.
+
+<LiveEditor
+  template="vanilla"
+  files={example1}
+/>
+
+## 2. Η CSS δίνει εμφάνιση
+
+Αν η HTML είναι η δομή, η **CSS** (Cascading Style Sheets) είναι η εμφάνιση: χρώματα, αποστάσεις, μεγέθη, στοίχιση και γενικότερα το πώς φαίνεται η σελίδα.
+
+Στην CSS επιλέγουμε ένα HTML element και του δίνουμε κανόνες.
+
+```css
+h1 {
+  color: blue;
+}
+```
+
+Αυτό σημαίνει: βρες όλα τα `h1` και κάνε το χρώμα του κειμένου μπλε.
+
+## 3. Mini project: προσωπική κάρτα
+
+Τώρα δεν αρκεί να διαβάσεις. Φτιάξε μια μικρή profile card και πέρασε τα κριτήρια. Το checklist στα δεξιά θα ενημερώνεται όσο γράφεις.
+
+Η αποστολή σου:
+
+1. Κράτα ένα `h1`, ένα `p` και ένα `button` στην HTML.
+2. Βάλε το όνομά σου ή ένα ψευδώνυμο στον τίτλο.
+3. Άλλαξε το `color` του `h1` σε `red`.
+4. Άλλαξε το `background-color` του `button` σε `blue`.
+
+<CodeChallenge
+  title="Profile card challenge"
+  description="Πέρασε όλα τα κριτήρια για να θεωρηθεί ολοκληρωμένη η πρώτη σου HTML/CSS αποστολή."
+  initialHtml={profileHtml}
+  initialCss={profileCss}
+  checks={[
+    {
+      id: "has-heading",
+      label: "Υπάρχει τίτλος h1.",
+      type: "htmlTag",
+      tag: "h1"
+    },
+    {
+      id: "has-paragraph",
+      label: "Υπάρχει παράγραφος p.",
+      type: "htmlTag",
+      tag: "p"
+    },
+    {
+      id: "has-button",
+      label: "Υπάρχει κουμπί button.",
+      type: "htmlTag",
+      tag: "button"
+    },
+    {
+      id: "heading-red",
+      label: "Το h1 έχει color: red.",
+      type: "cssProperty",
+      selector: "h1",
+      property: "color",
+      value: "red"
+    },
+    {
+      id: "button-blue",
+      label: "Το button έχει background-color: blue.",
+      type: "cssProperty",
+      selector: "button",
+      property: "background-color",
+      value: "blue"
+    }
+  ]}
+/>
+
+## Μικρός έλεγχος
+
+<Exercise
+  question="Τι θα συμβεί αν γράψεις <p>Γεια!</p> στην HTML σου;"
+  options={[
+    "Θα εμφανιστεί ένα κουμπί που λέει Γεια.",
+    "Θα εμφανιστεί μια απλή παράγραφος κειμένου που λέει Γεια.",
+    "Θα εμφανιστεί ένας τεράστιος τίτλος που λέει Γεια."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Το p προέρχεται από τη λέξη paragraph και δημιουργεί παράγραφο."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="html-css" />
+</div>

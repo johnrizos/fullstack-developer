@@ -1,0 +1,157 @@
+export const counterHtml = `<main class="counter">
+  <p>Μετρητής</p>
+  <strong id="count">0</strong>
+  <button id="increase">Αύξηση</button>
+</main>`;
+
+export const counterCss = `body {
+  font-family: Arial, sans-serif;
+  background: #f3f4f6;
+  padding: 40px;
+}
+
+.counter {
+  max-width: 340px;
+  margin: 0 auto;
+  padding: 28px;
+  background: white;
+  border-radius: 12px;
+  text-align: center;
+}
+
+#count {
+  display: block;
+  margin: 18px 0;
+  font-size: 48px;
+  color: #2563eb;
+}
+
+button {
+  background: #2563eb;
+  color: white;
+  padding: 10px 18px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}`;
+
+export const counterJs = `let count = 0;
+
+function increaseCount() {
+  count = count + 1;
+  document.querySelector("#count").textContent = count;
+}
+
+document.querySelector("#increase").addEventListener("click", increaseCount);`;
+
+# JavaScript Basics: κάνε τη σελίδα διαδραστική
+
+Η HTML δίνει δομή και η CSS δίνει εμφάνιση. Η **JavaScript** δίνει συμπεριφορά: τι γίνεται όταν ο χρήστης πατάει ένα κουμπί, γράφει σε ένα input ή φορτώνει δεδομένα.
+
+Σε αυτό το μάθημα θα χτίσεις έναν μικρό counter. Είναι απλό παράδειγμα, αλλά περιέχει τρεις ιδέες που θα χρησιμοποιείς συνέχεια:
+
+- **Variable**: κρατάμε μια τιμή στη μνήμη.
+- **Function**: βάζουμε λογική σε επαναχρησιμοποιήσιμο κομμάτι.
+- **Event listener**: λέμε στον browser τι να κάνει όταν συμβεί ένα event, όπως click.
+
+## 1. Variable
+
+Μια variable είναι ένα όνομα που κρατά μια τιμή.
+
+```js
+let count = 0;
+```
+
+Εδώ λέμε ότι ο μετρητής ξεκινά από το `0`.
+
+## 2. Function
+
+Μια function είναι ένα μικρό block λογικής που μπορούμε να καλέσουμε όταν το χρειαζόμαστε.
+
+```js
+function increaseCount() {
+  count = count + 1;
+}
+```
+
+Αυτό αυξάνει το `count` κατά ένα.
+
+## 3. Event listener
+
+Με ένα event listener συνδέουμε τη function με μια ενέργεια του χρήστη.
+
+```js
+document.querySelector("#increase").addEventListener("click", increaseCount);
+```
+
+Αυτό σημαίνει: βρες το κουμπί με id `increase` και όταν γίνει click, τρέξε τη function `increaseCount`.
+
+## Mini project: interactive counter
+
+Η αποστολή σου είναι να κρατήσεις τον counter λειτουργικό. Πάτα το κουμπί στο preview για να δεις τον αριθμό να ανεβαίνει.
+
+Μετά δοκίμασε αλλαγές:
+
+1. Άλλαξε το αρχικό `count` από `0` σε `5`.
+2. Άλλαξε το κείμενο του button.
+3. Κάνε το κουμπί πράσινο αλλάζοντας το CSS.
+
+Το checklist ελέγχει τα βασικά που πρέπει να υπάρχουν για να δουλεύει η ιδέα.
+
+<CodeChallenge
+  title="Counter challenge"
+  description="Σύνδεσε JavaScript με τη σελίδα: function, click event και ενημέρωση του DOM."
+  initialHtml={counterHtml}
+  initialCss={counterCss}
+  initialJs={counterJs}
+  checks={[
+    {
+      id: "has-count-target",
+      label: "Υπάρχει στοιχείο με id count.",
+      type: "htmlText",
+      text: "Μετρητής"
+    },
+    {
+      id: "has-function",
+      label: "Υπάρχει function increaseCount.",
+      type: "jsFunction",
+      name: "increaseCount"
+    },
+    {
+      id: "has-click-listener",
+      label: "Υπάρχει click event listener.",
+      type: "jsIncludes",
+      value: "addEventListener(\"click\""
+    },
+    {
+      id: "updates-text",
+      label: "Ο κώδικας ενημερώνει textContent.",
+      type: "jsIncludes",
+      value: "textContent"
+    },
+    {
+      id: "uses-count",
+      label: "Υπάρχει variable count.",
+      type: "jsIncludes",
+      value: "count"
+    }
+  ]}
+/>
+
+## Μικρός έλεγχος
+
+<Exercise
+  question="Ποιο κομμάτι κώδικα συνδέει το click του κουμπιού με τη function;"
+  options={[
+    "let count = 0",
+    "document.querySelector('#increase').addEventListener('click', increaseCount)",
+    "color: blue"
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Το addEventListener λέει στον browser ποια function να τρέξει όταν γίνει click."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="javascript-intro" />
+</div>

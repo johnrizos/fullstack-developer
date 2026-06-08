@@ -1,0 +1,90 @@
+export const articleHtml = `<header>
+  <h1>Οδηγός για καθαρό HTML</h1>
+  <nav>
+    <a href="#intro">Εισαγωγή</a>
+  </nav>
+</header>
+
+<main>
+  <article>
+    <section id="intro">
+      <h2>Γιατί έχει σημασία η δομή;</h2>
+      <p>Η σωστή HTML βοηθά browsers, search engines και screen readers.</p>
+    </section>
+  </article>
+</main>
+
+<footer>
+  <p>Τέλος άρθρου</p>
+</footer>`;
+
+export const articleCss = `body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  color: #111827;
+}
+
+header,
+footer {
+  background: #eff6ff;
+  padding: 20px;
+}
+
+main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px;
+}`;
+
+# HTML Structure & Semantics
+
+Η HTML δεν είναι μόνο `div` και κείμενο. Τα semantic elements περιγράφουν τον ρόλο κάθε περιοχής της σελίδας.
+
+Όταν γράφεις σωστή δομή:
+
+- ο κώδικας διαβάζεται πιο εύκολα,
+- οι μηχανές αναζήτησης καταλαβαίνουν καλύτερα τη σελίδα,
+- τα screen readers βοηθούν καλύτερα τους χρήστες.
+
+## Βασικά semantic elements
+
+- `header`: πάνω περιοχή μιας σελίδας ή ενότητας.
+- `nav`: πλοήγηση με links.
+- `main`: το κύριο περιεχόμενο της σελίδας.
+- `section`: θεματική ενότητα.
+- `article`: ανεξάρτητο περιεχόμενο, όπως άρθρο ή post.
+- `footer`: κάτω περιοχή με βοηθητικές πληροφορίες.
+
+## Mini project: semantic article page
+
+Στόχος: κράτα τη σελίδα οργανωμένη με semantic elements. Δοκίμασε να αλλάξεις τίτλο και κείμενο, αλλά μην αφαιρέσεις τη δομή.
+
+<CodeChallenge
+  title="Semantic article challenge"
+  description="Φτιάξε μια σελίδα άρθρου με header, main, article, section και footer."
+  initialHtml={articleHtml}
+  initialCss={articleCss}
+  checks={[
+    { id: "has-header", label: "Υπάρχει header.", type: "htmlTag", tag: "header" },
+    { id: "has-main", label: "Υπάρχει main.", type: "htmlTag", tag: "main" },
+    { id: "has-article", label: "Υπάρχει article.", type: "htmlTag", tag: "article" },
+    { id: "has-section", label: "Υπάρχει section.", type: "htmlTag", tag: "section" },
+    { id: "has-footer", label: "Υπάρχει footer.", type: "htmlTag", tag: "footer" }
+  ]}
+/>
+
+<Exercise
+  question="Γιατί προτιμάμε semantic HTML αντί για παντού div;"
+  options={[
+    "Για να φαίνεται πάντα πιο πολύχρωμη η σελίδα.",
+    "Για να περιγράφουμε καλύτερα τη δομή και το νόημα του περιεχομένου.",
+    "Για να μη χρειάζεται ποτέ CSS."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Τα semantic elements δίνουν νόημα στη δομή, όχι απλώς εμφάνιση."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="html-semantics" />
+</div>

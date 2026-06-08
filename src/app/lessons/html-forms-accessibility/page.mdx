@@ -1,0 +1,85 @@
+export const formHtml = `<main>
+  <h1>Φόρμα επικοινωνίας</h1>
+
+  <form>
+    <label for="name">Όνομα</label>
+    <input id="name" name="name" type="text" />
+
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" />
+
+    <button type="submit">Αποστολή</button>
+  </form>
+</main>`;
+
+export const formCss = `body {
+  font-family: Arial, sans-serif;
+  background: #f9fafb;
+  padding: 40px;
+}
+
+main {
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+form {
+  display: grid;
+  gap: 12px;
+  padding: 24px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+}
+
+input,
+button {
+  padding: 10px;
+}`;
+
+# HTML Forms & Accessibility
+
+Οι φόρμες είναι ο τρόπος που ο χρήστης στέλνει δεδομένα: login, αναζήτηση, checkout, contact form.
+
+Το βασικό για σωστή φόρμα είναι να συνδέεις κάθε input με label. Το `for` του label πρέπει να ταιριάζει με το `id` του input.
+
+```html
+<label for="email">Email</label>
+<input id="email" type="email" />
+```
+
+Αυτό βοηθά και στην προσβασιμότητα και στη χρηστικότητα.
+
+## Mini project: accessible contact form
+
+Κράτα τη φόρμα καθαρή και βεβαιώσου ότι υπάρχουν labels, inputs και submit button.
+
+<CodeChallenge
+  title="Accessible form challenge"
+  description="Φτιάξε φόρμα επικοινωνίας με labels και σωστά inputs."
+  initialHtml={formHtml}
+  initialCss={formCss}
+  checks={[
+    { id: "has-form", label: "Υπάρχει form.", type: "htmlTag", tag: "form" },
+    { id: "has-label", label: "Υπάρχει label.", type: "htmlTag", tag: "label" },
+    { id: "has-input", label: "Υπάρχει input.", type: "htmlTag", tag: "input" },
+    { id: "has-button", label: "Υπάρχει button.", type: "htmlTag", tag: "button" },
+    { id: "has-email", label: "Υπάρχει πεδίο email.", type: "htmlText", text: "Email" }
+  ]}
+/>
+
+<Exercise
+  question="Τι πρέπει να ταιριάζει ανάμεσα σε label και input;"
+  options={[
+    "Το for του label με το id του input.",
+    "Το χρώμα του label με το background.",
+    "Το type του input με το κείμενο του button."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Έτσι ο browser ξέρει ποιο label περιγράφει ποιο input."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="html-forms-accessibility" />
+</div>
