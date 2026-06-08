@@ -1,0 +1,55 @@
+# Logs, Monitoring & Observability
+
+Όταν κάτι σπάσει στην παραγωγή, δεν έχεις debugger πάνω στον χρήστη. Χρειάζεσαι observability.
+
+## Logs
+
+Logs πρέπει να απαντούν:
+
+- τι συνέβη,
+- πότε,
+- για ποιο request/user/session,
+- με ποιο error.
+
+Καλύτερα structured logs:
+
+```json
+{
+  "level": "error",
+  "requestId": "abc123",
+  "message": "Payment failed"
+}
+```
+
+## Error tracking
+
+Εργαλεία όπως Sentry βοηθούν να βλέπεις stack traces, affected users και frequency.
+
+## Metrics
+
+Metrics δείχνουν patterns:
+
+- latency,
+- error rate,
+- request count,
+- memory/CPU.
+
+## Interview answer template
+
+> For production debugging I rely on structured logs, error tracking, metrics, and request IDs. I avoid logging secrets and make sure failures are diagnosable without exposing sensitive data.
+
+<Exercise
+  question="Γιατί είναι χρήσιμο το requestId στα logs;"
+  options={[
+    "Για να συνδέεις όλα τα logs που ανήκουν στο ίδιο request.",
+    "Για να μεγαλώνει το CSS file.",
+    "Για να μη χρειάζεται backend."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Το requestId βοηθά να ακολουθήσεις ένα request μέσα στο σύστημα."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="observability" />
+</div>

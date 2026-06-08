@@ -1,0 +1,51 @@
+# Docker & CI/CD
+
+Docker και CI/CD εμφανίζονται συχνά σε αγγελίες γιατί δείχνουν ότι μπορείς να παραδώσεις λογισμικό με προβλέψιμο τρόπο.
+
+## Docker
+
+Docker container πακετάρει app + dependencies.
+
+```dockerfile
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+CMD ["npm", "start"]
+```
+
+## CI
+
+Continuous Integration σημαίνει ότι checks τρέχουν αυτόματα σε κάθε PR.
+
+```yaml
+- run: npm ci
+- run: npm run lint
+- run: npm run build
+```
+
+## CD
+
+Continuous Deployment/Delivery σημαίνει ότι verified αλλαγές μπορούν να πάνε σε environment με προβλέψιμο workflow.
+
+## Interview answer template
+
+> CI catches problems before merge by running install, lint, tests, and build. Docker makes runtime environments more consistent. CD automates release steps after checks pass.
+
+<Exercise
+  question="Τι κάνει το CI;"
+  options={[
+    "Τρέχει automated checks όπως lint, tests και build πριν γίνει merge.",
+    "Γράφει HTML tags.",
+    "Αλλάζει το χρώμα του terminal."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. CI μειώνει το ρίσκο πριν μπει κώδικας στο main."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="docker-ci-cd" />
+</div>

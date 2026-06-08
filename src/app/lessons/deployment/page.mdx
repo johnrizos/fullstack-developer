@@ -1,0 +1,55 @@
+# Deployment & Cloud
+
+Deployment σημαίνει ότι η εφαρμογή τρέχει για πραγματικούς χρήστες, όχι μόνο στο laptop σου.
+
+## Build
+
+Πριν deploy, πρέπει να περνάει:
+
+```bash
+npm run lint
+npm run build
+```
+
+## Environment variables
+
+Τα env vars κρατούν configuration:
+
+- database URLs,
+- API keys,
+- OAuth secrets,
+- feature flags.
+
+Δεν μπαίνουν στο Git.
+
+## Vercel / AWS / Azure / GCP
+
+Για frontend/Next.js συχνά βλέπεις Vercel. Για πιο enterprise fullstack, συχνά AWS/Azure/GCP.
+
+Βασικές έννοιες:
+
+- hosting,
+- serverless functions,
+- object storage,
+- managed databases,
+- logs.
+
+## Interview answer template
+
+> My deployment checklist is: build passes, environment variables are configured, database migrations are handled, logs are available, and rollback strategy is clear.
+
+<Exercise
+  question="Τι πρέπει να ελέγξεις πριν deploy;"
+  options={[
+    "Ότι build/tests περνάνε και τα env vars είναι σωστά.",
+    "Ότι όλα τα secrets είναι στο frontend.",
+    "Ότι δεν υπάρχει Git history."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Deploy χωρίς checks και σωστό configuration είναι ρίσκο."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="deployment" />
+</div>

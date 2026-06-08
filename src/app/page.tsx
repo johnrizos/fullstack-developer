@@ -312,6 +312,7 @@ const curriculum: CurriculumSection[] = [
         description: "Build, environment variables, deploy σε Vercel/AWS/Azure/GCP και basic cloud services.",
         project: "Deploy του fullstack project.",
         skills: ["AWS", "Azure/GCP", "env vars"],
+        href: "/lessons/deployment",
       },
       {
         id: "docker-ci-cd",
@@ -319,6 +320,7 @@ const curriculum: CurriculumSection[] = [
         description: "Containers, GitHub Actions, automated checks και release workflow.",
         project: "Dockerized app with CI.",
         skills: ["Docker", "GitHub Actions", "CI/CD"],
+        href: "/lessons/docker-ci-cd",
       },
       {
         id: "observability",
@@ -326,6 +328,7 @@ const curriculum: CurriculumSection[] = [
         description: "Διαβάζεις logs, παρακολουθείς errors και καταλαβαίνεις τι συμβαίνει στην παραγωγή.",
         project: "App with structured logs and error tracking.",
         skills: ["logs", "Sentry", "metrics"],
+        href: "/lessons/observability",
       },
       {
         id: "capstone",
@@ -333,6 +336,7 @@ const curriculum: CurriculumSection[] = [
         description: "Συνδυάζεις frontend, backend, database, auth και deploy.",
         project: "Production-style fullstack app.",
         skills: ["frontend", "backend", "database"],
+        href: "/lessons/capstone",
       },
     ],
   },
