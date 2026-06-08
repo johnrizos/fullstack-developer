@@ -1,0 +1,77 @@
+# REST APIs
+
+REST API είναι ένας κοινός τρόπος να οργανώνεις επικοινωνία frontend-backend.
+
+## Resources
+
+Σκέψου resources:
+
+- `/tasks`
+- `/users`
+- `/orders`
+
+## HTTP methods
+
+- `GET /tasks`: διάβασε tasks.
+- `POST /tasks`: δημιούργησε task.
+- `PATCH /tasks/:id`: άλλαξε task.
+- `DELETE /tasks/:id`: διέγραψε task.
+
+## Status codes
+
+- `200 OK`: επιτυχής ανάγνωση/ενημέρωση.
+- `201 Created`: δημιουργήθηκε resource.
+- `400 Bad Request`: λάθος input.
+- `401 Unauthorized`: δεν έχεις login/token.
+- `403 Forbidden`: έχεις login αλλά όχι δικαίωμα.
+- `404 Not Found`: δεν βρέθηκε.
+- `500 Internal Server Error`: server bug/failure.
+
+## API contract
+
+Καλό API έχει προβλέψιμο response shape.
+
+```json
+{
+  "data": [],
+  "error": null
+}
+```
+
+Για errors:
+
+```json
+{
+  "data": null,
+  "error": {
+    "message": "Title is required"
+  }
+}
+```
+
+## Interview answer template
+
+> I design REST APIs around resources, use HTTP methods for actions, return appropriate status codes, validate input, and keep response shapes consistent so frontend and backend have a clear contract.
+
+<Exercise
+  question="Ποιο method χρησιμοποιούμε συνήθως για δημιουργία resource;"
+  options={["GET", "POST", "DELETE"]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Το POST χρησιμοποιείται συνήθως για δημιουργία."
+/>
+
+<Exercise
+  question="Τι σημαίνει 401;"
+  options={[
+    "Unauthorized: λείπει ή δεν ισχύει authentication.",
+    "Το resource δημιουργήθηκε.",
+    "Το CSS δεν φορτώθηκε."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. 401 αφορά authentication."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="rest-apis" />
+</div>

@@ -1,0 +1,72 @@
+# API Integrations
+
+Πολλές δουλειές fullstack δεν είναι μόνο “φτιάχνω δικό μου API”. Είναι και “συνδέω τρίτα APIs”.
+
+Παραδείγματα:
+
+- payments,
+- maps,
+- email providers,
+- AI APIs,
+- CRMs,
+- analytics.
+
+## Auth headers
+
+Πολλά APIs θέλουν token.
+
+```ts
+await fetch("https://api.example.com/data", {
+  headers: {
+    Authorization: `Bearer ${token}`
+  }
+});
+```
+
+Μην βάζεις secrets σε client-side code. Τα secrets πρέπει να μένουν server-side.
+
+## Rate limits
+
+Rate limit σημαίνει ότι το API επιτρέπει συγκεκριμένο αριθμό requests ανά χρονικό διάστημα.
+
+Χρειάζεσαι:
+
+- caching,
+- debounce,
+- retries με προσοχή,
+- clear error messages.
+
+## Retries
+
+Δεν κάνουμε retry για όλα. Συνήθως έχει νόημα για προσωρινά failures, όχι για validation errors.
+
+## Interview answer template
+
+> For third-party API integrations, I keep secrets server-side, use typed response handling, check status codes, handle rate limits and retries carefully, and add logging so failures can be diagnosed.
+
+<Exercise
+  question="Πού πρέπει να κρατάμε API secrets;"
+  options={[
+    "Server-side, σε environment variables ή secret manager.",
+    "Μέσα σε public React component.",
+    "Σε CSS comment."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Client-side secrets μπορούν να διαρρεύσουν."
+/>
+
+<Exercise
+  question="Τι είναι rate limit;"
+  options={[
+    "Όριο requests που επιτρέπει ένα API σε συγκεκριμένο χρόνο.",
+    "CSS width limit.",
+    "React hook."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Τα APIs συχνά περιορίζουν πόσο συχνά μπορείς να τα καλέσεις."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="api-integrations" />
+</div>

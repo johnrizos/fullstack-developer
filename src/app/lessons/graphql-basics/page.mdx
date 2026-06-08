@@ -1,0 +1,62 @@
+# GraphQL Basics
+
+GraphQL είναι API style όπου ο client ζητά ακριβώς τα fields που χρειάζεται.
+
+## Query
+
+```graphql
+query {
+  tasks {
+    id
+    title
+    completed
+  }
+}
+```
+
+## Mutation
+
+```graphql
+mutation {
+  createTask(title: "Learn GraphQL") {
+    id
+    title
+  }
+}
+```
+
+## Schema
+
+Το schema είναι contract.
+
+```graphql
+type Task {
+  id: ID!
+  title: String!
+  completed: Boolean!
+}
+```
+
+## REST vs GraphQL
+
+REST είναι απλό και predictable για πολλά APIs. GraphQL βοηθά όταν έχεις πολλά clients ή σύνθετα data requirements και θέλεις να αποφύγεις overfetching/underfetching.
+
+## Interview answer template
+
+> GraphQL lets clients request exactly the fields they need through a typed schema. It can reduce overfetching, but adds complexity around caching, authorization, N+1 queries, and schema design.
+
+<Exercise
+  question="Ποιο είναι βασικό πλεονέκτημα του GraphQL;"
+  options={[
+    "Ο client ζητά ακριβώς τα fields που χρειάζεται.",
+    "Δεν χρειάζεται ποτέ backend.",
+    "Αντικαθιστά το HTML."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Το field selection είναι βασικό πλεονέκτημα."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="graphql-basics" />
+</div>

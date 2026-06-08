@@ -242,6 +242,7 @@ const curriculum: CurriculumSection[] = [
         description: "Backend server, routes, middleware και structured APIs με Express ή NestJS.",
         project: "Μικρό tasks API.",
         skills: ["routes", "JSON", "NestJS"],
+        href: "/lessons/backend-node",
       },
       {
         id: "rest-apis",
@@ -249,6 +250,7 @@ const curriculum: CurriculumSection[] = [
         description: "HTTP methods, status codes, request/response και API contracts.",
         project: "CRUD API contract.",
         skills: ["GET", "POST", "status codes"],
+        href: "/lessons/rest-apis",
       },
       {
         id: "graphql-basics",
@@ -256,6 +258,7 @@ const curriculum: CurriculumSection[] = [
         description: "Queries, mutations και πότε έχει νόημα σε σχέση με REST.",
         project: "Simple GraphQL schema.",
         skills: ["schema", "queries", "mutations"],
+        href: "/lessons/graphql-basics",
       },
       {
         id: "api-integrations",
@@ -263,6 +266,7 @@ const curriculum: CurriculumSection[] = [
         description: "Σύνδεση με τρίτα APIs, auth headers, retries, rate limits και error handling.",
         project: "External API dashboard.",
         skills: ["fetch", "auth headers", "rate limits"],
+        href: "/lessons/api-integrations",
       },
     ],
   },

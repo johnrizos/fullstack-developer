@@ -1,0 +1,70 @@
+# Node.js, Express & NestJS
+
+Backend developer πρέπει να ξέρει πώς στήνεται server, πώς ορίζονται routes και πώς περνάει ένα request μέσα από middleware μέχρι να επιστραφεί response.
+
+## Node.js
+
+Node.js επιτρέπει να τρέχεις JavaScript στον server. Εκεί χειρίζεσαι:
+
+- HTTP requests,
+- business logic,
+- database calls,
+- authentication,
+- background tasks.
+
+## Express
+
+Express είναι minimal framework.
+
+```ts
+app.get("/tasks", async (req, res) => {
+  res.json({ data: [] });
+});
+```
+
+## Middleware
+
+Middleware τρέχει πριν από route handler.
+
+Χρήσεις:
+
+- logging,
+- auth checks,
+- parsing JSON,
+- validation,
+- error handling.
+
+## NestJS
+
+NestJS είναι πιο structured Node framework. Χρησιμοποιεί modules, controllers, services και dependency injection. Σε μεγαλύτερες ομάδες εμφανίζεται συχνά επειδή οργανώνει καλύτερα μεγάλα backends.
+
+## Interview answer template
+
+> Express is lightweight and flexible. NestJS adds structure with modules, controllers, services, decorators, and dependency injection, which helps larger applications stay maintainable.
+
+<Exercise
+  question="Τι κάνει συνήθως ένα middleware;"
+  options={[
+    "Τρέχει πριν από route handler για logging, auth, parsing ή validation.",
+    "Αλλάζει μόνο CSS colors.",
+    "Δημιουργεί React components."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Middleware είναι ενδιάμεσο βήμα στο request pipeline."
+/>
+
+<Exercise
+  question="Πότε έχει νόημα NestJS αντί για απλό Express;"
+  options={[
+    "Όταν θέλουμε πιο οργανωμένη αρχιτεκτονική σε μεγαλύτερο backend.",
+    "Όταν θέλουμε μόνο ένα static HTML αρχείο.",
+    "Όταν γράφουμε CSS media queries."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. NestJS δίνει structure για πιο μεγάλα projects."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="backend-node" />
+</div>
