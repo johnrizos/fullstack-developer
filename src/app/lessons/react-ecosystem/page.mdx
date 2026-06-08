@@ -1,0 +1,234 @@
+export const reactHtml = `<main>
+  <h1>React + TypeScript</h1>
+  <p>Το preview είναι στατικό. Το challenge ελέγχει React TypeScript patterns.</p>
+</main>`;
+
+export const reactCss = `body {
+  font-family: Arial, sans-serif;
+  background: #f3f4f6;
+  padding: 40px;
+}
+
+main {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 24px;
+  background: white;
+  border-radius: 12px;
+}`;
+
+export const reactTs = `import { useMemo, useState } from "react";
+
+type Todo = {
+  id: string;
+  title: string;
+  completed: boolean;
+};
+
+type Filter = "all" | "active" | "completed";
+
+type TodoItemProps = {
+  todo: Todo;
+  onToggle: (id: string) => void;
+};
+
+function TodoItem({ todo, onToggle }: TodoItemProps) {
+  return (
+    <li>
+      <label>
+        <input
+          type="checkbox"
+          checked={todo.completed}
+          onChange={() => onToggle(todo.id)}
+        />
+        {todo.title}
+      </label>
+    </li>
+  );
+}
+
+export default function TodoApp() {
+  const [todos, setTodos] = useState<Todo[]>([
+    { id: "1", title: "Learn TypeScript", completed: true },
+    { id: "2", title: "Build React components", completed: false }
+  ]);
+  const [filter, setFilter] = useState<Filter>("all");
+
+  const visibleTodos = useMemo(() => {
+    if (filter === "active") {
+      return todos.filter((todo) => !todo.completed);
+    }
+
+    if (filter === "completed") {
+      return todos.filter((todo) => todo.completed);
+    }
+
+    return todos;
+  }, [todos, filter]);
+
+  function toggleTodo(id: string) {
+    setTodos((currentTodos) =>
+      currentTodos.map((todo) =>
+        todo.id === id ? { ...todo, completed: !todo.completed } : todo
+      )
+    );
+  }
+
+  return (
+    <main>
+      <h1>Typed Todo App</h1>
+
+      <select value={filter} onChange={(event) => setFilter(event.target.value as Filter)}>
+        <option value="all">All</option>
+        <option value="active">Active</option>
+        <option value="completed">Completed</option>
+      </select>
+
+      <ul>
+        {visibleTodos.map((todo) => (
+          <TodoItem key={todo.id} todo={todo} onToggle={toggleTodo} />
+        ))}
+      </ul>
+    </main>
+  );
+}`;
+
+# React + TypeScript
+
+React interviews δεν είναι μόνο “ξέρω components”. Συνήθως θέλουν να δουν αν καταλαβαίνεις:
+
+- props και component boundaries,
+- state updates χωρίς mutation,
+- typed event handlers,
+- derived state,
+- rendering lists με keys,
+- πότε να σπάσεις ένα component.
+
+Με TypeScript, πρέπει να κάνεις αυτά τα patterns type-safe.
+
+## Typed props
+
+Τα props είναι το contract ενός component.
+
+```tsx
+type TodoItemProps = {
+  todo: Todo;
+  onToggle: (id: string) => void;
+};
+```
+
+Αυτό λέει καθαρά τι χρειάζεται το `TodoItem`.
+
+## Typed state
+
+```tsx
+const [todos, setTodos] = useState<Todo[]>([]);
+```
+
+Το state είναι array από `Todo`. Αν βάλεις object που δεν έχει `id`, `title`, `completed`, το TypeScript θα σε σταματήσει.
+
+## Immutable updates
+
+Στο React δεν αλλάζουμε το υπάρχον state απευθείας. Δημιουργούμε νέο array/object.
+
+```tsx
+setTodos((currentTodos) =>
+  currentTodos.map((todo) =>
+    todo.id === id ? { ...todo, completed: !todo.completed } : todo
+  )
+);
+```
+
+Αυτό είναι συχνό interview θέμα.
+
+## Derived state
+
+Αν κάτι μπορεί να υπολογιστεί από υπάρχον state, συνήθως δεν χρειάζεται να το αποθηκεύσεις ως δεύτερο state.
+
+```tsx
+const visibleTodos = todos.filter(...);
+```
+
+Στο παράδειγμα χρησιμοποιούμε `useMemo` για να δείξουμε ξεκάθαρα ότι είναι derived data.
+
+## Mini project: typed todo app
+
+Το challenge ελέγχει React + TypeScript patterns. Δεν εκτελεί React στο iframe, αλλά σου δείχνει αν υπάρχουν τα κρίσιμα κομμάτια που θα περίμενε κάποιος σε typed React code review.
+
+<CodeChallenge
+  title="React TypeScript todo challenge"
+  description="Χτίσε typed components, state, props και filtering logic."
+  initialHtml={reactHtml}
+  initialCss={reactCss}
+  initialTs={reactTs}
+  checks={[
+    {
+      id: "has-todo-type",
+      label: "Υπάρχει type Todo.",
+      type: "jsIncludes",
+      value: "type Todo"
+    },
+    {
+      id: "has-props-type",
+      label: "Υπάρχει TodoItemProps contract.",
+      type: "jsIncludes",
+      value: "type TodoItemProps"
+    },
+    {
+      id: "typed-state",
+      label: "Το todos state είναι useState<Todo[]>.",
+      type: "jsIncludes",
+      value: "useState<Todo[]>"
+    },
+    {
+      id: "has-filter-union",
+      label: "Υπάρχει Filter union type.",
+      type: "jsIncludes",
+      value: "type Filter"
+    },
+    {
+      id: "uses-use-memo",
+      label: "Χρησιμοποιείται useMemo για derived list.",
+      type: "jsIncludes",
+      value: "useMemo"
+    },
+    {
+      id: "immutable-update",
+      label: "Το state ενημερώνεται με map και spread.",
+      type: "jsIncludes",
+      value: "{ ...todo"
+    },
+    {
+      id: "renders-list",
+      label: "Η λίστα κάνει render με .map.",
+      type: "jsIncludes",
+      value: "visibleTodos.map"
+    }
+  ]}
+/>
+
+## Interview answer template
+
+Αν σε ρωτήσουν “how do you type React components?”, απάντησε:
+
+> I define explicit prop types for component contracts, type state with `useState<T>()` when inference is not enough, type callbacks based on what data they receive, and avoid duplicating derived state.
+
+Αν σε ρωτήσουν για state updates:
+
+> I avoid mutating state directly. For arrays and objects I return new references, for example with `map`, `filter`, and object spread, so React can detect changes correctly.
+
+<Exercise
+  question="Γιατί δεν κάνουμε mutation απευθείας στο React state;"
+  options={[
+    "Επειδή το React βασίζεται σε νέα references για να εντοπίζει αλλαγές αξιόπιστα.",
+    "Επειδή το TypeScript απαγορεύει όλα τα arrays.",
+    "Επειδή τα components δεν μπορούν να έχουν functions."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Immutable updates κάνουν το rendering πιο προβλέψιμο και αποφεύγουν bugs."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="react-ecosystem" />
+</div>

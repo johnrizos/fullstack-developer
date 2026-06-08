@@ -209,6 +209,7 @@ const curriculum: CurriculumSection[] = [
         description: "Components, props, hooks, typed state και event handlers σε πραγματικές οθόνες.",
         project: "Typed todo app με φίλτρα.",
         skills: ["components", "props", "typed state"],
+        href: "/lessons/react-ecosystem",
       },
       {
         id: "nextjs-app-router",
