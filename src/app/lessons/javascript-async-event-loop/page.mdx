@@ -1,0 +1,169 @@
+export const asyncHtml = `<main>
+  <h1>Async timeline</h1>
+  <button id="run">Run demo</button>
+  <ol id="timeline"></ol>
+</main>`;
+
+export const asyncCss = `body {
+  font-family: Arial, sans-serif;
+  background: #f3f4f6;
+  padding: 40px;
+}
+
+main {
+  max-width: 460px;
+  margin: 0 auto;
+  padding: 24px;
+  background: white;
+  border-radius: 12px;
+}
+
+button {
+  padding: 10px 16px;
+}`;
+
+export const asyncJs = `const timeline = document.querySelector("#timeline");
+
+function addStep(text) {
+  const item = document.createElement("li");
+  item.textContent = text;
+  timeline.appendChild(item);
+}
+
+function runDemo() {
+  timeline.innerHTML = "";
+
+  addStep("1. Synchronous start");
+
+  setTimeout(function () {
+    addStep("4. setTimeout callback");
+  }, 0);
+
+  Promise.resolve().then(function () {
+    addStep("3. Promise microtask");
+  });
+
+  addStep("2. Synchronous end");
+}
+
+document.querySelector("#run").addEventListener("click", runDemo);`;
+
+# Async JavaScript & Event Loop
+
+Σε fullstack συνεντεύξεις, πολλές JavaScript ερωτήσεις είναι “τι θα εκτυπωθεί πρώτο;”. Για να απαντήσεις, πρέπει να καταλαβαίνεις event loop.
+
+## Synchronous code
+
+Ο synchronous κώδικας τρέχει πρώτος, γραμμή-γραμμή.
+
+```js
+console.log("start");
+console.log("end");
+```
+
+## setTimeout
+
+Το `setTimeout` στέλνει callback σε task queue. Ακόμα και με `0ms`, δεν τρέχει πριν τελειώσει ο τρέχων synchronous κώδικας.
+
+```js
+setTimeout(() => console.log("timeout"), 0);
+console.log("sync");
+```
+
+Πρώτα εμφανίζεται `sync`.
+
+## Promises και microtasks
+
+Τα promise callbacks μπαίνουν σε microtask queue. Τα microtasks συνήθως εκτελούνται πριν τα normal timer tasks.
+
+```js
+setTimeout(() => console.log("timeout"), 0);
+Promise.resolve().then(() => console.log("promise"));
+console.log("sync");
+```
+
+Σειρά:
+
+1. `sync`
+2. `promise`
+3. `timeout`
+
+## async/await
+
+Το `await` σταματά προσωρινά τη συνέχεια της async function και αφήνει τον υπόλοιπο κώδικα να συνεχίσει.
+
+```js
+async function load() {
+  console.log("before");
+  await Promise.resolve();
+  console.log("after");
+}
+```
+
+Το `after` συνεχίζει σε microtask.
+
+## Mini project: async timeline
+
+Πάτα το κουμπί και δες τη σειρά εκτέλεσης. Το αποτέλεσμα εξηγεί την κλασική interview ερώτηση για `setTimeout` και `Promise`.
+
+<CodeChallenge
+  title="Async timeline challenge"
+  description="Δείξε τη σειρά synchronous code, promise microtask και setTimeout task."
+  initialHtml={asyncHtml}
+  initialCss={asyncCss}
+  initialJs={asyncJs}
+  checks={[
+    {
+      id: "has-run-demo",
+      label: "Υπάρχει function runDemo.",
+      type: "jsFunction",
+      name: "runDemo"
+    },
+    {
+      id: "uses-set-timeout",
+      label: "Χρησιμοποιείται setTimeout.",
+      type: "jsIncludes",
+      value: "setTimeout"
+    },
+    {
+      id: "uses-promise",
+      label: "Χρησιμοποιείται Promise.resolve().then.",
+      type: "jsIncludes",
+      value: "Promise.resolve().then"
+    },
+    {
+      id: "uses-sync-start",
+      label: "Υπάρχει synchronous start βήμα.",
+      type: "jsIncludes",
+      value: "Synchronous start"
+    },
+    {
+      id: "uses-click",
+      label: "Το demo συνδέεται με click event.",
+      type: "jsIncludes",
+      value: "addEventListener(\"click\""
+    }
+  ]}
+/>
+
+## Interview answer template
+
+Αν σε ρωτήσουν “why does Promise run before setTimeout?”, απάντησε:
+
+> After the current call stack is empty, JavaScript processes microtasks such as promise callbacks before moving to the next task like a setTimeout callback.
+
+<Exercise
+  question="Σε τυπικό browser event loop, τι τρέχει πριν από setTimeout callback;"
+  options={[
+    "Promise microtasks.",
+    "CSS selectors.",
+    "HTML attributes."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Τα promise callbacks είναι microtasks και συνήθως εκτελούνται πριν από timer tasks."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="javascript-async-event-loop" />
+</div>

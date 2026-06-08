@@ -133,6 +133,7 @@ const curriculum: CurriculumSection[] = [
         description: "Πώς δουλεύουν το this, prototype chain, classes και object methods.",
         project: "Small user model with methods.",
         skills: ["this", "prototype", "class"],
+        href: "/lessons/javascript-this-prototypes",
       },
       {
         id: "javascript-async-event-loop",
@@ -140,6 +141,7 @@ const curriculum: CurriculumSection[] = [
         description: "Call stack, task queue, microtasks, promises, async/await και timers.",
         project: "Async timeline visualizer.",
         skills: ["event loop", "promises", "async/await"],
+        href: "/lessons/javascript-async-event-loop",
       },
       {
         id: "javascript-fetch-errors",

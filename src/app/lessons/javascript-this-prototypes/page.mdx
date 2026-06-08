@@ -1,0 +1,177 @@
+export const modelHtml = `<main>
+  <h1>User model</h1>
+  <p id="output">Πάτα το κουμπί για greeting.</p>
+  <button id="greet">Greet</button>
+</main>`;
+
+export const modelCss = `body {
+  font-family: Arial, sans-serif;
+  background: #f3f4f6;
+  padding: 40px;
+}
+
+main {
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 24px;
+  background: white;
+  border-radius: 12px;
+  text-align: center;
+}
+
+button {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  background: #2563eb;
+  color: white;
+}`;
+
+export const modelJs = `class User {
+  constructor(name, role) {
+    this.name = name;
+    this.role = role;
+  }
+
+  greet() {
+    return \`Hi, I am \${this.name} and I work as a \${this.role}.\`;
+  }
+}
+
+const user = new User("Ada", "Fullstack Developer");
+const output = document.querySelector("#output");
+
+document.querySelector("#greet").addEventListener("click", function () {
+  output.textContent = user.greet();
+});
+
+console.log(User.prototype);`;
+
+# this, Prototypes & Classes
+
+Το `this` είναι από τα πιο συχνά σημεία που πέφτουν σε JavaScript interviews. Δεν σημαίνει πάντα “το object που βλέπω δίπλα”. Η τιμή του εξαρτάται από το **πώς καλείται** μια function.
+
+## this σε object method
+
+```js
+const user = {
+  name: "Ada",
+  greet() {
+    return this.name;
+  }
+};
+```
+
+Όταν καλείς `user.greet()`, το `this` μέσα στη method δείχνει στο `user`.
+
+## this και function calls
+
+Αν πάρεις τη method και την καλέσεις μόνη της, μπορεί να χάσει το αρχικό object context.
+
+```js
+const greet = user.greet;
+greet(); // το this δεν δείχνει πια απαραίτητα στο user
+```
+
+Αυτό εξηγεί πολλά bugs σε callbacks.
+
+## Prototypes
+
+Στη JavaScript, objects μπορούν να “κληρονομούν” properties και methods από άλλο object μέσω prototype chain.
+
+```js
+const user = new User("Ada");
+user.greet();
+```
+
+Η method `greet` δεν χρειάζεται να αντιγραφεί σε κάθε instance. Υπάρχει στο `User.prototype`.
+
+## Classes
+
+Το `class` είναι πιο καθαρό syntax πάνω από prototypes.
+
+```js
+class User {
+  constructor(name) {
+    this.name = name;
+  }
+
+  greet() {
+    return this.name;
+  }
+}
+```
+
+Σε συνέντευξη είναι καλό να ξέρεις ότι classes στη JavaScript βασίζονται ακόμα στο prototype system.
+
+## Mini project: user model
+
+Το challenge φτιάχνει ένα μικρό model με class, constructor, this και method.
+
+<CodeChallenge
+  title="User model challenge"
+  description="Χτίσε class με constructor, this και method που χρησιμοποιείται από click event."
+  initialHtml={modelHtml}
+  initialCss={modelCss}
+  initialJs={modelJs}
+  checks={[
+    {
+      id: "has-class",
+      label: "Υπάρχει class User.",
+      type: "jsIncludes",
+      value: "class User"
+    },
+    {
+      id: "has-constructor",
+      label: "Υπάρχει constructor.",
+      type: "jsIncludes",
+      value: "constructor"
+    },
+    {
+      id: "uses-this-name",
+      label: "Χρησιμοποιείται this.name.",
+      type: "jsIncludes",
+      value: "this.name"
+    },
+    {
+      id: "has-greet",
+      label: "Υπάρχει greet method.",
+      type: "jsIncludes",
+      value: "greet()"
+    },
+    {
+      id: "uses-new",
+      label: "Δημιουργείται instance με new User.",
+      type: "jsIncludes",
+      value: "new User"
+    },
+    {
+      id: "has-prototype",
+      label: "Γίνεται αναφορά στο prototype.",
+      type: "jsIncludes",
+      value: "prototype"
+    }
+  ]}
+/>
+
+## Interview answer template
+
+Αν σε ρωτήσουν “what is this in JavaScript?”, απάντησε:
+
+> `this` is a dynamic binding. Its value depends on how a function is called. In object method calls, it usually refers to the object before the dot. In classes, instance methods use `this` to access instance properties.
+
+<Exercise
+  question="Από τι εξαρτάται κυρίως η τιμή του this;"
+  options={[
+    "Από το πώς καλείται η function.",
+    "Από το όνομα του αρχείου.",
+    "Από το χρώμα του button."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Το this είναι δυναμικό και εξαρτάται από το call-site."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="javascript-this-prototypes" />
+</div>
