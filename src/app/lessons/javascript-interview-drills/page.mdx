@@ -1,0 +1,144 @@
+# JavaScript Interview Drills
+
+Αυτό το μάθημα είναι διαφορετικό: δεν είναι μόνο για να χτίσεις UI. Είναι για να απαντάς καθαρά σε συνέντευξη.
+
+Θα δεις κλασικά patterns που ρωτάνε συχνά:
+
+- equality και coercion,
+- truthy/falsy,
+- array methods,
+- closure output,
+- async output order.
+
+## Drill 1: == vs ===
+
+Το `===` συγκρίνει χωρίς type coercion. Το `==` μπορεί να μετατρέψει τύπους πριν συγκρίνει.
+
+```js
+0 == false   // true
+0 === false  // false
+```
+
+Σε production κώδικα, προτίμησε σχεδόν πάντα `===`.
+
+<Exercise
+  question="Τι επιστρέφει το 0 === false;"
+  options={["true", "false", "undefined"]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Με === δεν γίνεται type coercion, και number δεν είναι boolean."
+/>
+
+## Drill 2: truthy και falsy
+
+Falsy values:
+
+- `false`
+- `0`
+- `""`
+- `null`
+- `undefined`
+- `NaN`
+
+Όλα τα υπόλοιπα είναι truthy, ακόμα και `[]` και `{}`.
+
+<Exercise
+  question="Ποιο από τα παρακάτω είναι truthy;"
+  options={["''", "0", "[]"]}
+  correctOptionIndex={2}
+  explanation="Σωστά. Το empty array είναι object, άρα είναι truthy."
+/>
+
+## Drill 3: array map/filter/reduce
+
+```js
+const numbers = [1, 2, 3, 4];
+
+const result = numbers
+  .filter((n) => n % 2 === 0)
+  .map((n) => n * 10);
+```
+
+Πρώτα κρατάμε τα ζυγά: `[2, 4]`. Μετά τα πολλαπλασιάζουμε: `[20, 40]`.
+
+<Exercise
+  question="Τι επιστρέφει το [1, 2, 3].map((n) => n * 2);"
+  options={["[2, 4, 6]", "[1, 2, 3]", "6"]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Το map επιστρέφει νέο array με μετασχηματισμένα items."
+/>
+
+## Drill 4: closure output
+
+```js
+function outer() {
+  let count = 0;
+
+  return function inner() {
+    count++;
+    return count;
+  };
+}
+
+const next = outer();
+next(); // ?
+next(); // ?
+```
+
+Η `inner` θυμάται το `count`, άρα οι απαντήσεις είναι `1` και `2`.
+
+<Exercise
+  question="Γιατί το δεύτερο next() επιστρέφει 2;"
+  options={[
+    "Επειδή η inner function κρατά closure πάνω στο count.",
+    "Επειδή το CSS άλλαξε το count.",
+    "Επειδή κάθε function επιστρέφει πάντα 2."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Το count δεν χάνεται, επειδή η returned function κρατά πρόσβαση στο lexical scope."
+/>
+
+## Drill 5: async output order
+
+```js
+console.log("A");
+
+setTimeout(() => console.log("B"), 0);
+
+Promise.resolve().then(() => console.log("C"));
+
+console.log("D");
+```
+
+Σειρά:
+
+1. `A`
+2. `D`
+3. `C`
+4. `B`
+
+Ο synchronous κώδικας τρέχει πρώτα. Τα Promise callbacks είναι microtasks και τρέχουν πριν από timer tasks όπως `setTimeout`.
+
+<Exercise
+  question="Ποια είναι η σωστή σειρά για A, setTimeout B, Promise C, D;"
+  options={["A, B, C, D", "A, D, C, B", "C, A, D, B"]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Πρώτα synchronous A/D, μετά promise microtask C, μετά setTimeout B."
+/>
+
+## Interview answer checklist
+
+Όταν απαντάς σε JavaScript interview:
+
+- Πες πρώτα τον κανόνα.
+- Μετά δώσε μικρό παράδειγμα.
+- Μετά εξήγησε το output βήμα-βήμα.
+- Αν υπάρχει edge case, πες ποια είναι η ασφαλής πρακτική.
+
+Παράδειγμα για equality:
+
+> I prefer `===` because it avoids implicit type coercion. `==` can convert values before comparing, which can create surprising results like `0 == false` being true.
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="javascript-interview-drills" />
+</div>

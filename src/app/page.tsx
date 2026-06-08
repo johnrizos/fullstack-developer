@@ -165,6 +165,7 @@ const curriculum: CurriculumSection[] = [
         description: "Κλασικές ερωτήσεις: equality, coercion, closures, async output order και array methods.",
         project: "Interview question bank με εξηγήσεις.",
         skills: ["coercion", "output order", "array methods"],
+        href: "/lessons/javascript-interview-drills",
       },
     ],
   },
