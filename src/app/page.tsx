@@ -85,7 +85,7 @@ const curriculum: CurriculumSection[] = [
   {
     id: "javascript",
     title: "JavaScript",
-    description: "Δίνεις συμπεριφορά στη σελίδα: λογική, δεδομένα, events, forms και storage.",
+    description: "Η βασική γλώσσα του fullstack path: fundamentals, DOM, async, runtime behavior και interview-level concepts.",
     lessons: [
       {
         id: "javascript-intro",
@@ -118,6 +118,49 @@ const curriculum: CurriculumSection[] = [
         project: "Saved notes form.",
         skills: ["DOM", "forms", "localStorage"],
         href: "/lessons/javascript-dom-forms",
+      },
+      {
+        id: "javascript-scope-closures",
+        title: "Scope, Hoisting & Closures",
+        description: "Το πιο συχνό interview core: scope chains, lexical scope, hoisting και closures.",
+        project: "Counter factory με closure.",
+        skills: ["scope", "closures", "hoisting"],
+        href: "/lessons/javascript-scope-closures",
+      },
+      {
+        id: "javascript-this-prototypes",
+        title: "this, Prototypes & Classes",
+        description: "Πώς δουλεύουν το this, prototype chain, classes και object methods.",
+        project: "Small user model with methods.",
+        skills: ["this", "prototype", "class"],
+      },
+      {
+        id: "javascript-async-event-loop",
+        title: "Async JavaScript & Event Loop",
+        description: "Call stack, task queue, microtasks, promises, async/await και timers.",
+        project: "Async timeline visualizer.",
+        skills: ["event loop", "promises", "async/await"],
+      },
+      {
+        id: "javascript-fetch-errors",
+        title: "Fetch, Errors & API Handling",
+        description: "HTTP requests, try/catch, failed responses, retries και loading/error states.",
+        project: "Robust API search widget.",
+        skills: ["fetch", "try/catch", "error states"],
+      },
+      {
+        id: "javascript-modules-patterns",
+        title: "Modules & Code Organization",
+        description: "Imports/exports, pure functions, separation of concerns και μικρά reusable modules.",
+        project: "Modular shopping cart logic.",
+        skills: ["modules", "pure functions", "architecture"],
+      },
+      {
+        id: "javascript-interview-drills",
+        title: "JavaScript Interview Drills",
+        description: "Κλασικές ερωτήσεις: equality, coercion, closures, async output order και array methods.",
+        project: "Interview question bank με εξηγήσεις.",
+        skills: ["coercion", "output order", "array methods"],
       },
     ],
   },

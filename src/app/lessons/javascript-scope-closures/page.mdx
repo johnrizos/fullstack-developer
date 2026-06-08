@@ -1,0 +1,188 @@
+export const closureHtml = `<main>
+  <h1>Closure counter</h1>
+  <p id="value">0</p>
+  <button id="increase">Increase</button>
+  <button id="decrease">Decrease</button>
+</main>`;
+
+export const closureCss = `body {
+  font-family: Arial, sans-serif;
+  background: #f3f4f6;
+  padding: 40px;
+}
+
+main {
+  max-width: 360px;
+  margin: 0 auto;
+  padding: 24px;
+  background: white;
+  border-radius: 12px;
+  text-align: center;
+}
+
+#value {
+  font-size: 44px;
+  font-weight: 800;
+}`;
+
+export const closureJs = `function createCounter(start) {
+  let count = start;
+
+  return {
+    increase() {
+      count = count + 1;
+      return count;
+    },
+    decrease() {
+      count = count - 1;
+      return count;
+    }
+  };
+}
+
+const counter = createCounter(0);
+const value = document.querySelector("#value");
+
+document.querySelector("#increase").addEventListener("click", function () {
+  value.textContent = counter.increase();
+});
+
+document.querySelector("#decrease").addEventListener("click", function () {
+  value.textContent = counter.decrease();
+});`;
+
+# Scope, Hoisting & Closures
+
+Αν θέλεις να απαντάς καλά σε JavaScript συνέντευξη, πρέπει να καταλαβαίνεις πώς η γλώσσα “βλέπει” μεταβλητές.
+
+## Scope
+
+**Scope** είναι το σημείο του κώδικα όπου μια μεταβλητή είναι διαθέσιμη.
+
+```js
+function greet() {
+  const message = "Hello";
+  console.log(message);
+}
+```
+
+Το `message` υπάρχει μέσα στη function. Έξω από τη function δεν είναι διαθέσιμο.
+
+## Lexical scope
+
+Η JavaScript αποφασίζει από πού μπορείς να διαβάσεις μια μεταβλητή με βάση το πού γράφτηκε ο κώδικας, όχι από το πού καλείται η function.
+
+```js
+const name = "Ada";
+
+function sayName() {
+  console.log(name);
+}
+```
+
+Η `sayName` μπορεί να δει το `name`, επειδή γράφτηκε σε scope που έχει πρόσβαση στο outer scope.
+
+## Hoisting
+
+**Hoisting** σημαίνει ότι declarations επεξεργάζονται πριν τρέξει ο κώδικας. Όμως δεν συμπεριφέρονται όλα ίδια.
+
+- Function declarations μπορούν συνήθως να κληθούν πριν τη γραμμή που γράφτηκαν.
+- `let` και `const` δεν μπορείς να τα χρησιμοποιήσεις πριν την αρχικοποίησή τους.
+- `var` hoist-άρεται, αλλά αυτό συχνά οδηγεί σε μπερδέματα.
+
+Για σύγχρονο κώδικα, προτίμησε `const` και `let`.
+
+## Closures
+
+**Closure** είναι όταν μια inner function θυμάται μεταβλητές από το outer scope, ακόμα και αφού το outer function έχει τελειώσει.
+
+```js
+function createCounter() {
+  let count = 0;
+
+  return function increase() {
+    count = count + 1;
+    return count;
+  };
+}
+
+const increase = createCounter();
+increase(); // 1
+increase(); // 2
+```
+
+Η inner function θυμάται το `count`. Αυτό είναι closure.
+
+## Mini project: counter factory
+
+Το challenge δείχνει closure σε πραγματική χρήση. Η `createCounter` κρατά το `count` private. Ο υπόλοιπος κώδικας μπορεί να το αλλάξει μόνο μέσα από `increase` και `decrease`.
+
+<CodeChallenge
+  title="Closure counter challenge"
+  description="Χτίσε counter factory με private count και methods που το αλλάζουν."
+  initialHtml={closureHtml}
+  initialCss={closureCss}
+  initialJs={closureJs}
+  checks={[
+    {
+      id: "has-create-counter",
+      label: "Υπάρχει function createCounter.",
+      type: "jsFunction",
+      name: "createCounter"
+    },
+    {
+      id: "has-private-count",
+      label: "Υπάρχει private variable count μέσα στη function.",
+      type: "jsIncludes",
+      value: "let count"
+    },
+    {
+      id: "returns-object",
+      label: "Η function επιστρέφει object με methods.",
+      type: "jsIncludes",
+      value: "return {"
+    },
+    {
+      id: "has-increase",
+      label: "Υπάρχει increase method.",
+      type: "jsIncludes",
+      value: "increase()"
+    },
+    {
+      id: "has-decrease",
+      label: "Υπάρχει decrease method.",
+      type: "jsIncludes",
+      value: "decrease()"
+    },
+    {
+      id: "uses-click-events",
+      label: "Τα buttons συνδέονται με click events.",
+      type: "jsIncludes",
+      value: "addEventListener(\"click\""
+    }
+  ]}
+/>
+
+## Interview answer template
+
+Αν σε ρωτήσουν “what is a closure?”, απάντησε κάπως έτσι:
+
+> A closure is when a function keeps access to variables from its lexical scope, even after the outer function has finished executing.
+
+Στα ελληνικά: μια function “θυμάται” μεταβλητές από το scope όπου δημιουργήθηκε.
+
+<Exercise
+  question="Τι είναι closure;"
+  options={[
+    "Όταν μια function θυμάται μεταβλητές από το outer lexical scope της.",
+    "Όταν ένα CSS selector αλλάζει χρώμα.",
+    "Όταν ένα API επιστρέφει JSON."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Closure σημαίνει πρόσβαση σε outer scope μεταβλητές ακόμα και μετά την ολοκλήρωση της outer function."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="javascript-scope-closures" />
+</div>
