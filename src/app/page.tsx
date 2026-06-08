@@ -149,6 +149,7 @@ const curriculum: CurriculumSection[] = [
         description: "HTTP requests, try/catch, failed responses, retries και loading/error states.",
         project: "Robust API search widget.",
         skills: ["fetch", "try/catch", "error states"],
+        href: "/lessons/javascript-fetch-errors",
       },
       {
         id: "javascript-modules-patterns",
@@ -156,6 +157,7 @@ const curriculum: CurriculumSection[] = [
         description: "Imports/exports, pure functions, separation of concerns και μικρά reusable modules.",
         project: "Modular shopping cart logic.",
         skills: ["modules", "pure functions", "architecture"],
+        href: "/lessons/javascript-modules-patterns",
       },
       {
         id: "javascript-interview-drills",

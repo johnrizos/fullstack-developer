@@ -1,0 +1,162 @@
+export const cartHtml = `<main>
+  <h1>Cart summary</h1>
+  <button id="calculate">Calculate total</button>
+  <p id="total">Total: -</p>
+</main>`;
+
+export const cartCss = `body {
+  font-family: Arial, sans-serif;
+  background: #f3f4f6;
+  padding: 40px;
+}
+
+main {
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 24px;
+  background: white;
+  border-radius: 12px;
+}`;
+
+export const cartJs = `const cartItems = [
+  { name: "Keyboard", price: 80, quantity: 1 },
+  { name: "Mouse", price: 35, quantity: 2 },
+  { name: "Monitor", price: 220, quantity: 1 }
+];
+
+function calculateLineTotal(item) {
+  return item.price * item.quantity;
+}
+
+function calculateCartTotal(items) {
+  return items.reduce(function (total, item) {
+    return total + calculateLineTotal(item);
+  }, 0);
+}
+
+function formatCurrency(amount) {
+  return "$" + amount.toFixed(2);
+}
+
+document.querySelector("#calculate").addEventListener("click", function () {
+  const total = calculateCartTotal(cartItems);
+  document.querySelector("#total").textContent = "Total: " + formatCurrency(total);
+});`;
+
+# Modules & Code Organization
+
+Όταν ο κώδικας μεγαλώνει, το πρόβλημα δεν είναι μόνο “να δουλεύει”. Πρέπει να είναι κατανοητός, testable και εύκολος να αλλάξει.
+
+Σε πραγματικό project, χωρίζουμε τον κώδικα σε μικρά κομμάτια:
+
+- pure functions για λογική,
+- UI/event code για αλληλεπίδραση,
+- modules με imports/exports,
+- καθαρά ονόματα που εξηγούν τι κάνει κάθε κομμάτι.
+
+## Pure functions
+
+Μια pure function επιστρέφει αποτέλεσμα με βάση τα inputs της και δεν αλλάζει εξωτερική κατάσταση.
+
+```js
+function add(a, b) {
+  return a + b;
+}
+```
+
+Αυτό είναι εύκολο να τεσταριστεί.
+
+## Separation of concerns
+
+Μη βάζεις όλο τον κώδικα μέσα σε ένα click handler. Κράτα τη λογική χωριστά:
+
+```js
+function calculateTotal(items) {
+  return items.reduce((total, item) => total + item.price, 0);
+}
+```
+
+Το click handler απλώς καλεί τη λογική και ενημερώνει το UI.
+
+## Modules
+
+Σε πραγματικά projects θα έχεις:
+
+```js
+export function calculateTotal(items) {}
+import { calculateTotal } from "./cart";
+```
+
+Το challenge εδώ είναι single-file για να τρέχει στο browser preview, αλλά η λογική είναι γραμμένη σαν να μπορούσε να μεταφερθεί σε module.
+
+## Mini project: cart logic
+
+Το challenge υπολογίζει cart total με μικρές functions.
+
+<CodeChallenge
+  title="Cart logic challenge"
+  description="Οργάνωσε λογική cart σε μικρές reusable functions."
+  initialHtml={cartHtml}
+  initialCss={cartCss}
+  initialJs={cartJs}
+  checks={[
+    {
+      id: "has-items",
+      label: "Υπάρχει array cartItems.",
+      type: "jsIncludes",
+      value: "cartItems"
+    },
+    {
+      id: "has-line-total",
+      label: "Υπάρχει function calculateLineTotal.",
+      type: "jsFunction",
+      name: "calculateLineTotal"
+    },
+    {
+      id: "has-cart-total",
+      label: "Υπάρχει function calculateCartTotal.",
+      type: "jsFunction",
+      name: "calculateCartTotal"
+    },
+    {
+      id: "uses-reduce",
+      label: "Χρησιμοποιείται reduce.",
+      type: "jsIncludes",
+      value: ".reduce"
+    },
+    {
+      id: "has-format",
+      label: "Υπάρχει function formatCurrency.",
+      type: "jsFunction",
+      name: "formatCurrency"
+    },
+    {
+      id: "updates-ui",
+      label: "Το UI ενημερώνεται με textContent.",
+      type: "jsIncludes",
+      value: "textContent"
+    }
+  ]}
+/>
+
+## Interview answer template
+
+Αν σε ρωτήσουν “how do you organize JavaScript code?”, απάντησε:
+
+> I separate business logic from UI/event code, keep reusable logic in small pure functions, group related functions into modules, and make side effects explicit at the boundaries.
+
+<Exercise
+  question="Γιατί είναι χρήσιμες οι pure functions;"
+  options={[
+    "Είναι πιο εύκολες να τεσταριστούν και να ξαναχρησιμοποιηθούν.",
+    "Αλλάζουν αυτόματα το CSS.",
+    "Τρέχουν μόνο μέσα σε HTML forms."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Όταν μια function εξαρτάται μόνο από τα inputs της, είναι πιο προβλέψιμη."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="javascript-modules-patterns" />
+</div>
