@@ -1,0 +1,144 @@
+# Code Review Practice
+
+Σε πραγματική δουλειά δεν γράφεις μόνο νέο κώδικα. Διαβάζεις κώδικα άλλων, κάνεις review, βρίσκεις bugs και προτείνεις βελτιώσεις χωρίς να σπας άσχετα πράγματα.
+
+Αυτό το μάθημα σε μαθαίνει πώς να σκέφτεσαι σαν reviewer.
+
+## Τι ψάχνεις σε review
+
+Προτεραιότητα:
+
+1. Bugs και λάθος behavior.
+2. Security/privacy risks.
+3. Missing validation/error handling.
+4. Broken edge cases.
+5. Tests ή checks που λείπουν.
+6. Readability και maintainability.
+
+Style nitpicks είναι τελευταία προτεραιότητα, εκτός αν υπάρχει συμφωνημένο style guide.
+
+## Review checklist
+
+Όταν κοιτάς PR, ρώτα:
+
+- Καλύπτει τα acceptance criteria;
+- Υπάρχει path που σπάει;
+- Τι γίνεται με empty/loading/error state;
+- Υπάρχει validation server-side;
+- Υπάρχουν secrets ή sensitive data στο frontend/logs;
+- Τα names εξηγούν intent;
+- Η αλλαγή είναι πιο μεγάλη από όσο χρειάζεται;
+- Πέρασαν lint/build/tests;
+
+## Example review 1: missing validation
+
+```ts
+export async function POST(request: Request) {
+  const body = await request.json();
+  const task = await db.task.create({
+    data: {
+      title: body.title,
+      userId: body.userId,
+    },
+  });
+
+  return Response.json({ data: task });
+}
+```
+
+Findings:
+
+- `title` δεν γίνεται validation.
+- `userId` έρχεται από client, άρα χρήστης μπορεί να γράψει task σε άλλον user.
+- Δεν υπάρχει error handling.
+
+Better direction:
+
+```ts
+export async function POST(request: Request) {
+  const currentUser = await requireUser();
+  const body = await request.json();
+
+  if (typeof body.title !== "string" || body.title.trim().length < 2) {
+    return Response.json({ error: "Title is required" }, { status: 400 });
+  }
+
+  const task = await db.task.create({
+    data: {
+      title: body.title.trim(),
+      userId: currentUser.id,
+    },
+  });
+
+  return Response.json({ data: task }, { status: 201 });
+}
+```
+
+## Example review 2: UI state
+
+```tsx
+function SaveButton() {
+  return <button onClick={save}>Save</button>;
+}
+```
+
+Questions:
+
+- Τι γίνεται όσο τρέχει το save;
+- Μπορεί ο χρήστης να πατήσει πολλές φορές;
+- Τι γίνεται αν αποτύχει;
+- Πώς βλέπει success;
+
+Better direction:
+
+```tsx
+function SaveButton({ isSaving }: { isSaving: boolean }) {
+  return (
+    <button disabled={isSaving}>
+      {isSaving ? "Saving..." : "Save"}
+    </button>
+  );
+}
+```
+
+## How to write review comments
+
+Καλό review comment:
+
+> This route trusts `userId` from the request body. That allows a user to create tasks for another user. Can we derive `userId` from the server-side session instead?
+
+Κακό review comment:
+
+> This is bad.
+
+Να είσαι συγκεκριμένος: risk, reason, suggested fix.
+
+## Mini project: review a PR
+
+Πάρε ένα δικό σου παλιό project και κάνε self-review:
+
+1. Άνοιξε ένα diff.
+2. Βρες 5 πιθανά issues.
+3. Γράψε review comments.
+4. Χώρισε τα findings σε bug, security, UX, readability, tests.
+5. Διόρθωσε τα 2 πιο σημαντικά.
+
+## Interview answer template
+
+> In code review, I focus first on behavior, security, edge cases, validation, and tests. I try to leave specific comments that explain the risk and suggest a practical fix.
+
+<Exercise
+  question="Τι έχει μεγαλύτερη προτεραιότητα σε code review;"
+  options={[
+    "Bug ή security issue που αλλάζει behavior.",
+    "Αν προτιμάμε single ή double quotes χωρίς style rule.",
+    "Αν το κουμπί έχει ωραίο όνομα στο Figma."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Behavior και risk προηγούνται από μικρά style σχόλια."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="code-review-practice" />
+</div>

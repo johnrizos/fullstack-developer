@@ -1,0 +1,163 @@
+# Milestone Projects
+
+Τα μικρά lessons σε μαθαίνουν concepts. Τα milestone projects δείχνουν αν μπορείς να τα συνδυάσεις.
+
+Ο στόχος δεν είναι να φτιάξεις τεράστια projects. Ο στόχος είναι να παραδώσεις 4 μικρά, καθαρά, ολοκληρωμένα έργα που δείχνουν progression.
+
+## Milestone 1: Responsive Website
+
+Χτίσε ένα responsive site για portfolio, local business ή product landing page.
+
+Required:
+
+- semantic HTML,
+- responsive layout,
+- accessible navigation,
+- contact form UI,
+- καθαρό spacing,
+- mobile και desktop views,
+- README με screenshots.
+
+Acceptance criteria:
+
+- Δεν υπάρχει horizontal scroll σε mobile.
+- Τα headings έχουν σωστή σειρά.
+- Links και buttons έχουν ξεκάθαρο κείμενο.
+- Η φόρμα έχει labels.
+- Το layout δουλεύει σε 375px και 1280px πλάτος.
+
+## Milestone 2: JavaScript App
+
+Χτίσε app με λίστα, φόρμα και persistence.
+
+Ιδέες:
+
+- habit tracker,
+- expense tracker,
+- notes app,
+- task board.
+
+Required:
+
+- add/edit/delete items,
+- validation,
+- filters ή search,
+- localStorage,
+- empty state,
+- error/help messages,
+- καθαρός χωρισμός functions.
+
+Acceptance criteria:
+
+- Τα δεδομένα μένουν μετά από refresh.
+- Δεν επιτρέπεται empty submit.
+- Ο χρήστης βλέπει μήνυμα όταν η λίστα είναι άδεια.
+- Υπάρχει τουλάχιστον ένα filter ή search.
+- Ο κώδικας δεν είναι όλος μέσα σε ένα event listener.
+
+## Milestone 3: React + TypeScript App
+
+Χτίσε typed React app με components και state.
+
+Ιδέες:
+
+- typed todo dashboard,
+- recipe manager,
+- project/task tracker frontend,
+- job applications tracker.
+
+Required:
+
+- TypeScript types/interfaces,
+- reusable components,
+- controlled forms,
+- derived state,
+- loading/error/empty states,
+- basic component tests ή documented manual checks.
+
+Acceptance criteria:
+
+- Props και state είναι typed.
+- Δεν υπάρχουν obvious `any` types.
+- Forms έχουν validation.
+- Components έχουν σαφή responsibility.
+- Το app περνάει `npm run lint` και `npm run build`.
+
+## Milestone 4: Fullstack Capstone
+
+Χτίσε production-style fullstack app.
+
+Recommended: **Project Tracker**
+
+Required:
+
+- auth,
+- protected dashboard,
+- database persistence,
+- projects CRUD,
+- tasks CRUD,
+- API/server validation,
+- user-specific data,
+- deploy,
+- README με setup και architecture notes.
+
+Acceptance criteria:
+
+- Logged-out user δεν βλέπει protected data.
+- User A δεν μπορεί να δει data του User B.
+- Create/update/delete flows δουλεύουν end-to-end.
+- Server-side validation προστατεύει writes.
+- Το app έχει deploy URL.
+- Το README εξηγεί setup, env vars και tradeoffs.
+
+## Submission checklist
+
+Για κάθε milestone παράδωσε:
+
+1. GitHub repo ή folder.
+2. README.
+3. Screenshots ή short demo notes.
+4. List με completed acceptance criteria.
+5. Commands που έτρεξες.
+6. 3 tradeoffs ή decisions.
+
+## Portfolio quality bar
+
+Ένα project είναι portfolio-ready όταν:
+
+- κάποιος άλλος μπορεί να το τρέξει από README,
+- φαίνεται καθαρά τι κάνει,
+- έχει πραγματικό user flow,
+- δεν σπάει στα πρώτα clicks,
+- έχει σωστό Git history,
+- μπορείς να το εξηγήσεις σε interview.
+
+## Mini project: milestone plan
+
+Γράψε ένα `MILESTONES.md` με:
+
+- τα 4 projects που θα χτίσεις,
+- τι features θα έχει το καθένα,
+- acceptance criteria,
+- estimated difficulty,
+- τι θα μπει στο portfolio.
+
+## Interview answer template
+
+> I built projects in milestones: first responsive HTML/CSS, then JavaScript state and persistence, then React with TypeScript, and finally a fullstack capstone with auth, database, validation, deploy, and README documentation.
+
+<Exercise
+  question="Γιατί χρειαζόμαστε milestone projects;"
+  options={[
+    "Για να αποδείξουμε ότι μπορούμε να συνδυάσουμε concepts σε ολοκληρωμένα έργα.",
+    "Για να αποφύγουμε τελείως το coding.",
+    "Για να μη χρειάζεται README."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Τα milestones δείχνουν progression και πρακτική ικανότητα."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="milestone-projects" />
+</div>

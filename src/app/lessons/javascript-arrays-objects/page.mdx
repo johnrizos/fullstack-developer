@@ -56,6 +56,54 @@ const task = {
 };
 ```
 
+## Array methods
+
+Τα πιο συχνά methods:
+
+- `map`: μετατρέπει κάθε item σε κάτι άλλο.
+- `filter`: κρατά μόνο όσα περνούν ένα condition.
+- `find`: βρίσκει το πρώτο item που ταιριάζει.
+- `some`: ελέγχει αν υπάρχει έστω ένα match.
+- `reduce`: συνδυάζει items σε μία τελική τιμή.
+
+Παράδειγμα:
+
+```js
+const completedTasks = tasks.filter((task) => task.done);
+const titles = tasks.map((task) => task.title);
+```
+
+## Objects και properties
+
+Με objects ο κώδικας γίνεται πιο περιγραφικός:
+
+```js
+const user = {
+  id: 1,
+  name: "Ada",
+  role: "admin"
+};
+
+console.log(user.name);
+```
+
+Αν έχεις λίστα από objects, έχεις τη βάση για rendering UI από data.
+
+## Rendering data
+
+Το common frontend pattern είναι:
+
+1. Έχεις array δεδομένων.
+2. Το μετατρέπεις σε HTML ή components.
+3. Το εμφανίζεις στη σελίδα.
+4. Όταν αλλάξουν τα δεδομένα, ξανακάνεις render.
+
+Στο μάθημα το κάνεις με `innerHTML`. Σε React θα κάνεις την ίδια ιδέα με JSX και `.map`.
+
+## Προσοχή στο innerHTML
+
+Το `innerHTML` είναι βολικό για practice, αλλά σε πραγματικό app θέλει προσοχή όταν το data έρχεται από χρήστη. Untrusted input μπορεί να δημιουργήσει XSS. Για τώρα κράτα το lesson focused στο rendering, αλλά να θυμάσαι ότι security matter.
+
 ## Mini project: task list renderer
 
 Εδώ έχεις array από task objects. Η function τα μετατρέπει σε HTML και τα βάζει στη λίστα.

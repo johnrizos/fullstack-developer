@@ -1,0 +1,169 @@
+# Agile, Scrum & Kanban
+
+Οι περισσότερες εταιρείες δεν δουλεύουν απλώς με “πάρε ένα task και γράψε κώδικα”. Δουλεύουν με board, tickets, priorities, reviews, standups και releases.
+
+Δεν χρειάζεται να γίνεις project manager. Χρειάζεται όμως να καταλαβαίνεις πώς κινείται η δουλειά μέσα σε μια ομάδα.
+
+## Agile
+
+Agile είναι τρόπος σκέψης: μικρά βήματα, συχνό feedback, προσαρμογή όταν αλλάζουν οι ανάγκες.
+
+Στην πράξη σημαίνει:
+
+- σπάμε τη δουλειά σε μικρότερα κομμάτια,
+- παραδίδουμε συχνά,
+- παίρνουμε feedback νωρίς,
+- διορθώνουμε πορεία αντί να περιμένουμε μήνες.
+
+Agile δεν σημαίνει “χωρίς πλάνο”. Σημαίνει ότι το πλάνο αλλάζει με βάση πραγματική πληροφορία.
+
+## Scrum
+
+Scrum είναι πιο structured framework. Συνήθως δουλεύει με sprints, π.χ. 1 ή 2 εβδομάδες.
+
+Συχνά Scrum events:
+
+- **Sprint planning**: τι θα δουλέψουμε στο sprint.
+- **Daily standup**: σύντομο sync για πρόοδο και blockers.
+- **Sprint review**: τι παραδόθηκε.
+- **Retrospective**: τι πήγε καλά και τι βελτιώνουμε.
+
+Συχνά roles:
+
+- **Product Owner**: προτεραιότητες και product direction.
+- **Scrum Master**: βοηθά τη διαδικασία και αφαιρεί blockers.
+- **Developers**: χτίζουν, τεστάρουν και παραδίδουν το increment.
+
+## Kanban
+
+Kanban είναι πιο flow-based. Η δουλειά κινείται σε columns όπως:
+
+```txt
+Backlog -> Ready -> In Progress -> Code Review -> Testing -> Done
+```
+
+Το βασικό concept είναι το **WIP limit**: Work In Progress limit. Αν όλοι ανοίγουν 5 tasks ταυτόχρονα, πολλά ξεκινάνε και λίγα τελειώνουν.
+
+Καλό Kanban board δείχνει:
+
+- τι είναι έτοιμο για δουλειά,
+- τι δουλεύεται τώρα,
+- τι είναι blocked,
+- τι περιμένει review,
+- τι έχει ολοκληρωθεί.
+
+## User stories
+
+Πολλά tickets γράφονται σαν user stories:
+
+```txt
+As a user,
+I want to reset my password,
+so that I can regain access to my account.
+```
+
+Αυτό βοηθά να βλέπεις τη δουλειά από την πλευρά του χρήστη, όχι μόνο σαν τεχνική λίστα.
+
+## Acceptance criteria
+
+Acceptance criteria είναι το checklist που λέει πότε ένα ticket θεωρείται done.
+
+Παράδειγμα:
+
+```txt
+Ticket: Add password reset form
+
+Acceptance criteria:
+- User can enter email.
+- Invalid email shows validation error.
+- Submit calls the password reset endpoint.
+- Success state appears after valid request.
+- Loading state disables the submit button.
+```
+
+Αν δεν υπάρχουν acceptance criteria, ρώτα πριν ξεκινήσεις. Αλλιώς μπορεί να φτιάξεις κάτι σωστό τεχνικά αλλά λάθος για το product.
+
+## Definition of done
+
+Definition of done είναι team agreement. Για ένα ticket μπορεί να σημαίνει:
+
+- ο κώδικας έγινε implement,
+- πέρασαν lint/tests/build,
+- έγινε code review,
+- προστέθηκαν basic tests,
+- ενημερώθηκε documentation αν χρειάζεται,
+- έγινε deploy ή είναι ready για deploy.
+
+Το “δούλεψε στο laptop μου” δεν είναι definition of done.
+
+## Πώς δουλεύεις σαν developer
+
+Όταν πάρεις ticket:
+
+1. Διάβασε user story και acceptance criteria.
+2. Εντόπισε ανοιχτές ερωτήσεις.
+3. Σπάσε τη δουλειά σε μικρά βήματα.
+4. Κράτα το PR focused.
+5. Γράψε τι άλλαξες και τι έλεγξες.
+6. Μετακίνησε σωστά το ticket στο board.
+
+Αν κολλήσεις, μη μένεις σιωπηλός. Στο standup πες καθαρά blocker και τι χρειάζεσαι.
+
+## Common mistakes
+
+- Ξεκινάς ticket χωρίς να καταλάβεις το expected behavior.
+- Ανοίγεις πολλά tasks ταυτόχρονα και δεν τελειώνεις κανένα.
+- Λες “done” πριν περάσουν checks/review.
+- Δεν ενημερώνεις το board, άρα η ομάδα δεν ξέρει την πραγματική κατάσταση.
+- Φτιάχνεις implementation που δεν καλύπτει acceptance criteria.
+
+## Mini project: task board workflow
+
+Φτιάξε ένα μικρό Kanban board για το capstone project σου με columns:
+
+1. Backlog.
+2. Ready.
+3. In Progress.
+4. Code Review.
+5. Done.
+
+Γράψε 5 tickets:
+
+- Login page.
+- Project list.
+- Create project form.
+- Task status filter.
+- Deployment checklist.
+
+Για κάθε ticket γράψε 2-4 acceptance criteria.
+
+## Interview answer template
+
+> I am comfortable working with Scrum or Kanban boards. I read acceptance criteria, ask clarifying questions early, keep work in progress limited, open focused pull requests, and use standups to surface blockers rather than just report activity.
+
+<Exercise
+  question="Τι είναι acceptance criteria;"
+  options={[
+    "Συγκεκριμένα κριτήρια που δείχνουν πότε ένα ticket θεωρείται ολοκληρωμένο.",
+    "CSS κανόνες για το χρώμα του board.",
+    "Git command για να κάνεις push."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Τα acceptance criteria είναι το πρακτικό checklist του ticket."
+/>
+
+<Exercise
+  question="Ποια είναι βασική ιδέα του Kanban;"
+  options={[
+    "Να βλέπεις τη ροή της δουλειάς σε board και να περιορίζεις το work in progress.",
+    "Να γράφεις μόνο backend κώδικα.",
+    "Να μη γίνονται ποτέ code reviews."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Το Kanban κάνει τη ροή ορατή και βοηθά την ομάδα να τελειώνει δουλειά."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="agile-scrum-kanban" />
+</div>

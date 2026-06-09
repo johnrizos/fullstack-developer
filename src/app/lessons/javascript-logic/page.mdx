@@ -49,6 +49,62 @@ if (score >= 60) {
 
 Αυτό σημαίνει: αν η συνθήκη είναι αληθινή, τρέξε το πρώτο block. Αλλιώς, τρέξε το δεύτερο.
 
+## Boolean values
+
+Οι συνθήκες καταλήγουν σε `true` ή `false`.
+
+```js
+const isPassing = score >= 60;
+const hasPerfectScore = score === 100;
+```
+
+Στον κώδικα συχνά κρατάμε τέτοιες τιμές σε variables για να διαβάζεται καλύτερα η απόφαση.
+
+## Comparison operators
+
+Συχνά operators:
+
+- `>` μεγαλύτερο από,
+- `>=` μεγαλύτερο ή ίσο,
+- `<` μικρότερο από,
+- `<=` μικρότερο ή ίσο,
+- `===` ίσο χωρίς type coercion,
+- `!==` διαφορετικό.
+
+Προτίμησε `===` αντί για `==` μέχρι να καταλάβεις καλά το coercion της JavaScript.
+
+## Multiple branches
+
+Αν έχεις περισσότερα από δύο outcomes, μπορείς να χρησιμοποιήσεις `else if`.
+
+```js
+if (score >= 90) {
+  console.log("Άριστα");
+} else if (score >= 60) {
+  console.log("Πέρασες");
+} else {
+  console.log("Δοκίμασε ξανά");
+}
+```
+
+Η σειρά έχει σημασία. Βάζεις πρώτα το πιο συγκεκριμένο ή πιο αυστηρό condition.
+
+## Logical operators
+
+Μπορείς να συνδυάσεις conditions:
+
+```js
+if (score >= 60 && attendance >= 80) {
+  console.log("Πέρασες το μάθημα");
+}
+
+if (role === "admin" || role === "owner") {
+  console.log("Έχεις πρόσβαση");
+}
+```
+
+Το `&&` σημαίνει “και τα δύο”. Το `||` σημαίνει “τουλάχιστον ένα”.
+
 ## Mini project: pass/fail score checker
 
 Άλλαξε το `score` και πάτα το κουμπί στο preview. Αν το score είναι 60 ή μεγαλύτερο, πρέπει να δείχνει μήνυμα επιτυχίας.

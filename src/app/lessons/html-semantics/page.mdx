@@ -55,6 +55,50 @@ main {
 - `article`: ανεξάρτητο περιεχόμενο, όπως άρθρο ή post.
 - `footer`: κάτω περιοχή με βοηθητικές πληροφορίες.
 
+## Landmarks
+
+Elements όπως `header`, `nav`, `main` και `footer` δημιουργούν landmarks. Τα screen readers μπορούν να τα χρησιμοποιήσουν σαν “χάρτη” της σελίδας.
+
+Συνήθως μια σελίδα πρέπει να έχει ένα κύριο `main`.
+
+```html
+<body>
+  <header>...</header>
+  <main>...</main>
+  <footer>...</footer>
+</body>
+```
+
+## Section vs article
+
+Χρησιμοποίησε `article` όταν το περιεχόμενο μπορεί να σταθεί μόνο του, όπως blog post, news item ή forum post.
+
+Χρησιμοποίησε `section` όταν χωρίζεις μια σελίδα σε θεματικές ενότητες.
+
+```html
+<article>
+  <h1>Οδηγός HTML</h1>
+  <section>
+    <h2>Semantics</h2>
+    <p>...</p>
+  </section>
+</article>
+```
+
+## Heading hierarchy
+
+Τα headings πρέπει να δείχνουν δομή:
+
+- `h1`: κύριος τίτλος σελίδας,
+- `h2`: μεγάλες ενότητες,
+- `h3`: υποενότητες.
+
+Μην διαλέγεις heading μόνο επειδή σου αρέσει το μέγεθος. Για μέγεθος χρησιμοποίησε CSS.
+
+## Common mistake
+
+Το semantic HTML δεν σημαίνει ότι δεν θα χρησιμοποιήσεις ποτέ `div`. Το `div` είναι fine όταν δεν υπάρχει καλύτερο semantic element. Απλώς μην το χρησιμοποιείς για τα πάντα από συνήθεια.
+
 ## Mini project: semantic article page
 
 Στόχος: κράτα τη σελίδα οργανωμένη με semantic elements. Δοκίμασε να αλλάξεις τίτλο και κείμενο, αλλά μην αφαιρέσεις τη δομή.

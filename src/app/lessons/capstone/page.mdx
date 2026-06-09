@@ -19,6 +19,57 @@ Features:
 - basic tests,
 - logs/error handling.
 
+Κράτα το scope μικρό αλλά ολοκληρωμένο. Ένα project με λίγα features που δουλεύουν end-to-end είναι πιο δυνατό από ένα τεράστιο app με μισοτελειωμένα screens.
+
+Προτεινόμενα entities:
+
+```txt
+User
+- id
+- email
+- name
+
+Project
+- id
+- ownerId
+- title
+- status
+
+Task
+- id
+- projectId
+- title
+- completed
+- dueDate
+```
+
+## Αρχιτεκτονική
+
+Μια καθαρή αρχιτεκτονική για capstone:
+
+- Next.js pages/layouts για UI.
+- React components για forms, lists, filters.
+- Server routes/actions για mutations.
+- Database schema με relations.
+- Auth layer για current user.
+- Validation σε κάθε write.
+- Tests για critical flows.
+
+Το βασικό είναι να μπορείς να εξηγήσεις γιατί διάλεξες αυτή τη δομή.
+
+## MVP scope
+
+Πρώτη έκδοση:
+
+1. Login/logout.
+2. Dashboard με projects.
+3. Create/update/delete project.
+4. Tasks μέσα σε project.
+5. Filter tasks by status.
+6. Deploy με env vars.
+
+Μετά πρόσθεσε polish: loading states, empty states, optimistic UI, search, tests.
+
 ## Τι πρέπει να εξηγείς σε συνέντευξη
 
 Για κάθε project πρέπει να μπορείς να απαντήσεις:
@@ -30,6 +81,21 @@ Features:
 - Τι tests έγραψες;
 - Πώς έγινε deploy;
 - Τι θα βελτίωνες αν είχες περισσότερο χρόνο;
+
+## README structure
+
+Το README είναι μέρος του project. Βάλε:
+
+- τι κάνει το app,
+- screenshots,
+- tech stack,
+- local setup,
+- environment variables,
+- database setup/migrations,
+- test commands,
+- deploy link,
+- architecture notes,
+- tradeoffs.
 
 ## Capstone checklist
 
@@ -43,6 +109,28 @@ Features:
 8. Deployment.
 9. README με screenshots και setup.
 10. Interview notes: tradeoffs και decisions.
+
+## Quality bar
+
+Πριν πεις ότι το capstone είναι έτοιμο:
+
+- Δεν υπάρχουν obvious console errors.
+- Τα forms έχουν validation και error messages.
+- Τα protected data δεν φορτώνουν χωρίς login.
+- Τα empty/loading/error states υπάρχουν.
+- Το app κάνει deploy από καθαρό install.
+- Το README επιτρέπει σε άλλον developer να το τρέξει.
+
+## Stretch goals
+
+Διάλεξε μόνο 1-2 αν έχεις χρόνο:
+
+- role-based permissions,
+- activity log,
+- email notifications,
+- file uploads,
+- charts/analytics,
+- Playwright end-to-end tests.
 
 ## Interview answer template
 

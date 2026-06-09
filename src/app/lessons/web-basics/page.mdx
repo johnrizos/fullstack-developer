@@ -10,11 +10,28 @@
 
 Όταν γράφεις μια διεύθυνση όπως `example.com`, ο browser δεν "έχει" ήδη τη σελίδα. Πρέπει να τη ζητήσει.
 
+Ο browser ξέρει να:
+
+- στέλνει HTTP requests,
+- διαβάζει HTML,
+- κατεβάζει CSS και JavaScript,
+- εκτελεί JavaScript,
+- εμφανίζει τη σελίδα στην οθόνη.
+
+Αυτό σημαίνει ότι ο frontend κώδικας τρέχει στον client, ενώ ο backend κώδικας τρέχει στον server.
+
 ## 2. Server: ο υπολογιστής που σερβίρει τη σελίδα
 
 Ο **server** είναι ένας υπολογιστής συνδεδεμένος στο Internet που αποθηκεύει αρχεία και δεδομένα. Όταν ο browser ζητά μια σελίδα, ο server βρίσκει αυτό που χρειάζεται και το στέλνει πίσω.
 
 Στην πράξη, ένας server μπορεί να στείλει HTML, CSS, JavaScript, εικόνες ή δεδομένα σε μορφή JSON.
+
+Παράδειγμα:
+
+- `GET /` επιστρέφει HTML.
+- `GET /styles.css` επιστρέφει CSS.
+- `GET /app.js` επιστρέφει JavaScript.
+- `GET /api/products` επιστρέφει JSON.
 
 ## 3. Request και Response
 
@@ -24,6 +41,52 @@
 - **Response**: ο server απαντά με το περιεχόμενο ή με ένα μήνυμα λάθους.
 
 Αυτός ο κύκλος είναι η βάση σχεδόν όλου του web development. Όταν αργότερα μάθεις APIs, forms και databases, θα δεις την ίδια ιδέα ξανά και ξανά.
+
+Παράδειγμα request:
+
+```http
+GET /lessons HTTP/1.1
+Host: example.com
+```
+
+Παράδειγμα response:
+
+```http
+HTTP/1.1 200 OK
+Content-Type: text/html
+```
+
+## 4. DNS και URL
+
+Το URL είναι η διεύθυνση που γράφεις. Το DNS βοηθά να μετατραπεί ένα όνομα όπως `example.com` σε IP address, ώστε ο browser να βρει τον σωστό server.
+
+Ένα URL μπορεί να έχει:
+
+- protocol: `https://`,
+- domain: `example.com`,
+- path: `/lessons/web-basics`,
+- query string: `?page=2`.
+
+## 5. HTTP status codes
+
+Οι απαντήσεις έχουν status code:
+
+- `200`: όλα καλά.
+- `301/302`: redirect.
+- `404`: δεν βρέθηκε.
+- `500`: πρόβλημα στον server.
+
+Όταν βλέπεις error σε app, συχνά πρέπει να κοιτάς ποιο request απέτυχε και με ποιο status.
+
+## Mini project: request map
+
+Άνοιξε ένα site με DevTools και γράψε:
+
+1. Ποιο είναι το πρώτο document request;
+2. Ποια CSS/JS αρχεία κατέβηκαν;
+3. Υπάρχει κάποιο API request;
+4. Ποιο status code έχει κάθε request;
+5. Ποια response επιστρέφει JSON;
 
 ## Μικρός έλεγχος
 

@@ -17,6 +17,16 @@ CREATE TABLE tasks (
 );
 ```
 
+Το μεγάλο πλεονέκτημα είναι ότι μπορείς να δηλώσεις constraints. Αν ένα `title` είναι `NOT NULL`, η database προστατεύει τα δεδομένα ακόμα και αν το backend έχει bug.
+
+Συχνά constraints:
+
+- `PRIMARY KEY` για μοναδική ταυτότητα,
+- `NOT NULL` για required πεδία,
+- `UNIQUE` για email ή slug,
+- `FOREIGN KEY` για σχέσεις,
+- `CHECK` για business rules.
+
 ## Relationships
 
 Συχνά έχεις σχέσεις:
@@ -24,6 +34,23 @@ CREATE TABLE tasks (
 - user έχει πολλά tasks,
 - order έχει πολλά order items,
 - product ανήκει σε category.
+
+Παράδειγμα με foreign key:
+
+```sql
+CREATE TABLE users (
+  id UUID PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE tasks (
+  id UUID PRIMARY KEY,
+  title TEXT NOT NULL,
+  user_id UUID NOT NULL REFERENCES users(id)
+);
+```
+
+Έτσι δεν μπορεί να υπάρξει task για user που δεν υπάρχει.
 
 ## Indexes
 
@@ -33,9 +60,40 @@ Index βοηθά τα queries να βρίσκουν δεδομένα πιο γρ
 CREATE INDEX tasks_user_id_idx ON tasks(user_id);
 ```
 
+Τα indexes δεν είναι δωρεάν. Κάνουν τα reads πιο γρήγορα, αλλά προσθέτουν κόστος σε writes και storage. Τα βάζεις σε columns που χρησιμοποιούνται συχνά σε `WHERE`, `JOIN`, `ORDER BY`.
+
 ## NoSQL
 
 NoSQL όπως MongoDB αποθηκεύει documents. Είναι χρήσιμο όταν τα δεδομένα είναι πιο flexible, αλλά πρέπει πάλι να σχεδιάζεις προσεκτικά.
+
+Παράδειγμα document:
+
+```json
+{
+  "id": "task_1",
+  "title": "Learn databases",
+  "completed": false,
+  "tags": ["backend", "sql"]
+}
+```
+
+Το NoSQL δεν σημαίνει “χωρίς schema thinking”. Σημαίνει ότι το schema συχνά ζει περισσότερο στο app layer και στα access patterns.
+
+## Transactions
+
+Transaction σημαίνει ότι πολλά βήματα γίνονται όλα μαζί ή κανένα.
+
+Παράδειγμα: σε checkout δεν θέλεις να χρεωθεί ο χρήστης αλλά να μη δημιουργηθεί order. Εκεί χρειάζεσαι transaction ή προσεκτικό distributed workflow.
+
+## Mini project: persistent tasks database
+
+Σχεδίασε database για todo app με users:
+
+1. `users` table με `id`, `email`, `created_at`.
+2. `tasks` table με `id`, `user_id`, `title`, `completed`, `created_at`.
+3. Foreign key από `tasks.user_id` σε `users.id`.
+4. Index στο `tasks.user_id`.
+5. Query που φέρνει μόνο τα tasks του current user.
 
 ## Interview answer template
 

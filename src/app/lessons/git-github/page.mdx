@@ -15,6 +15,15 @@ git commit -m "Add login form"
 git push
 ```
 
+Πριν κάνεις commit, πάντα κοίτα:
+
+```bash
+git status
+git diff
+```
+
+Το `status` δείχνει ποια αρχεία άλλαξαν. Το `diff` δείχνει τι ακριβώς άλλαξε.
+
 ## Commit
 
 Ένα commit είναι snapshot αλλαγών με μήνυμα. Καλό commit:
@@ -29,6 +38,16 @@ git push
 Add validated contact form
 ```
 
+Απόφυγε μηνύματα όπως:
+
+```txt
+fix
+changes
+update stuff
+```
+
+Ένα καλό commit message λέει τι άλλαξε, όχι απλώς ότι άλλαξε κάτι.
+
 ## Branch
 
 Branch είναι απομονωμένη γραμμή δουλειάς.
@@ -39,6 +58,22 @@ git switch -c feature/contact-form
 
 Δουλεύεις σε branch ώστε το main να μένει σταθερό.
 
+Συχνά branch names:
+
+- `feature/auth-flow`,
+- `fix/navbar-overflow`,
+- `chore/update-eslint`.
+
+## Pull και sync
+
+Πριν ανοίξεις PR ή πριν συνεχίσεις δουλειά μετά από ώρα, φέρε τις τελευταίες αλλαγές:
+
+```bash
+git pull
+```
+
+Αν δουλεύεις σε ομάδα, αυτό μειώνει εκπλήξεις και conflicts.
+
 ## Pull request
 
 Pull request είναι πρόταση αλλαγής. Εκεί γίνονται:
@@ -48,6 +83,14 @@ Pull request είναι πρόταση αλλαγής. Εκεί γίνονται
 - discussion,
 - merge.
 
+Ένα καλό PR έχει:
+
+- μικρό scope,
+- καθαρή περιγραφή,
+- screenshots για UI αλλαγές,
+- τι tests έτρεξες,
+- links σε issue/task αν υπάρχει.
+
 ## Merge conflicts
 
 Conflict συμβαίνει όταν δύο αλλαγές ακουμπάνε το ίδιο σημείο. Η σωστή απάντηση σε interview δεν είναι “φοβάμαι τα conflicts”, αλλά:
@@ -56,6 +99,18 @@ Conflict συμβαίνει όταν δύο αλλαγές ακουμπάνε τ
 2. Κρατάω τη σωστή τελική εκδοχή.
 3. Τρέχω tests/build.
 4. Κάνω commit το resolved conflict.
+
+## .gitignore
+
+Δεν πρέπει όλα τα αρχεία να μπαίνουν στο Git. Συνήθως αγνοείς:
+
+- `node_modules`,
+- `.env`,
+- build outputs,
+- local logs,
+- editor/system files.
+
+Το `.env.example` μπορεί να μπει στο Git για να δείχνει ποια env vars χρειάζονται, χωρίς values.
 
 ## GitHub Actions
 

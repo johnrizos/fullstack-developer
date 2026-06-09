@@ -11,6 +11,16 @@ npm run lint
 npm run build
 ```
 
+Το build είναι το πρώτο production simulation. Αν αποτύχει εδώ, πιθανότατα θα αποτύχει και στο hosting provider.
+
+Έλεγξε επίσης:
+
+- TypeScript errors,
+- missing environment variables,
+- broken imports,
+- routes που κάνουν fetch σε λάθος URL,
+- warnings που δείχνουν deprecated APIs.
+
 ## Environment variables
 
 Τα env vars κρατούν configuration:
@@ -21,6 +31,16 @@ npm run build
 - feature flags.
 
 Δεν μπαίνουν στο Git.
+
+Στο Next.js υπάρχει σημαντική διάκριση: μεταβλητές που ξεκινούν με `NEXT_PUBLIC_` μπορούν να φτάσουν στο browser. Secrets όπως `DATABASE_URL`, `STRIPE_SECRET_KEY` ή OAuth client secrets πρέπει να μένουν χωρίς `NEXT_PUBLIC_` και να χρησιμοποιούνται μόνο server-side.
+
+```ts
+const databaseUrl = process.env.DATABASE_URL;
+
+if (!databaseUrl) {
+  throw new Error("DATABASE_URL is required");
+}
+```
 
 ## Vercel / AWS / Azure / GCP
 
@@ -33,6 +53,62 @@ npm run build
 - object storage,
 - managed databases,
 - logs.
+
+Η βασική ερώτηση δεν είναι “ποιο cloud είναι καλύτερο;”. Είναι αν ξέρεις τι χρειάζεται η εφαρμογή:
+
+- πού τρέχει το frontend,
+- πού τρέχουν τα API routes ή ο backend server,
+- πού αποθηκεύονται τα δεδομένα,
+- πώς γίνονται migrations,
+- πού βλέπεις logs και errors,
+- πώς γυρνάς πίσω αν κάτι σπάσει.
+
+## Mini project: deploy checklist
+
+Φτιάξε ένα `DEPLOYMENT_CHECKLIST.md` για το project σου με τις ενότητες:
+
+1. Local checks: `npm run lint`, `npm run build`.
+2. Environment variables: ποια χρειάζονται και σε ποιο environment.
+3. Database: migrations, seed data, backup.
+4. Observability: logs, error tracking, health checks.
+5. Rollback: τι κάνεις αν το release έχει bug.
+
+## Production mindset
+
+Σε production σκέφτεσαι με ρίσκο:
+
+- Αν πέσει ένα external API, τι βλέπει ο χρήστης;
+- Αν λείπει env var, αποτυγχάνει καθαρά το app;
+- Αν το deploy είναι λάθος, υπάρχει προηγούμενη έκδοση;
+- Αν εμφανιστεί error, μπορείς να το διαγνώσεις από logs;
+
+## Environments
+
+Συνήθως υπάρχουν διαφορετικά environments:
+
+- **local**: το laptop σου,
+- **preview/staging**: δοκιμή πριν production,
+- **production**: πραγματικοί χρήστες.
+
+Κάθε environment έχει δικά του env vars, database και deploy URL. Μην χρησιμοποιείς production database σε local development.
+
+## Migrations
+
+Αν η εφαρμογή έχει database, deploy δεν είναι μόνο code. Πρέπει να σκεφτείς schema migrations.
+
+Καλή πρακτική:
+
+- κάνε backup πριν από risky migration,
+- γράψε backward-compatible αλλαγές όταν γίνεται,
+- μην κάνεις destructive migration χωρίς plan,
+- έλεγξε ότι το νέο code και το νέο schema ταιριάζουν.
+
+Παράδειγμα ασφαλέστερης σειράς:
+
+1. Πρόσθεσε νέο optional column.
+2. Κάνε deploy code που γράφει και στο νέο column.
+3. Backfill παλιά δεδομένα.
+4. Κάνε required το column σε επόμενο release.
 
 ## Interview answer template
 

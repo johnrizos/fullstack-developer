@@ -53,6 +53,58 @@ form.addEventListener("submit", function (event) {
 
 Το `localStorage` κρατά δεδομένα στον browser, ακόμα και αν κάνεις refresh.
 
+## DOM selection
+
+Με `document.querySelector` βρίσκεις element από τη σελίδα.
+
+```js
+const form = document.querySelector("#note-form");
+const input = document.querySelector("#note");
+```
+
+Το `#note-form` σημαίνει element με id `note-form`. Αν το selector είναι λάθος, το αποτέλεσμα μπορεί να είναι `null`, άρα σε real app χρειάζεται προσοχή.
+
+## Form submit
+
+Όταν κάνεις submit μια HTML φόρμα, ο browser από default μπορεί να κάνει page reload. Με `event.preventDefault()` κρατάς τον έλεγχο στο JavaScript.
+
+```js
+form.addEventListener("submit", function (event) {
+  event.preventDefault();
+});
+```
+
+## Reading και writing values
+
+Τα inputs έχουν `.value`. Τα text elements συχνά ενημερώνονται με `.textContent`.
+
+```js
+const note = input.value;
+savedNote.textContent = note;
+```
+
+Για user-provided text, το `textContent` είναι πιο ασφαλές από `innerHTML`, γιατί δεν εκτελεί HTML.
+
+## localStorage
+
+Το `localStorage` αποθηκεύει strings.
+
+```js
+localStorage.setItem("note", "Hello");
+const note = localStorage.getItem("note");
+localStorage.removeItem("note");
+```
+
+Μην βάζεις secrets, passwords ή sensitive tokens στο localStorage. Είναι αποθήκευση στον browser, όχι secure vault.
+
+## Mini checklist
+
+- Το form έχει submit listener.
+- Το submit δεν κάνει reload.
+- Η τιμή διαβάζεται από το input.
+- Η σελίδα ενημερώνεται αμέσως.
+- Το data παραμένει μετά από refresh.
+
 ## Mini project: saved notes form
 
 Γράψε σημείωση στο preview και πάτα αποθήκευση. Ο κώδικας αποθηκεύει την τιμή και ενημερώνει το κείμενο στη σελίδα.

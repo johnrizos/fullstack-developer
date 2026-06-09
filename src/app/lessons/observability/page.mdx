@@ -21,9 +21,38 @@ Logs πρέπει να απαντούν:
 }
 ```
 
+Πρόσεχε να μη γράφεις secrets ή προσωπικά δεδομένα χωρίς λόγο. Καλό log:
+
+```json
+{
+  "level": "warn",
+  "requestId": "req_42",
+  "userId": "user_123",
+  "route": "/api/payments",
+  "status": 502,
+  "provider": "stripe"
+}
+```
+
+Κακό log:
+
+```json
+{
+  "apiKey": "sk_live_secret",
+  "creditCard": "4242424242424242"
+}
+```
+
 ## Error tracking
 
 Εργαλεία όπως Sentry βοηθούν να βλέπεις stack traces, affected users και frequency.
+
+Error tracking δεν είναι απλό console output. Σε βοηθά να δεις:
+
+- ποιο release έφερε το error,
+- πόσοι χρήστες επηρεάζονται,
+- ποιο browser/server environment το εμφανίζει,
+- αν το ίδιο error επαναλαμβάνεται.
 
 ## Metrics
 
@@ -33,6 +62,63 @@ Metrics δείχνουν patterns:
 - error rate,
 - request count,
 - memory/CPU.
+
+Τα πιο χρήσιμα production metrics για web app:
+
+- p95 latency: πόσο αργά είναι τα πιο αργά requests,
+- error rate: πόσα requests αποτυγχάνουν,
+- throughput: πόσα requests ανά λεπτό,
+- saturation: CPU, memory, database connections.
+
+## Tracing
+
+Tracing δείχνει τη διαδρομή ενός request μέσα από πολλά services. Αν ένα endpoint αργεί, trace μπορεί να δείξει αν φταίει database query, external API ή rendering.
+
+## Alerts
+
+Monitoring χωρίς alerts σημαίνει ότι μαθαίνεις το πρόβλημα από τους χρήστες. Alerts πρέπει να είναι λίγα και χρήσιμα:
+
+- error rate πάνω από όριο,
+- p95 latency πολύ υψηλό,
+- database connections κοντά στο limit,
+- background job failures,
+- payment/email provider failures.
+
+Αν ένα alert χτυπάει συνέχεια χωρίς action, η ομάδα θα αρχίσει να το αγνοεί.
+
+## Incident notes
+
+Μετά από production incident, κράτα σύντομο postmortem:
+
+1. Τι συνέβη;
+2. Πότε ξεκίνησε και πότε λύθηκε;
+3. Πόσοι χρήστες επηρεάστηκαν;
+4. Ποια ήταν η αιτία;
+5. Τι αλλάζουμε για να μην ξανασυμβεί;
+
+## Mini project: observable API route
+
+Πάρε ένα API route και πρόσθεσε:
+
+1. `requestId`.
+2. Structured log στην αρχή και στο τέλος.
+3. Error log με status code.
+4. Χρόνο εκτέλεσης σε milliseconds.
+5. Προσοχή να μην τυπώσεις secrets.
+
+```ts
+const startedAt = Date.now();
+
+try {
+  console.info({ requestId, route: "/api/tasks", event: "start" });
+  const data = await loadTasks();
+  console.info({ requestId, durationMs: Date.now() - startedAt, event: "success" });
+  return Response.json({ data });
+} catch (error) {
+  console.error({ requestId, durationMs: Date.now() - startedAt, event: "error" });
+  return Response.json({ error: "Something went wrong" }, { status: 500 });
+}
+```
 
 ## Interview answer template
 

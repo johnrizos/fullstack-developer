@@ -50,6 +50,48 @@ button {
 
 Αυτό βοηθά και στην προσβασιμότητα και στη χρηστικότητα.
 
+Όταν ο χρήστης πατήσει το label, ο browser κάνει focus στο σωστό input. Screen readers επίσης χρησιμοποιούν το label για να εξηγήσουν τι ζητά το πεδίο.
+
+## Input types
+
+Μην χρησιμοποιείς πάντα `type="text"`. Το σωστό type βοηθά validation, mobile keyboards και browser UX.
+
+```html
+<input type="email" />
+<input type="password" />
+<input type="number" />
+<input type="date" />
+```
+
+## Required και helper text
+
+Αν ένα πεδίο είναι υποχρεωτικό, δήλωσέ το καθαρά:
+
+```html
+<label for="message">Μήνυμα</label>
+<textarea id="message" name="message" required></textarea>
+```
+
+Για λάθη, δώσε συγκεκριμένο μήνυμα. Μην γράφεις απλά “invalid”.
+
+## Buttons
+
+Μέσα σε φόρμα, το button χωρίς type συμπεριφέρεται συνήθως σαν submit. Για καθαρότητα γράφε:
+
+```html
+<button type="submit">Αποστολή</button>
+<button type="button">Άκυρο</button>
+```
+
+## Accessibility checklist
+
+- Κάθε input έχει label.
+- Το label συνδέεται με `for` και `id`.
+- Τα required fields είναι ξεκάθαρα.
+- Τα error messages εμφανίζονται κοντά στο πεδίο.
+- Το form δουλεύει με keyboard.
+- Το submit button έχει περιγραφικό κείμενο.
+
 ## Mini project: accessible contact form
 
 Κράτα τη φόρμα καθαρή και βεβαιώσου ότι υπάρχουν labels, inputs και submit button.

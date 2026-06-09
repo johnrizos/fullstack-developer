@@ -39,6 +39,56 @@ export const navCss = `body {
 - `flex-wrap: wrap`: επιτρέπει στα στοιχεία να πάνε σε νέα γραμμή όταν δεν χωράνε.
 - `justify-content`: ελέγχει την οριζόντια στοίχιση.
 
+## Main axis και cross axis
+
+Στο Flexbox υπάρχει main axis και cross axis.
+
+Με default `flex-direction: row`:
+
+- main axis είναι οριζόντια,
+- cross axis είναι κάθετα.
+
+```css
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+```
+
+Το `justify-content` δουλεύει στον main axis. Το `align-items` δουλεύει στον cross axis.
+
+## gap αντί για margins
+
+Για απόσταση ανάμεσα σε flex items, προτίμησε `gap`.
+
+```css
+.nav {
+  display: flex;
+  gap: 12px;
+}
+```
+
+Είναι πιο καθαρό από το να βάζεις margin σε κάθε link και να διορθώνεις το πρώτο/τελευταίο.
+
+## Responsive thinking
+
+Responsive layout σημαίνει ότι το UI αντέχει σε διαφορετικά πλάτη. Για navbars, το `flex-wrap: wrap` αποτρέπει overlap.
+
+Άλλες συχνές τεχνικές:
+
+- `max-width` για readable content,
+- `%` ή `fr` units για flexible widths,
+- media queries όταν αλλάζει πραγματικά η δομή,
+- `min-width: 0` σε flex children που έχουν long text.
+
+## Mini checklist
+
+- Τα items δεν βγαίνουν έξω από το container.
+- Το text δεν κόβεται.
+- Τα tap targets παραμένουν αρκετά μεγάλα.
+- Το layout δουλεύει και με 2 και με 8 links.
+
 ## Mini project: responsive nav bar
 
 Φτιάξε navigation που δεν σπάει σε μικρές οθόνες. Το `flex-wrap` είναι σημαντικό εδώ.

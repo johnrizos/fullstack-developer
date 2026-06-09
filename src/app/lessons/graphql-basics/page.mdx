@@ -4,6 +4,8 @@ GraphQL είναι API style όπου ο client ζητά ακριβώς τα fie
 
 ## Query
 
+Query σημαίνει read operation. Ο client δηλώνει το shape της απάντησης.
+
 ```graphql
 query {
   tasks {
@@ -14,13 +16,29 @@ query {
 }
 ```
 
+Αν ο client δεν ζητήσει `completed`, ο server δεν χρειάζεται να το επιστρέψει. Αυτό μειώνει overfetching, ειδικά όταν mobile και web clients χρειάζονται διαφορετικά fields.
+
 ## Mutation
+
+Mutation σημαίνει write operation: create, update ή delete.
 
 ```graphql
 mutation {
   createTask(title: "Learn GraphQL") {
     id
     title
+  }
+}
+```
+
+Σε production API, η mutation συνήθως δέχεται input object:
+
+```graphql
+mutation CreateTask($input: CreateTaskInput!) {
+  createTask(input: $input) {
+    id
+    title
+    completed
   }
 }
 ```
@@ -37,9 +55,91 @@ type Task {
 }
 ```
 
+Στο schema δηλώνεις types, queries, mutations και ποια fields είναι required με `!`.
+
+```graphql
+type Query {
+  tasks: [Task!]!
+  task(id: ID!): Task
+}
+
+input CreateTaskInput {
+  title: String!
+}
+```
+
+## Resolver
+
+Resolver είναι η function που φέρνει τα δεδομένα για ένα field.
+
+```ts
+const resolvers = {
+  Query: {
+    tasks: async () => db.task.findMany(),
+  },
+  Mutation: {
+    createTask: async (_parent, args) => {
+      return db.task.create({ data: { title: args.input.title } });
+    },
+  },
+};
+```
+
+Το συχνό performance πρόβλημα είναι το **N+1 query**: για κάθε item κάνεις ξεχωριστό database query. Σε πραγματικά GraphQL APIs συχνά χρησιμοποιείς batching/caching με DataLoader ή προσεκτικά joins.
+
 ## REST vs GraphQL
 
 REST είναι απλό και predictable για πολλά APIs. GraphQL βοηθά όταν έχεις πολλά clients ή σύνθετα data requirements και θέλεις να αποφύγεις overfetching/underfetching.
+
+Καλή χρήση GraphQL:
+
+- dashboard που χρειάζεται data από πολλά resources,
+- mobile client που θέλει μικρότερα responses,
+- προϊόν με διαφορετικά clients και shared schema.
+
+Πιθανή κακή χρήση:
+
+- πολύ απλό CRUD API όπου REST είναι αρκετό,
+- ομάδα χωρίς εμπειρία σε schema design/caching,
+- endpoints που κυρίως κάνουν file uploads ή streaming.
+
+## Authorization
+
+Μην θεωρείς ότι επειδή ένα field δεν φαίνεται στο UI είναι ασφαλές. Ο client μπορεί να γράψει δικό του query.
+
+Authorization πρέπει να γίνεται στους resolvers ή στο service layer:
+
+```ts
+const resolvers = {
+  Query: {
+    task: async (_parent, args, context) => {
+      const task = await db.task.findUnique({ where: { id: args.id } });
+
+      if (!task || task.userId !== context.currentUser.id) {
+        throw new Error("Forbidden");
+      }
+
+      return task;
+    },
+  },
+};
+```
+
+## Caching
+
+REST caching συχνά βασίζεται εύκολα σε URLs. GraphQL είναι πιο σύνθετο επειδή πολλά διαφορετικά queries πάνε στο ίδιο endpoint, συνήθως `/graphql`. Γι' αυτό client caches όπως Apollo/Relay χρησιμοποιούν normalized cache με IDs και types.
+
+## Mini project: task schema
+
+Σχεδίασε GraphQL schema για tasks:
+
+- `Task` με `id`, `title`, `completed`, `createdAt`.
+- `Query.tasks` για λίστα.
+- `Query.task(id: ID!)` για ένα task.
+- `Mutation.createTask(input: CreateTaskInput!)`.
+- `Mutation.toggleTask(id: ID!)`.
+
+Μετά γράψε μία query και μία mutation που θα χρησιμοποιούσε ένα frontend todo app.
 
 ## Interview answer template
 

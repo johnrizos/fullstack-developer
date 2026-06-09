@@ -37,6 +37,48 @@ button {
 
 Αν δεν καταλάβεις box model, τα layouts θα μοιάζουν τυχαία. Αν το καταλάβεις, οι αποστάσεις γίνονται ελεγχόμενες.
 
+## Content, padding, border, margin
+
+Σκέψου μια κάρτα:
+
+- Το text είναι το content.
+- Το padding είναι ο χώρος ανάμεσα στο text και το περίγραμμα.
+- Το border είναι το περίγραμμα.
+- Το margin είναι η απόσταση από άλλα elements.
+
+```css
+.card {
+  width: 320px;
+  padding: 24px;
+  border: 2px solid #2563eb;
+  margin: 0 auto;
+}
+```
+
+## box-sizing
+
+Με default `content-box`, το `width` μετρά μόνο το content. Το padding και border προστίθενται έξτρα.
+
+Στην πράξη πολλοί developers χρησιμοποιούν:
+
+```css
+* {
+  box-sizing: border-box;
+}
+```
+
+Έτσι το `width` περιλαμβάνει content, padding και border, και τα layouts γίνονται πιο προβλέψιμα.
+
+## Margin collapse
+
+Κάθετο margin μεταξύ blocks μπορεί να “ενωθεί” αντί να προστεθεί. Αν δύο paragraphs έχουν `margin-bottom: 16px` και `margin-top: 16px`, η απόσταση μπορεί να μην γίνει 32px.
+
+Δεν χρειάζεται να το αποστηθίσεις από τώρα. Θυμήσου απλώς ότι margin είναι εξωτερική απόσταση και μπορεί να έχει ειδική συμπεριφορά.
+
+## Debugging tip
+
+Στα DevTools, το browser δείχνει box model diagram. Εκεί μπορείς να δεις live content, padding, border και margin για το selected element.
+
 ## Mini project: spacing card
 
 Πείραξε τις τιμές και δες πώς αλλάζει η κάρτα. Το checklist ζητά συγκεκριμένες αποστάσεις και border.

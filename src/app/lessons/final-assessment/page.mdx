@@ -1,0 +1,197 @@
+# Final Assessment
+
+Το final assessment είναι το σημείο όπου δεν μετράμε αν διάβασες τα lessons. Μετράμε αν μπορείς να παραδώσεις ένα portfolio-ready fullstack project.
+
+Η αξιολόγηση γίνεται με rubrics.
+
+## Required project
+
+Παράδωσε ένα fullstack app με:
+
+- React + TypeScript UI,
+- Next.js routing,
+- backend/API logic,
+- database persistence,
+- auth,
+- protected user data,
+- validation,
+- loading/error/empty states,
+- tests ή documented checks,
+- deploy,
+- README.
+
+Recommended project: **Project Tracker**
+
+## Rubric: Frontend
+
+Pass criteria:
+
+- UI έχει καθαρό layout.
+- Forms είναι usable και validated.
+- Υπάρχουν loading/error/empty states.
+- Components έχουν λογική ευθύνη.
+- Δεν υπάρχουν obvious console errors.
+- Mobile layout δεν σπάει.
+
+Strong criteria:
+
+- Reusable components.
+- Accessible labels/buttons.
+- Good optimistic or disabled states.
+- Clear state management.
+
+## Rubric: TypeScript
+
+Pass criteria:
+
+- Props/state είναι typed.
+- API responses έχουν types.
+- Δεν γίνεται κατάχρηση `any`.
+- Τα domain models είναι ξεκάθαρα.
+
+Strong criteria:
+
+- Shared types όπου έχει νόημα.
+- Union types για status/roles.
+- Typed validation boundaries.
+
+## Rubric: Backend/API
+
+Pass criteria:
+
+- CRUD flow δουλεύει.
+- Validation γίνεται server-side.
+- Status codes είναι σωστά.
+- Error response shape είναι προβλέψιμο.
+- User data προστατεύεται server-side.
+
+Strong criteria:
+
+- Clean service/helper functions.
+- Consistent API contract.
+- Logs για σημαντικά failures.
+
+## Rubric: Database/Auth/Security
+
+Pass criteria:
+
+- Data έχει σωστό schema.
+- Υπάρχουν relationships όπου χρειάζεται.
+- Auth προστατεύει dashboard.
+- Authorization ελέγχει ownership.
+- Secrets δεν είναι στο frontend ή Git.
+
+Strong criteria:
+
+- Thoughtful indexes.
+- Safe migration notes.
+- Clear session/JWT strategy explanation.
+
+## Rubric: Testing/Quality
+
+Pass criteria:
+
+- `npm run lint` περνάει.
+- `npm run build` περνάει.
+- Υπάρχει τουλάχιστον basic test ή documented manual test plan.
+- Critical flows έχουν ελεγχθεί.
+
+Strong criteria:
+
+- Unit tests για utilities.
+- Component/user-flow tests.
+- CI workflow.
+
+## Rubric: Deployment/Documentation
+
+Pass criteria:
+
+- App έχει deploy URL.
+- README εξηγεί setup.
+- Env vars documented χωρίς secret values.
+- Architecture notes υπάρχουν.
+- Tradeoffs εξηγούνται.
+
+Strong criteria:
+
+- Screenshots.
+- Demo credentials ή demo flow.
+- Known limitations.
+- Next improvements.
+
+## Scoring
+
+Χρησιμοποίησε αυτό:
+
+- **0**: missing.
+- **1**: υπάρχει αλλά είναι αδύναμο.
+- **2**: καλύπτει pass criteria.
+- **3**: strong implementation.
+
+Sections:
+
+1. Frontend.
+2. TypeScript.
+3. Backend/API.
+4. Database/Auth/Security.
+5. Testing/Quality.
+6. Deployment/Documentation.
+
+Target:
+
+- 12+ points: portfolio candidate.
+- 15+ points: strong junior portfolio project.
+- 18 points: very strong for junior interviews.
+
+## Demo script
+
+Πριν interview, ετοίμασε 3 λεπτά demo:
+
+1. Τι κάνει το app.
+2. Login και protected dashboard.
+3. Create/update/delete flow.
+4. Validation/error example.
+5. Architecture overview.
+6. Tradeoff και next improvement.
+
+## Final checklist
+
+Πριν το βάλεις στο CV:
+
+- README είναι καθαρό.
+- Deploy URL δουλεύει.
+- Demo flow δεν σπάει.
+- Δεν υπάρχουν secrets στο repo.
+- Build περνάει από fresh clone.
+- Έχεις 5 interview answers έτοιμες.
+
+## Mini project: self-assessment
+
+Βαθμολόγησε το capstone σου με το rubric.
+
+Γράψε:
+
+- score ανά section,
+- 3 δυνατότερα σημεία,
+- 3 κενά,
+- πλάνο 1 εβδομάδας για να το βελτιώσεις.
+
+## Interview answer template
+
+> I evaluated my capstone with a rubric across frontend, TypeScript, backend, database/auth/security, testing, and deployment. The strongest parts are ..., and the next improvements would be ...
+
+<Exercise
+  question="Πότε είναι project αρκετά καλό για portfolio;"
+  options={[
+    "Όταν έχει working flow, README, deploy, checks, validation και μπορείς να εξηγήσεις architecture/tradeoffs.",
+    "Όταν υπάρχει μόνο ένα screenshot.",
+    "Όταν δουλεύει μόνο στο laptop χωρίς setup instructions."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Portfolio-ready σημαίνει ολοκληρωμένο, τρέξιμο, εξήγηση και ποιότητα."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="final-assessment" />
+</div>

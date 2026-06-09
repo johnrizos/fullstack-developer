@@ -1,0 +1,302 @@
+# Job-Ready Practice & Portfolio
+
+Job-ready δεν σημαίνει “διάβασα όλα τα topics”. Σημαίνει ότι μπορείς να χτίσεις, να εξηγήσεις, να τεστάρεις και να παραδώσεις δουλειά με τρόπο που μοιάζει με πραγματική ομάδα.
+
+Αυτό το μάθημα είναι ο πρακτικός οδηγός για να μετατρέψεις το roadmap σε portfolio και interview readiness.
+
+## Τι σημαίνει job-ready
+
+Για junior/fullstack ρόλο, θέλεις να μπορείς να δείξεις:
+
+- καταλαβαίνω frontend, backend και data flow,
+- γράφω καθαρό TypeScript,
+- χρησιμοποιώ Git και pull request workflow,
+- χειρίζομαι loading/error/empty states,
+- κάνω validation και basic security checks,
+- μπορώ να κάνω deploy,
+- μπορώ να εξηγήσω decisions και tradeoffs.
+
+Δεν χρειάζεται να ξέρεις τα πάντα. Χρειάζεται να μπορείς να παραδίδεις μικρά, σωστά, ολοκληρωμένα κομμάτια.
+
+## Πώς χρησιμοποιείς τα μαθήματα
+
+Για κάθε ενότητα ακολούθησε 3 επίπεδα:
+
+1. **Learn**: διάβασε το μάθημα και πέρασε το quiz/challenge.
+2. **Build**: φτιάξε κάτι λίγο μεγαλύτερο από το mini project.
+3. **Explain**: γράψε 5-8 γραμμές στο README για το τι έφτιαξες και γιατί.
+
+Αν δεν μπορείς να εξηγήσεις κάτι απλά, δεν είναι ακόμα δικό σου.
+
+## Section deliverables
+
+### Web Foundations
+
+Deliverable: μικρό diagram ή markdown αρχείο που εξηγεί request/response.
+
+Acceptance criteria:
+
+- εξηγεί client, server, request, response,
+- αναφέρει status codes,
+- δείχνει ένα παράδειγμα API request,
+- εξηγεί τι είναι JSON.
+
+Portfolio note:
+
+> I understand how the browser talks to servers and how frontend apps consume backend APIs.
+
+### HTML & CSS
+
+Deliverable: responsive profile/landing page.
+
+Acceptance criteria:
+
+- semantic HTML,
+- accessible labels/buttons/links,
+- responsive layout σε mobile και desktop,
+- καθαρό spacing με box model/flexbox,
+- χωρίς overlap ή clipped text.
+
+Portfolio note:
+
+> I built responsive, semantic pages and used accessibility basics such as labels, landmarks, and readable structure.
+
+### JavaScript
+
+Deliverable: interactive app με λίστα, φόρμα και persistent state.
+
+Acceptance criteria:
+
+- χρησιμοποιεί arrays/objects,
+- έχει DOM events,
+- κάνει validation,
+- δείχνει loading/error/success state όπου χρειάζεται,
+- αποθηκεύει κάτι σε `localStorage` ή παίρνει data από API.
+
+Portfolio note:
+
+> I used JavaScript to manage UI state, render data, handle forms, and deal with async behavior.
+
+### Developer Workflow
+
+Deliverable: GitHub repo με καθαρό history και README.
+
+Acceptance criteria:
+
+- focused commits,
+- feature branch workflow,
+- README με setup,
+- tickets ή Kanban board,
+- PR description ή changelog,
+- lint/build commands documented.
+
+Portfolio note:
+
+> I can work with Git, pull requests, CI checks, tickets, and team-style workflow.
+
+### React + Next.js
+
+Deliverable: multi-page React/Next.js app με TypeScript.
+
+Acceptance criteria:
+
+- typed props/state,
+- reusable components,
+- forms με validation,
+- loading/error/empty states,
+- routing,
+- server/client component boundary όπου χρειάζεται,
+- no obvious console errors.
+
+Portfolio note:
+
+> I can build typed React/Next.js interfaces with reusable components, routing, and production-style states.
+
+### Backend & APIs
+
+Deliverable: REST API ή Next.js API layer για tasks/projects.
+
+Acceptance criteria:
+
+- CRUD endpoints,
+- validation,
+- σωστά status codes,
+- consistent response shape,
+- error handling,
+- auth check όπου χρειάζεται,
+- API contract documented.
+
+Portfolio note:
+
+> I can design backend endpoints, validate input, return predictable responses, and connect frontend to API logic.
+
+### Data, Auth & Security
+
+Deliverable: protected dashboard με database persistence.
+
+Acceptance criteria:
+
+- user-specific data,
+- protected routes,
+- server-side authorization,
+- database schema με relationships,
+- secrets μόνο server-side,
+- validation server-side,
+- safe error messages.
+
+Portfolio note:
+
+> I can model data, protect routes, enforce authorization server-side, and avoid exposing secrets.
+
+### Cloud & DevOps
+
+Deliverable: deployed app με checks και basic observability.
+
+Acceptance criteria:
+
+- production build περνάει,
+- env vars configured,
+- deployed URL,
+- README deploy notes,
+- basic logs/error handling,
+- CI workflow ή documented manual checks,
+- rollback σκέψη.
+
+Portfolio note:
+
+> I can prepare an app for deployment, configure environments, run checks, and debug production issues with logs.
+
+## Portfolio capstone target
+
+Το τελικό project πρέπει να είναι μικρό αλλά πλήρες.
+
+Καλό παράδειγμα: **Project Tracker**
+
+Features:
+
+- login/logout,
+- dashboard,
+- projects CRUD,
+- tasks CRUD,
+- filters/search,
+- database persistence,
+- protected API/data,
+- validation,
+- tests για critical utilities ή flows,
+- deploy,
+- README με screenshots και architecture notes.
+
+## README template
+
+Χρησιμοποίησε αυτό για το capstone:
+
+```md
+# Project Tracker
+
+## What it does
+Short description of the app and main user flow.
+
+## Tech stack
+- Next.js
+- React
+- TypeScript
+- Database/Auth provider
+
+## Features
+- Authentication
+- Projects and tasks
+- Filters/search
+- Protected dashboard
+
+## Local setup
+npm install
+npm run dev
+
+## Environment variables
+DATABASE_URL=
+AUTH_SECRET=
+
+## Checks
+npm run lint
+npm run build
+
+## Architecture notes
+Explain frontend, backend/API, database, auth, and deployment decisions.
+
+## Tradeoffs
+What you chose, why, and what you would improve next.
+```
+
+## Interview readiness checklist
+
+Πριν βάλεις project στο CV, πρέπει να μπορείς να απαντήσεις:
+
+- Ποιο πρόβλημα λύνει;
+- Ποια είναι η αρχιτεκτονική;
+- Πώς περνάει ένα request από UI σε database;
+- Πώς γίνεται validation;
+- Πώς προστατεύονται τα δεδομένα του χρήστη;
+- Πώς χειρίζεσαι loading/error states;
+- Τι tests υπάρχουν;
+- Πώς έγινε deploy;
+- Τι θα βελτίωνες;
+
+## Weekly practice loop
+
+Κάθε εβδομάδα:
+
+1. Διάλεξε ένα feature.
+2. Γράψε ticket με acceptance criteria.
+3. Υλοποίησε σε branch.
+4. Τρέξε checks.
+5. Γράψε μικρό PR summary.
+6. Κάνε self-review.
+7. Ενημέρωσε README ή notes.
+
+Αυτό σε προετοιμάζει καλύτερα από το να διαβάζεις παθητικά πολλά topics.
+
+## Mini project: job-ready audit
+
+Πάρε ένα υπάρχον project σου και κάνε audit:
+
+1. Έχει README με setup;
+2. Περνάει `npm run lint`;
+3. Περνάει `npm run build`;
+4. Έχει loading/error/empty states;
+5. Έχει validation;
+6. Έχει protected data αν έχει auth;
+7. Έχει deploy link;
+8. Μπορείς να εξηγήσεις 3 tradeoffs;
+
+Βάλε τα missing items σε Kanban board και δούλεψέ τα σαν πραγματικά tickets.
+
+## Interview answer template
+
+> I use projects to prove skills end-to-end. For each feature, I define acceptance criteria, implement it in a focused branch, run checks, document tradeoffs, and make sure I can explain the data flow from UI to backend and database.
+
+<Exercise
+  question="Τι κάνει ένα project πιο job-ready;"
+  options={[
+    "Να έχει ολοκληρωμένα features, README, checks, deploy, validation και να μπορείς να εξηγήσεις tradeoffs.",
+    "Να έχει μόνο ωραία χρώματα χωρίς working flow.",
+    "Να μην έχει Git history."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Job-ready project δείχνει end-to-end ικανότητα, όχι μόνο UI."
+/>
+
+<Exercise
+  question="Ποιο είναι καλό acceptance criterion για feature φόρμας;"
+  options={[
+    "Το submit δείχνει loading state και validation error όταν το input είναι λάθος.",
+    "Να υπάρχει κάπου ένα div.",
+    "Να αλλάξει το όνομα του branch."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Acceptance criteria πρέπει να περιγράφουν παρατηρήσιμη συμπεριφορά."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="/" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="job-ready-practice" />
+</div>
