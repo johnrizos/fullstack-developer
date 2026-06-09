@@ -1,0 +1,224 @@
+export const gridHtml = `<main class="dashboard">
+  <aside class="sidebar">
+    <h2>Dashboard</h2>
+    <a href="#">Overview</a>
+    <a href="#">Projects</a>
+    <a href="#">Settings</a>
+  </aside>
+
+  <section class="content">
+    <h1>Project stats</h1>
+    <div class="cards">
+      <article class="card">
+        <strong>12</strong>
+        <span>Active projects</span>
+      </article>
+      <article class="card">
+        <strong>34</strong>
+        <span>Open tasks</span>
+      </article>
+      <article class="card">
+        <strong>8</strong>
+        <span>In review</span>
+      </article>
+    </div>
+  </section>
+</main>`;
+
+export const gridCss = `body {
+  font-family: Arial, sans-serif;
+  background: #f3f4f6;
+  margin: 0;
+  padding: 32px;
+}
+
+.dashboard {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 24px;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.sidebar,
+.content,
+.card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.sidebar {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.sidebar a {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.card strong {
+  display: block;
+  font-size: 32px;
+  color: #111827;
+}
+
+@media (max-width: 700px) {
+  .dashboard {
+    grid-template-columns: 1fr;
+  }
+
+  .cards {
+    grid-template-columns: 1fr;
+  }
+}`;
+
+# CSS Grid & Page Layouts
+
+Το CSS Grid είναι εργαλείο για layout σε δύο διαστάσεις: columns και rows. Το χρησιμοποιείς σε dashboards, galleries, admin panels, pricing sections και card layouts.
+
+Αν το Flexbox είναι καλό για μία γραμμή ή μία στήλη, το Grid είναι καλό όταν θέλεις ολόκληρη δομή σελίδας.
+
+## Grid container
+
+Με `display: grid` ένα element γίνεται grid container.
+
+```css
+.layout {
+  display: grid;
+  gap: 24px;
+}
+```
+
+Το `gap` βάζει απόσταση ανάμεσα στα grid items, χωρίς να χρειάζεται margin σε κάθε παιδί.
+
+## Columns
+
+Με `grid-template-columns` ορίζεις τις στήλες.
+
+```css
+.dashboard {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+}
+```
+
+Αυτό σημαίνει:
+
+- πρώτη στήλη: 220px,
+- δεύτερη στήλη: όλος ο υπόλοιπος χώρος.
+
+Το `fr` σημαίνει fraction του διαθέσιμου χώρου.
+
+## repeat και responsive cards
+
+Για card grids χρησιμοποιείς συχνά `repeat`.
+
+```css
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+```
+
+Αυτό φτιάχνει 3 ίσες στήλες.
+
+Για πιο flexible layout:
+
+```css
+.cards {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+```
+
+Το `minmax(220px, 1fr)` λέει: κάθε card να έχει τουλάχιστον 220px, αλλά να μπορεί να μεγαλώσει.
+
+## Grid vs Flexbox
+
+Χρησιμοποίησε Flexbox όταν:
+
+- έχεις navbar,
+- έχεις toolbar,
+- θέλεις items σε μία σειρά,
+- θες εύκολο align center.
+
+Χρησιμοποίησε Grid όταν:
+
+- έχεις sidebar + main content,
+- έχεις cards σε rows/columns,
+- χτίζεις gallery,
+- θέλεις page layout.
+
+Στην πράξη τα χρησιμοποιείς μαζί. Grid για τη μεγάλη δομή, Flexbox για μικρά controls μέσα στα sections.
+
+## Responsive Grid
+
+Σε μικρές οθόνες, ένα dashboard με sidebar και content πρέπει συχνά να γίνει μία στήλη.
+
+```css
+@media (max-width: 700px) {
+  .dashboard {
+    grid-template-columns: 1fr;
+  }
+}
+```
+
+Αυτό είναι job-ready skill: δεν αρκεί να φαίνεται καλό σε desktop. Πρέπει να μη σπάει σε mobile.
+
+## Mini project: responsive dashboard grid
+
+Φτιάξε dashboard με sidebar, main content και cards. Το checklist ελέγχει τη βασική grid δομή.
+
+<CodeChallenge
+  title="CSS Grid dashboard challenge"
+  description="Χρησιμοποίησε CSS Grid για sidebar + content και responsive card grid."
+  initialHtml={gridHtml}
+  initialCss={gridCss}
+  checks={[
+    { id: "has-main", label: "Υπάρχει main dashboard.", type: "htmlTag", tag: "main" },
+    { id: "has-aside", label: "Υπάρχει aside για sidebar.", type: "htmlTag", tag: "aside" },
+    { id: "dashboard-grid", label: "Το .dashboard έχει display: grid.", type: "cssProperty", selector: ".dashboard", property: "display", value: "grid" },
+    { id: "dashboard-columns", label: "Το .dashboard έχει grid-template-columns: 220px 1fr.", type: "cssProperty", selector: ".dashboard", property: "grid-template-columns", value: "220px 1fr" },
+    { id: "dashboard-gap", label: "Το .dashboard έχει gap: 24px.", type: "cssProperty", selector: ".dashboard", property: "gap", value: "24px" },
+    { id: "cards-grid", label: "Το .cards έχει display: grid.", type: "cssProperty", selector: ".cards", property: "display", value: "grid" },
+    { id: "cards-columns", label: "Το .cards έχει repeat(3, 1fr).", type: "cssProperty", selector: ".cards", property: "grid-template-columns", value: "repeat(3, 1fr)" }
+  ]}
+/>
+
+## Job-ready checklist
+
+- Ξέρεις πότε να διαλέξεις Grid αντί για Flexbox.
+- Μπορείς να φτιάξεις sidebar + content layout.
+- Μπορείς να φτιάξεις cards grid.
+- Μπορείς να κάνεις mobile fallback σε μία στήλη.
+- Χρησιμοποιείς `gap` αντί για δύσκολα margins.
+
+## Interview answer template
+
+> I use CSS Grid for two-dimensional layouts like dashboards, galleries, and card grids. Flexbox is better for one-dimensional alignment, while Grid is better for page structure. In real layouts I often combine both.
+
+<Exercise
+  question="Πότε είναι καλύτερο το CSS Grid από το Flexbox;"
+  options={[
+    "Όταν θέλουμε layout με rows και columns, όπως dashboard ή cards grid.",
+    "Όταν θέλουμε μόνο να αλλάξουμε font color.",
+    "Όταν γράφουμε JavaScript functions."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Το Grid είναι ιδανικό για δύο διαστάσεις: γραμμές και στήλες."
+/>
+
+<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
+  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
+  <CompleteLessonButton lessonId="css-grid-layouts" />
+</div>

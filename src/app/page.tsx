@@ -80,6 +80,14 @@ const curriculum: CurriculumSection[] = [
         skills: ["flexbox", "gap", "wrap"],
         href: "/lessons/css-flex-responsive",
       },
+      {
+        id: "css-grid-layouts",
+        title: "CSS Grid & Page Layouts",
+        description: "Grid columns, card layouts, dashboard structure και responsive page layouts.",
+        project: "Responsive dashboard grid.",
+        skills: ["grid", "columns", "responsive"],
+        href: "/lessons/css-grid-layouts",
+      },
     ],
   },
   {
