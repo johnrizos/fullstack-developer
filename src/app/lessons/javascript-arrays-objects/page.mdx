@@ -39,74 +39,155 @@ renderTasks();`;
 
 # JavaScript Arrays & Objects
 
-Σχεδόν κάθε πραγματική εφαρμογή δουλεύει με λίστες δεδομένων: προϊόντα, χρήστες, tasks, μηνύματα.
+Σχεδόν κάθε πραγματική εφαρμογή είναι «λίστες από πράγματα»: προϊόντα, χρήστες, tasks, μηνύματα. Τα **arrays** κρατούν τις λίστες, τα **objects** περιγράφουν το κάθε «πράγμα» — και τα array methods είναι το εργαλείο που μετατρέπει δεδομένα σε UI. Αυτό το pattern θα το χρησιμοποιείς καθημερινά, από vanilla JavaScript μέχρι React.
 
-Ένα **array** κρατά πολλά items:
-
-```js
-const names = ["Ada", "Grace", "Linus"];
-```
-
-Ένα **object** κρατά ιδιότητες για ένα πράγμα:
+## Objects: περιγράφουν ένα πράγμα
 
 ```js
 const task = {
-  title: "Μάθε HTML",
-  done: true
-};
-```
-
-## Array methods
-
-Τα πιο συχνά methods:
-
-- `map`: μετατρέπει κάθε item σε κάτι άλλο.
-- `filter`: κρατά μόνο όσα περνούν ένα condition.
-- `find`: βρίσκει το πρώτο item που ταιριάζει.
-- `some`: ελέγχει αν υπάρχει έστω ένα match.
-- `reduce`: συνδυάζει items σε μία τελική τιμή.
-
-Παράδειγμα:
-
-```js
-const completedTasks = tasks.filter((task) => task.done);
-const titles = tasks.map((task) => task.title);
-```
-
-## Objects και properties
-
-Με objects ο κώδικας γίνεται πιο περιγραφικός:
-
-```js
-const user = {
   id: 1,
-  name: "Ada",
-  role: "admin"
+  title: "Μάθε JavaScript",
+  done: false,
+  tags: ["basics", "logic"], // τα values μπορούν να είναι ΚΑΙ arrays/objects
 };
 
-console.log(user.name);
+task.title;          // "Μάθε JavaScript" — dot notation
+task["title"];       // ίδιο — bracket notation (χρήσιμο για δυναμικά keys)
+task.done = true;    // αλλαγή τιμής
+task.priority = 2;   // προσθήκη νέου property
 ```
 
-Αν έχεις λίστα από objects, έχεις τη βάση για rendering UI από data.
+Δύο εργαλεία που κάνουν τον κώδικα πολύ πιο καθαρό:
 
-## Rendering data
+```js
+// Destructuring: "ξεπακετάρισμα" σε μεταβλητές
+const { title, done } = task;
 
-Το common frontend pattern είναι:
+// Spread: αντίγραφο με αλλαγές — ΧΩΡΙΣ να πειράξεις το αρχικό
+const updatedTask = { ...task, done: true };
+```
 
-1. Έχεις array δεδομένων.
-2. Το μετατρέπεις σε HTML ή components.
-3. Το εμφανίζεις στη σελίδα.
-4. Όταν αλλάξουν τα δεδομένα, ξανακάνεις render.
+Το spread pattern (`{ ...task, done: true }`) είναι η βάση των immutable updates — θα το ξαναδείς παντού στο React.
 
-Στο μάθημα το κάνεις με `innerHTML`. Σε React θα κάνεις την ίδια ιδέα με JSX και `.map`.
+## Arrays: κρατούν τη λίστα
 
-## Προσοχή στο innerHTML
+```js
+const names = ["Ada", "Grace", "Linus"];
 
-Το `innerHTML` είναι βολικό για practice, αλλά σε πραγματικό app θέλει προσοχή όταν το data έρχεται από χρήστη. Untrusted input μπορεί να δημιουργήσει XSS. Για τώρα κράτα το lesson focused στο rendering, αλλά να θυμάσαι ότι security matter.
+names.length;     // 3
+names[0];         // "Ada" — μηδενική αρίθμηση
+names.push("X");  // προσθήκη στο τέλος (αλλάζει το array)
+names.includes("Ada"); // true
+
+// Destructuring και spread δουλεύουν κι εδώ:
+const [first, second] = names;
+const copy = [...names];
+const merged = [...names, ...otherNames];
+```
+
+Η πιο χρήσιμη μορφή στα πραγματικά apps: **array από objects** —
+
+```js
+const tasks = [
+  { id: 1, title: "Μάθε HTML", done: true },
+  { id: 2, title: "Μάθε CSS", done: true },
+  { id: 3, title: "Μάθε JavaScript", done: false },
+];
+```
+
+## Τα array methods που θα γράφεις κάθε μέρα
+
+Όλα παίρνουν μια function και **επιστρέφουν αποτέλεσμα χωρίς να αλλάζουν το αρχικό array**:
+
+```js
+// map: μετασχηματίζει ΚΑΘΕ item → νέο array ΙΔΙΟΥ μήκους
+const titles = tasks.map((task) => task.title);
+// ["Μάθε HTML", "Μάθε CSS", "Μάθε JavaScript"]
+
+// filter: κρατά όσα περνούν το τεστ → νέο (ίσως μικρότερο) array
+const active = tasks.filter((task) => !task.done);
+
+// find: το ΠΡΩΤΟ item που ταιριάζει (ή undefined)
+const css = tasks.find((task) => task.id === 2);
+
+// some / every: υπάρχει έστω ένα; / ισχύει για όλα;
+tasks.some((task) => task.done);   // true
+tasks.every((task) => task.done);  // false
+
+// reduce: "συμπυκνώνει" το array σε ΜΙΑ τιμή
+const doneCount = tasks.reduce((count, task) => (task.done ? count + 1 : count), 0);
+```
+
+Πώς διαλέγεις method; Ρώτα τι θες πίσω:
+
+- Ίδιο πλήθος, αλλαγμένα items → `map`
+- Λιγότερα items → `filter`
+- Ένα item → `find`
+- true/false → `some` / `every`
+- Ένα «σύνολο» (άθροισμα, object, οτιδήποτε) → `reduce`
+
+Και φυσικά συνδυάζονται σε αλυσίδες:
+
+```js
+const activeTitles = tasks
+  .filter((task) => !task.done)
+  .map((task) => task.title);
+```
+
+<PredictOutput
+  title="Method επιλογής drill"
+  code={`const products = [
+  { name: "Laptop", price: 1200, inStock: true },
+  { name: "Mouse", price: 25, inStock: false },
+  { name: "Keyboard", price: 80, inStock: true },
+];
+
+const result = products
+  .filter((p) => p.inStock)
+  .map((p) => p.price)
+  .reduce((sum, price) => sum + price, 0);
+
+console.log(result);`}
+  options={["1280", "1305", "[1200, 80]", "2"]}
+  correctOptionIndex={0}
+  answer="1280"
+  explanation="filter κρατά τα διαθέσιμα (Laptop, Keyboard), map βγάζει τις τιμές [1200, 80], reduce τις αθροίζει: 1280. Αυτή η αλυσίδα filter→map→reduce είναι το πιο συχνό pattern σε πραγματικό κώδικα."
+/>
+
+## Προσοχή: references, όχι αντίγραφα
+
+Τα objects και τα arrays **δεν αντιγράφονται** με την ανάθεση — η μεταβλητή δείχνει στο ίδιο πράγμα:
+
+```js
+const a = { count: 1 };
+const b = a;        // ΟΧΙ αντίγραφο — ίδιο object!
+b.count = 99;
+console.log(a.count); // 99 😱
+
+const realCopy = { ...a }; // αυτό είναι αντίγραφο (πρώτου επιπέδου)
+```
+
+Το ίδιο ισχύει και στις συγκρίσεις: `[1,2] === [1,2]` είναι `false` — συγκρίνονται οι references, όχι τα περιεχόμενα. Κράτα το στο μυαλό σου· θα το εξερευνήσουμε σε βάθος στα interview drills.
+
+## Rendering: από δεδομένα σε UI
+
+Το θεμελιώδες frontend pattern, που ισχύει από vanilla JS μέχρι React:
+
+1. Έχεις **array δεδομένων** (το source of truth).
+2. Το **μετασχηματίζεις** σε HTML/components με `map`.
+3. Όταν αλλάξουν τα δεδομένα, **ξανακάνεις render** — δεν «μπαλώνεις» το UI με το χέρι.
+
+```js
+function renderTasks() {
+  list.innerHTML = tasks
+    .map((task) => `<li>${task.done ? "✅" : "⬜"} ${task.title}</li>`)
+    .join(""); // το map δίνει array από strings — το join τα ενώνει
+}
+```
+
+> Σημείωση ασφαλείας: το `innerHTML` είναι μια χαρά για δικά σου δεδομένα, αλλά **ποτέ** για κείμενο που έγραψε χρήστης — εκεί ελλοχεύει το XSS. Θα το δεις αναλυτικά στο Web Security μάθημα.
 
 ## Mini project: task list renderer
-
-Εδώ έχεις array από task objects. Η function τα μετατρέπει σε HTML και τα βάζει στη λίστα.
 
 <CodeChallenge
   title="Task list challenge"
@@ -123,18 +204,83 @@ console.log(user.name);
   ]}
 />
 
+Δοκίμασε αλλαγές: πρόσθεσε ένα task στο array και δες το UI να ενημερώνεται με ένα refresh. Πρόσθεσε `filter` πριν το `map` ώστε να δείχνει μόνο τα ενεργά.
+
 <Exercise
-  question="Πότε χρησιμοποιούμε array;"
+  question="Θες από μια λίστα προϊόντων μόνο όσα κοστίζουν κάτω από 50€. Ποιο method;"
   options={[
-    "Όταν θέλουμε να κρατήσουμε πολλά items σε σειρά.",
-    "Μόνο όταν γράφουμε CSS.",
-    "Μόνο για να αλλάξουμε font."
+    "filter — κρατά όσα περνούν το condition.",
+    "map — μετασχηματίζει κάθε item.",
+    "reduce — αθροίζει τις τιμές.",
+    "find — επιστρέφει μόνο το πρώτο."
   ]}
   correctOptionIndex={0}
-  explanation="Σωστά. Τα arrays είναι για λίστες δεδομένων."
+  explanation="Σωστά. Θες ΛΙΓΟΤΕΡΑ items με βάση condition → filter. Το find θα έδινε μόνο το πρώτο φθηνό προϊόν, το map θα έδινε ίδιο πλήθος items."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="javascript-arrays-objects" />
-</div>
+<Exercise
+  question="Τι επιστρέφει το tasks.map((t) => t.title);"
+  options={[
+    "Νέο array με τους τίτλους όλων των tasks — το αρχικό μένει ανέπαφο.",
+    "Τον πρώτο τίτλο.",
+    "Αλλάζει το tasks ώστε να έχει μόνο titles."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Το map πάντα επιστρέφει ΝΕΟ array ίδιου μήκους με τα αποτελέσματα της function, χωρίς να πειράζει το αρχικό."
+/>
+
+<Flashcards
+  title="Arrays & Objects — γρήγορο repaso"
+  cards={[
+    {
+      question: "map vs filter vs find — τι επιστρέφει το καθένα;",
+      answer: "map: νέο array ΙΔΙΟΥ μήκους με μετασχηματισμένα items. filter: νέο array με ΟΣΑ πέρασαν το τεστ. find: το ΠΡΩΤΟ item που ταιριάζει (ή undefined) — όχι array."
+    },
+    {
+      question: "Τι κάνει το reduce;",
+      answer: "Διατρέχει το array κρατώντας έναν 'accumulator' και επιστρέφει ΜΙΑ τελική τιμή — άθροισμα, μέγιστο, object, ακόμα και νέο array. Σύνταξη: arr.reduce((acc, item) => ..., αρχικήΤιμή)."
+    },
+    {
+      question: "Τι κάνει το spread {...obj} και ποιο το όριό του;",
+      answer: "Δημιουργεί νέο object με αντιγραμμένα τα properties — ιδανικό για αλλαγές χωρίς mutation: {...task, done: true}. Όριο: shallow copy — nested objects παραμένουν κοινές references."
+    },
+    {
+      question: "Γιατί b = a δεν αντιγράφει ένα object;",
+      answer: "Τα objects/arrays ανατίθενται by reference — και οι δύο μεταβλητές δείχνουν στο ΙΔΙΟ object, οπότε αλλαγή μέσω της μίας φαίνεται και στην άλλη. Αντίγραφο: {...a} ή structuredClone(a) για nested."
+    },
+    {
+      question: "Τι είναι το destructuring;",
+      answer: "Σύνταξη που 'ξεπακετάρει' values σε μεταβλητές: const { title, done } = task για objects, const [first, second] = arr για arrays. Καθαρότερος κώδικας, ειδικά σε function parameters."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Render task list από data"
+  scenario="Φτιάξε λίστα tasks από array of objects. Μην γράψεις τρία hardcoded HTML items. Άσε τα data να οδηγούν το UI."
+  outcomes={[
+    "Να μοντελοποιείς data με arrays και objects.",
+    "Να χρησιμοποιείς map/filter για UI rendering.",
+    "Να ξεχωρίζεις source data από derived view."
+  ]}
+  steps={[
+    "Φτιάξε array με tasks που έχουν id, title και completed.",
+    "Κάνε render όλα τα tasks με map.",
+    "Πρόσθεσε filter για active/completed.",
+    "Υπολόγισε count completed με reduce — όχι με χειροκίνητη μεταβλητή.",
+    "Πρόσθεσε νέο task με spread ([...tasks, newTask]) αντί για push και ξανακάνε render."
+  ]}
+  checkpoints={[
+    "Κάθε task έχει stable id.",
+    "Το UI αλλάζει όταν αλλάζει το array.",
+    "Δεν υπάρχει duplicated hardcoded markup για κάθε item.",
+    "Τα counts υπολογίζονται από τα data — δεν κρατιούνται χώρια."
+  ]}
+  mistakes={[
+    "Να κρατάς count σε ξεχωριστή μεταβλητή που ξεχνάς να ενημερώσεις.",
+    "Να αλλάζεις object shape στη μέση του κώδικα.",
+    "Να χρησιμοποιείς index ως identity όταν υπάρχει πραγματικό id.",
+    "Να μπερδεύεις map (μετασχηματισμός) με forEach (side effects)."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να πάρεις JSON από API και να το μετατρέψεις σε λίστα UI με καθαρό transformation."
+/>

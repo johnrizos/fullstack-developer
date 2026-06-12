@@ -95,6 +95,44 @@ await user.click(button);
 - private implementation details,
 - styling που αλλάζει συχνά χωρίς business σημασία.
 
+## Async UI: findBy, waitFor και mock του network
+
+Τα περισσότερα πραγματικά components φορτώνουν δεδομένα — και εδώ ξεχωρίζουν τα καλά tests:
+
+```tsx
+test("shows the loaded tasks", async () => {
+  render(<TaskList />); // κάνει fetch στο mount
+
+  // getBy*: σύγχρονο — σκάει αμέσως αν δεν υπάρχει
+  expect(screen.getByText("Loading…")).toBeInTheDocument();
+
+  // findBy*: ΠΕΡΙΜΕΝΕΙ να εμφανιστεί (returns Promise) — για async UI
+  expect(await screen.findByText("Learn testing")).toBeInTheDocument();
+
+  // queryBy*: επιστρέφει null αντί για error — για να ελέγξεις ΑΠΟΥΣΙΑ
+  expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
+});
+```
+
+Η τριάδα **getBy / findBy / queryBy** είναι σίγουρη ερώτηση: getBy για ό,τι πρέπει να υπάρχει τώρα, findBy για ό,τι θα εμφανιστεί, queryBy για ό,τι ΔΕΝ πρέπει να υπάρχει.
+
+Το network δεν χτυπιέται ποτέ αληθινά στα tests — το καθιερωμένο εργαλείο είναι το **MSW (Mock Service Worker)**: κάνει intercept τα requests σε επίπεδο δικτύου, οπότε το component τρέχει τον ΠΡΑΓΜΑΤΙΚΟ fetch κώδικά του χωρίς να ξέρει ότι το API είναι ψεύτικο.
+
+## E2E με Playwright: τα κρίσιμα flows
+
+```ts
+import { test, expect } from "@playwright/test";
+
+test("user can add a todo", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("New todo").fill("Buy milk");
+  await page.getByRole("button", { name: "Add" }).click();
+  await expect(page.getByText("Buy milk")).toBeVisible();
+});
+```
+
+Ίδια φιλοσοφία queries (role/label), αλλά σε πραγματικό browser με πραγματικό app. Τα κρατάς λίγα — signup, login, core flow — γιατί είναι αργά και πιο εύθραυστα από τα component tests.
+
 ## Mini project: tested login interaction
 
 Το challenge ελέγχει component test με render, screen, userEvent και expect.
@@ -145,11 +183,37 @@ await user.click(button);
   ]}
 />
 
-## Interview answer template
+## Πώς απαντάς στη συνέντευξη
 
-Αν σε ρωτήσουν “what do you test in React?”, απάντησε:
+«What do you test in React?»
 
-> I test user-visible behavior: rendering, interactions, validation, loading and error states. I prefer queries by role or label because they match accessibility and user intent.
+> I test user-visible behavior: rendering, interactions, validation, loading and error states — never internal state or implementation details, so refactoring doesn't break the suite. I query by role and label, which doubles as an accessibility check, use findBy queries for async UI, and mock the network with MSW so components run their real fetch code. A few Playwright tests cover the critical journeys end to end.
+
+<Flashcards
+  title="React testing — interview drills"
+  cards={[
+    {
+      question: "getBy vs findBy vs queryBy;",
+      answer: "getBy: σύγχρονο, throw αν δεν βρεθεί — για ό,τι πρέπει να υπάρχει ΤΩΡΑ. findBy: async (Promise), περιμένει να εμφανιστεί — για UI μετά από fetch. queryBy: επιστρέφει null χωρίς throw — ο ΜΟΝΟΣ τρόπος να ελέγξεις ότι κάτι ΔΕΝ υπάρχει."
+    },
+    {
+      question: "Ποια είναι η σειρά προτεραιότητας των queries στην RTL;",
+      answer: "1) getByRole (με accessible name), 2) getByLabelText (forms), 3) getByPlaceholderText/getByText, 4) getByTestId — τελευταία λύση. Όσο ψηλότερα, τόσο πιο κοντά στο πώς βρίσκει τα στοιχεία πραγματικός χρήστης ή screen reader."
+    },
+    {
+      question: "Γιατί userEvent αντί για fireEvent;",
+      answer: "Το fireEvent πυροδοτεί ΕΝΑ synthetic event. Το userEvent προσομοιώνει την πλήρη αλληλουχία ενός πραγματικού χρήστη: το type κάνει focus + keydown/keypress/keyup ανά χαρακτήρα, το click κάνει hover + mousedown + focus + mouseup. Πιο ρεαλιστικό = πιάνει περισσότερα bugs."
+    },
+    {
+      question: "Τι είναι το MSW και γιατί προτιμάται από το mock του fetch;",
+      answer: "Mock Service Worker: intercept των requests σε επίπεδο δικτύου με δηλωτικά handlers ανά endpoint. Το component τρέχει τον πραγματικό data-fetching κώδικά του — δεν κάνεις patch το fetch/axios. Ίδια handlers σε tests, Storybook και dev."
+    },
+    {
+      question: "Γιατί τα snapshot tests από μόνα τους δεν αρκούν;",
+      answer: "Ελέγχουν 'κάτι άλλαξε στο markup', όχι 'η συμπεριφορά είναι σωστή'. Σπάνε σε κάθε αβλαβές restyle → οι devs πατούν update χωρίς να κοιτούν → μηδενική προστασία. Χρήσιμα μόνο στοχευμένα, μικρά, δίπλα σε behavior tests."
+    }
+  ]}
+/>
 
 <Exercise
   question="Γιατί προτιμάμε getByRole/getByLabelText στα tests;"
@@ -162,7 +226,29 @@ await user.click(button);
   explanation="Σωστά. Testing με accessible queries οδηγεί σε καλύτερα και πιο ρεαλιστικά tests."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="frontend-testing" />
-</div>
+<TrainingLab
+  title="Τέσταρε user behavior, όχι implementation"
+  scenario="Πάρε μια todo form και γράψε tests που αποδεικνύουν ότι ο χρήστης μπορεί να προσθέσει, να ολοκληρώσει και να φιλτράρει tasks."
+  outcomes={[
+    "Να γράφεις tests με βάση ορατή συμπεριφορά.",
+    "Να επιλέγεις queries σαν χρήστης: role, label, text.",
+    "Να ξεχωρίζεις unit/component test από end-to-end flow."
+  ]}
+  steps={[
+    "Γράψε test ότι το input έχει label και το button προσθέτει task.",
+    "Γράψε test για validation σε empty submit.",
+    "Γράψε test για completed toggle.",
+    "Γράψε ένα Playwright-style flow για full user journey."
+  ]}
+  checkpoints={[
+    "Τα tests δεν ψάχνουν private state.",
+    "Τα selectors είναι ανθεκτικά σε CSS αλλαγές.",
+    "Υπάρχει test για error ή empty state."
+  ]}
+  mistakes={[
+    "Να τεστάρεις implementation details.",
+    "Να γράφεις μόνο snapshot tests.",
+    "Να μη δοκιμάζεις keyboard/label accessibility."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν ένα refactor στα components δεν σπάει τα tests αν η συμπεριφορά μένει ίδια."
+/>

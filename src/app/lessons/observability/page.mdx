@@ -1,6 +1,12 @@
 # Logs, Monitoring & Observability
 
-Όταν κάτι σπάσει στην παραγωγή, δεν έχεις debugger πάνω στον χρήστη. Χρειάζεσαι observability.
+Όταν κάτι σπάσει στην παραγωγή, δεν έχεις debugger πάνω στον χρήστη. Χρειάζεσαι observability — και η καθιερωμένη ορολογία είναι οι **τρεις πυλώνες**:
+
+- **Logs**: τι συνέβη — διακριτά γεγονότα με context.
+- **Metrics**: πόσο/πόσα — αριθμητικές χρονοσειρές (latency, error rate).
+- **Traces**: πού πήγε — η διαδρομή ενός request μέσα από services.
+
+Με αυτά απαντάς στο ερώτημα της παραγωγής: «τι έγινε, πότε, για ποιον και γιατί;» — χωρίς να αναπαράγεις το πρόβλημα τοπικά.
 
 ## Logs
 
@@ -120,9 +126,39 @@ try {
 }
 ```
 
-## Interview answer template
+## Πώς απαντάς στη συνέντευξη
 
-> For production debugging I rely on structured logs, error tracking, metrics, and request IDs. I avoid logging secrets and make sure failures are diagnosable without exposing sensitive data.
+> I think in the three pillars: structured logs with request IDs for discrete events, metrics — rate, errors, duration per endpoint — for patterns and alerting, and traces to see where a slow request actually spends its time. Error tracking like Sentry ties exceptions to releases and affected users. Alerts fire on symptoms users feel — error rate and p95 latency — not on every internal hiccup, because noisy alerts get ignored. And logs never contain secrets or card numbers; diagnosability shouldn't cost you a data leak.
+
+<Flashcards
+  title="Observability — interview drills"
+  cards={[
+    {
+      question: "Ποιοι είναι οι τρεις πυλώνες του observability;",
+      answer: "Logs: διακριτά γεγονότα με context (τι συνέβη). Metrics: αριθμητικές χρονοσειρές (πόσο συχνά, πόσο αργά) — φθηνές, ιδανικές για alerts. Traces: η διαδρομή ενός request μέσα από τα services (πού χάθηκε ο χρόνος)."
+    },
+    {
+      question: "Τι είναι το p95 latency και γιατί όχι ο μέσος όρος;",
+      answer: "Το 95% των requests είναι ταχύτερα από αυτή την τιμή. Ο μέσος όρος κρύβει τα αργά: 99 requests στα 50ms + 1 στα 5s δίνουν μ.ο. ~100ms ενώ κάποιοι χρήστες υποφέρουν. Τα percentiles (p95/p99) δείχνουν την πραγματική εμπειρία της ουράς."
+    },
+    {
+      question: "Τι είναι η μέθοδος RED;",
+      answer: "Για κάθε service παρακολουθείς: Rate (requests/sec), Errors (ποσοστό αποτυχιών), Duration (latency percentiles). Απλό, καλύπτει το 'είναι καλά το service;' — και είναι έτοιμη απάντηση στο 'τι metrics θα έβαζες;'."
+    },
+    {
+      question: "Τι είναι το correlation/request ID;",
+      answer: "Μοναδικό id που γεννιέται στην αρχή κάθε request και περνά σε ΟΛΑ τα logs και τα downstream calls (header). Έτσι ένα user report γίνεται: βρες το requestId → δες όλη τη διαδρομή του σε όλα τα services. Χωρίς αυτό, ψάχνεις βελόνα σε logs."
+    },
+    {
+      question: "Τι κάνει το alert fatigue και πώς το αποφεύγεις;",
+      answer: "Πολλά/θορυβώδη alerts → η ομάδα τα αγνοεί → χάνεται και το σοβαρό. Λύση: alerts μόνο σε ΣΥΜΠΤΩΜΑΤΑ που νιώθουν οι χρήστες (error rate, p95, failed payments) με όρια που σημαίνουν δράση, όχι σε κάθε εσωτερικό σκαμπανέβασμα."
+    },
+    {
+      question: "Logs vs error tracking (Sentry) — γιατί και τα δύο;",
+      answer: "Τα logs καταγράφουν τα πάντα γραμμικά. Το error tracking ΟΜΑΔΟΠΟΙΕΙ exceptions: ίδιο stack trace = ένα issue με μετρητή, affected users, πρώτο/τελευταίο release. Απαντά αμέσως 'νέο bug ή γνωστό; πόσους χτυπά; ποιο release το έφερε;'."
+    }
+  ]}
+/>
 
 <Exercise
   question="Γιατί είναι χρήσιμο το requestId στα logs;"
@@ -135,7 +171,29 @@ try {
   explanation="Σωστά. Το requestId βοηθά να ακολουθήσεις ένα request μέσα στο σύστημα."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="observability" />
-</div>
+<TrainingLab
+  title="Βρες production bug από logs"
+  scenario="Ένας χρήστης λέει ότι το checkout αποτυγχάνει. Δεν έχεις debugger. Έχεις logs, metrics και error tracking. Βρες τι χρειάζεται να έχεις καταγράψει."
+  outcomes={[
+    "Να γράφεις logs που βοηθούν debugging.",
+    "Να ξεχωρίζεις logs, metrics, traces και alerts.",
+    "Να συνδέεις user report με request id ή correlation id."
+  ]}
+  steps={[
+    "Πρόσθεσε request id σε κάθε API request.",
+    "Log method, path, status, duration και user/session id όπου επιτρέπεται.",
+    "Κατέγραψε payment provider error χωρίς secrets.",
+    "Ορισμός alert για αυξημένα 5xx ή checkout failures."
+  ]}
+  checkpoints={[
+    "Μπορείς να ακολουθήσεις ένα request από frontend μέχρι backend.",
+    "Τα logs δεν περιέχουν passwords/tokens.",
+    "Υπάρχει metric που δείχνει αν το πρόβλημα είναι μεμονωμένο ή γενικό."
+  ]}
+  mistakes={[
+    "Να γράφεις console.log χωρίς structure.",
+    "Να μη βάζεις correlation id.",
+    "Να καταγράφεις sensitive data επειδή βοηθάει στο debugging."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να απαντήσεις 'τι έγινε, πότε, για ποιον και γιατί' από production signals."
+/>

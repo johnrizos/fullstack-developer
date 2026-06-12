@@ -60,64 +60,207 @@ export default async function ProjectsPage() {
 
 # Next.js App Router + TypeScript
 
-Next.js είναι πολύ συχνό σε fullstack αγγελίες γιατί ενώνει frontend, routing, server rendering, data loading και deployment.
+Το Next.js κυριαρχεί στις fullstack αγγελίες γιατί ενώνει frontend, routing, server rendering, data loading και API endpoints σε ένα framework. Στις συνεντεύξεις, η ερώτηση-κλειδί είναι σχεδόν πάντα η ίδια: **«Server Components vs Client Components — πότε και γιατί;»**. Σε αυτό το μάθημα θα τη λύσεις οριστικά.
 
-Στο App Router πρέπει να καταλαβαίνεις:
+## File-based routing: η δομή είναι το API
 
-- file-based routing,
-- `layout.tsx` και `page.tsx`,
-- Server Components και Client Components,
-- metadata,
-- typed data loading,
-- dynamic routes.
-
-## Pages και layouts
-
-Στο App Router κάθε route χτίζεται με folders.
+Κάθε φάκελος μέσα στο `app/` είναι ένα route segment, και ειδικά αρχεία ορίζουν τη συμπεριφορά του:
 
 ```txt
 app/
+  layout.tsx          ← root layout (τυλίγει ΤΑ ΠΑΝΤΑ — html/body)
+  page.tsx            ← το "/"
+  loading.tsx         ← loading UI (αυτόματο Suspense boundary)
+  not-found.tsx       ← 404 UI
+  error.tsx           ← error boundary (πρέπει να είναι client component)
   projects/
-    page.tsx
-  layout.tsx
+    layout.tsx        ← κοινό UI για ό,τι ξεκινά με /projects
+    page.tsx          ← το "/projects"
+    [slug]/
+      page.tsx        ← το "/projects/roadmap", "/projects/tasks", ...
 ```
 
-Το `layout.tsx` τυλίγει τις σελίδες. Το `page.tsx` είναι το actual route UI.
+Δύο κανόνες που ρωτιούνται:
 
-## Server Components
+- **Layouts δεν κάνουν re-render στο navigation** — το state τους διατηρείται όταν πλοηγείσαι ανάμεσα σε σελίδες που μοιράζονται το ίδιο layout. Γι' αυτό το sidebar δεν «τρεμοπαίζει».
+- **Τα layouts είναι φωλιασμένα**: root layout → projects layout → page. Κάθε επίπεδο τυλίγει το επόμενο.
 
-Στο App Router, components είναι Server Components by default. Αυτό σημαίνει ότι μπορείς να κάνεις server-side data loading χωρίς να στείλεις όλη τη λογική στον browser.
+## Dynamic routes & params
+
+Ο φάκελος `[slug]` πιάνει δυναμικά τμήματα του URL. Στις πρόσφατες εκδόσεις του Next.js, τα `params` είναι **Promise** — τα κάνεις `await`:
 
 ```tsx
-export default async function Page() {
-  const data = await getData();
-  return <main>{data.title}</main>;
+// app/projects/[slug]/page.tsx
+export default async function ProjectPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+  const project = await getProject(slug);
+
+  if (!project) notFound(); // δείχνει το πλησιέστερο not-found.tsx
+
+  return <h1>{project.title}</h1>;
+}
+
+// Προ-δημιουργία των routes στο build (static generation):
+export function generateStaticParams() {
+  return [{ slug: "roadmap" }, { slug: "tasks" }];
 }
 ```
 
-## Client Components
+Διάκριση που μπερδεύει συχνά: **route params** (`/projects/[slug]` → μέρος του path) vs **search params** (`?filter=active` → query string, διαθέσιμα μέσω του `searchParams` prop στη σελίδα ή `useSearchParams()` σε client component).
 
-Αν χρειάζεσαι state, effects ή browser APIs, βάζεις:
+## Server Components — το default και γιατί
+
+Στο App Router **όλα τα components είναι Server Components εκτός αν δηλώσεις αλλιώς**. Τρέχουν μόνο στον server:
+
+```tsx
+// Κανένα "use client" — αυτό τρέχει ΜΟΝΟ server-side
+export default async function ProjectsPage() {
+  const projects = await db.project.findMany(); // απευθείας DB πρόσβαση!
+  return (
+    <ul>
+      {projects.map((p) => <li key={p.id}>{p.title}</li>)}
+    </ul>
+  );
+}
+```
+
+Τι κερδίζεις:
+
+- **Async data loading χωρίς useEffect** — το component απλά κάνει `await`.
+- **Μηδέν JavaScript στο bundle** για αυτά τα components — ο browser παίρνει έτοιμο HTML.
+- **Secrets παραμένουν server-side** — DB credentials, API keys δεν φτάνουν ποτέ στον client.
+
+Τι ΔΕΝ μπορούν: state (`useState`), effects, event handlers (`onClick`), browser APIs. Για αυτά υπάρχουν τα Client Components.
+
+## Client Components — το boundary της διαδραστικότητας
 
 ```tsx
 "use client";
+
+import { useState } from "react";
+
+export function LikeButton({ projectId }: { projectId: string }) {
+  const [likes, setLikes] = useState(0);
+  return <button onClick={() => setLikes(likes + 1)}>♥ {likes}</button>;
+}
 ```
 
-Μην το βάζεις παντού. Χρησιμοποίησέ το μόνο όταν χρειάζεται interactivity.
+Τα τρία πράγματα που πρέπει να πεις σωστά:
 
-## Metadata
+1. **Το `"use client"` είναι boundary, όχι «ετικέτα»** — ό,τι κάνει import ένα client component γίνεται κι αυτό μέρος του client bundle. Γι' αυτό το βάζεις όσο πιο **χαμηλά** στο δέντρο γίνεται (στο κουμπί, όχι στη σελίδα).
+2. **Server → Client props πρέπει να είναι serializable** — objects, strings, numbers ναι· functions, class instances, Dates θέλουν προσοχή. Δεν μπορείς να περάσεις ένα DB client ως prop.
+3. **Client components ΜΠΟΡΟΥΝ να δεχτούν Server Components ως `children`** — το pattern «interactive wrapper γύρω από server content»:
 
 ```tsx
-export const metadata: Metadata = {
-  title: "Projects"
-};
+// ✅ Ο interactive Tabs (client) τυλίγει server-rendered περιεχόμενο
+<Tabs>
+  <ServerRenderedReport />
+</Tabs>
 ```
 
-Καλό για SEO και social previews.
+<PredictOutput
+  title="Server/Client boundary drill"
+  code={`// app/page.tsx — Server Component
+import { db } from "@/lib/db";
+
+export default async function Page() {
+  const stats = await db.stats.get();
+
+  return (
+    <section>
+      <h1>Dashboard</h1>
+      <Counter initial={stats.count} />
+    </section>
+  );
+}
+
+// counter.tsx
+"use client";
+export function Counter({ initial }: { initial: number }) {
+  const [n, setN] = useState(initial);
+  return <button onClick={() => setN(n + 1)}>{n}</button>;
+}`}
+  options={[
+    "Δουλεύει: η σελίδα φορτώνει data server-side και περνά serializable prop στο client component",
+    "Error: server components δεν μπορούν να κάνουν import client components",
+    "Error: το initial δεν επιτρέπεται ως prop",
+    "Δουλεύει, αλλά το db client στέλνεται στον browser"
+  ]}
+  correctOptionIndex={0}
+  answer="Δουλεύει κανονικά"
+  explanation="Αυτό είναι ακριβώς το σωστό pattern: ο server κάνει το data fetching (το db δεν φεύγει ποτέ από τον server), και περνά ένα ΑΠΛΟ serializable value (number) στο client component που χειρίζεται τη διαδραστικότητα. Server import client: επιτρέπεται. Το αντίστροφο (client import server) μετατρέπει το server component σε client."
+/>
+
+## Data fetching & caching
+
+Το data loading στο App Router γίνεται στον server, στο σημείο που χρειάζεται:
+
+```tsx
+async function getProject(slug: string): Promise<Project | null> {
+  const res = await fetch(`https://api.example.com/projects/${slug}`, {
+    next: { revalidate: 3600 }, // ISR: φρεσκάρισμα κάθε ώρα
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+```
+
+Οι τρεις στρατηγικές που πρέπει να ονομάζεις:
+
+- **Static** (build time): σελίδες που δεν αλλάζουν συχνά — το ταχύτερο δυνατό.
+- **ISR (Incremental Static Regeneration)**: static + περιοδικό φρεσκάρισμα (`revalidate`) — ο συνδυασμός ταχύτητας και φρεσκάδας.
+- **Dynamic** (request time): per-user περιεχόμενο (dashboards) — όταν διαβάζεις cookies/headers, η σελίδα γίνεται dynamic.
+
+Επειδή τα Server Components τρέχουν παράλληλα και κάνουν cache τα fetch requests, το ίδιο `fetch` σε πολλά components στο ίδιο render **δεν** ξαναχτυπά το API.
+
+## Route Handlers — API endpoints μέσα στο app
+
+```ts
+// app/api/projects/route.ts
+import { NextResponse } from "next/server";
+
+export async function GET() {
+  const projects = await db.project.findMany();
+  return NextResponse.json({ data: projects });
+}
+
+export async function POST(request: Request) {
+  const body = await request.json();
+  // validation... create...
+  return NextResponse.json({ data: created }, { status: 201 });
+}
+```
+
+Το `route.ts` ορίζει REST endpoints με τα HTTP methods ως named exports — χρήσιμο για webhooks, mobile clients, ή όταν το frontend σου δεν είναι το μόνο που καταναλώνει τα δεδομένα.
+
+## Metadata — SEO χωρίς κόπο
+
+```tsx
+// Static metadata
+export const metadata: Metadata = {
+  title: "Projects",
+  description: "Selected fullstack projects",
+};
+
+// Dynamic metadata — για dynamic routes
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const project = await getProject(slug);
+  return { title: project?.title ?? "Project" };
+}
+```
 
 ## Mini project: typed projects page
 
-Το challenge ελέγχει typed App Router page με metadata, async data loading και `Link`.
+Το challenge ελέγχει typed App Router page με metadata, async data loading και `Link`:
 
 <CodeChallenge
   title="Next.js App Router challenge"
@@ -165,24 +308,94 @@ export const metadata: Metadata = {
   ]}
 />
 
-## Interview answer template
+## Πώς απαντάς στη συνέντευξη
 
-Αν σε ρωτήσουν “Server Component vs Client Component;”, απάντησε:
+«Server Components vs Client Components?»
 
-> Server Components render on the server and are good for data fetching and non-interactive UI. Client Components run in the browser and are needed for state, effects, event handlers, and browser APIs.
+> In the App Router everything is a Server Component by default — they render on the server, can fetch data directly with async/await, keep secrets server-side, and ship zero JavaScript to the browser. I add "use client" only where I need state, effects, or event handlers, and I push that boundary as low in the tree as possible, because everything a client component imports joins the client bundle. Props crossing the boundary must be serializable, and a client component can still receive server-rendered content through children.
 
 <Exercise
   question="Πότε χρειάζεται 'use client';"
   options={[
     "Όταν το component χρειάζεται state, effects, event handlers ή browser APIs.",
-    "Σε κάθε component πάντα.",
-    "Μόνο για CSS files."
+    "Σε κάθε component που κάνει fetch δεδομένων.",
+    "Σε κάθε αρχείο page.tsx υποχρεωτικά."
   ]}
   correctOptionIndex={0}
-  explanation="Σωστά. Το use client είναι boundary για browser-side interactivity."
+  explanation="Σωστά. Το data fetching γίνεται ΚΑΛΥΤΕΡΑ σε server components (async/await απευθείας). Το use client χρειάζεται μόνο για διαδραστικότητα — και το βάζεις όσο πιο χαμηλά στο δέντρο γίνεται."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="nextjs-app-router" />
-</div>
+<Exercise
+  question="Γιατί βάζουμε το 'use client' στο μικρό κουμπί και όχι σε όλη τη σελίδα;"
+  options={[
+    "Για λόγους κώδικα-στυλ μόνο — δεν αλλάζει κάτι.",
+    "Γιατί το boundary 'τραβάει' στο client bundle ό,τι κάνει import το client component — όσο ψηλότερα, τόσο περισσότερο JavaScript στέλνεις στον browser.",
+    "Γιατί το use client δεν δουλεύει σε page.tsx αρχεία."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Το 'use client' ορίζει boundary: από εκεί και κάτω, όλα τα imports μπαίνουν στο bundle. Μικρό boundary = μικρό bundle = ταχύτερη σελίδα, και το data fetching μένει server-side."
+/>
+
+<Flashcards
+  title="Next.js — interview drills"
+  cards={[
+    {
+      question: "Τι κάνει το loading.tsx;",
+      answer: "Αυτόματο Suspense boundary για το route segment: εμφανίζεται αμέσως στο navigation όσο η σελίδα κάνει await τα δεδομένα της. Αντίστοιχα, το error.tsx είναι error boundary (υποχρεωτικά client component) και το not-found.tsx το 404 UI."
+    },
+    {
+      question: "SSR vs SSG vs ISR;",
+      answer: "SSG: HTML παράγεται στο build — ταχύτερο, για σταθερό περιεχόμενο. SSR: παράγεται σε κάθε request — για per-user/πάντα φρέσκα δεδομένα. ISR: static με περιοδικό revalidate — static ταχύτητα με ελεγχόμενη φρεσκάδα."
+    },
+    {
+      question: "Τι είναι το hydration;",
+      answer: "Ο browser παίρνει το server-rendered HTML και το React 'κουμπώνει' πάνω του event listeners και state ώστε να γίνει διαδραστικό. Hydration mismatch: όταν server και client render διαφέρουν (π.χ. Date.now(), random) — γι' αυτό θέλουν προσοχή ή suppressHydrationWarning."
+    },
+    {
+      question: "Μπορεί ένα client component να περιέχει server component;",
+      answer: "Όχι μέσω import — αν κάνει import, το 'server' component γίνεται μέρος του client bundle. Ναι μέσω children/props: ο server περνά ήδη-rendered server content μέσα στο client wrapper (pattern: interactive shell γύρω από server περιεχόμενο)."
+    },
+    {
+      question: "Τι κάνει το generateStaticParams;",
+      answer: "Σε dynamic route ([slug]) επιστρέφει τη λίστα των params που θα προ-παραχθούν στο build — μετατρέπει dynamic σελίδες σε static. Με dynamicParams=false, ό,τι δεν είναι στη λίστα δίνει 404."
+    },
+    {
+      question: "Γιατί next/link αντί για σκέτο <a>;",
+      answer: "Client-side navigation χωρίς full page reload, με prefetching των routes που φαίνονται στο viewport — η πλοήγηση μοιάζει στιγμιαία. Το <a> κάνει πλήρες reload και χάνει όλο το client state."
+    },
+    {
+      question: "Route params vs search params;",
+      answer: "Route params: μέρος του path (/projects/[slug]) — ορίζουν ΠΟΙΟ resource, διαθέσιμα ως params prop (Promise, θέλει await). Search params: query string (?filter=active) — ορίζουν ΠΩΣ το βλέπεις (φίλτρα, σελίδες), μέσω searchParams prop ή useSearchParams()."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Σχεδίασε multi-page portfolio με App Router"
+  scenario="Φτιάξε portfolio με home, projects και project detail route. Ο στόχος είναι να καταλάβεις file-based routing, layouts και server/client boundaries."
+  outcomes={[
+    "Να δημιουργείς routes με folders και page files.",
+    "Να αποφασίζεις πότε ένα component πρέπει να είναι client component.",
+    "Να χρησιμοποιείς layout για κοινό UI χωρίς duplication."
+  ]}
+  steps={[
+    "Φτιάξε routes /, /projects και /projects/[slug] με generateStaticParams.",
+    "Βάλε κοινό header/footer στο layout.",
+    "Πρόσθεσε loading.tsx και not-found.tsx στο /projects/[slug].",
+    "Κράτα static content σε server components.",
+    "Κάνε μόνο το interactive filter client component — και μέτρησε τι μπήκε στο bundle."
+  ]}
+  checkpoints={[
+    "Κάθε URL αντιστοιχεί σε σαφή φάκελο.",
+    "Δεν έχεις βάλει use client σε ολόκληρη σελίδα χωρίς λόγο.",
+    "Το layout δεν ξαναγράφεται σε κάθε page.",
+    "Το detail page κάνει await τα params και χειρίζεται το 404."
+  ]}
+  mistakes={[
+    "Να κάνεις τα πάντα client component.",
+    "Να μπερδεύεις route params με search params.",
+    "Να περνάς μη-serializable props από server σε client component.",
+    "Να βάζεις shared UI με copy-paste αντί για layout."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να σχεδιάσεις τη δομή φακέλων πριν δημιουργήσεις τα αρχεία."
+/>

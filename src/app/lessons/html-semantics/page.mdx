@@ -128,7 +128,51 @@ Elements όπως `header`, `nav`, `main` και `footer` δημιουργούν
   explanation="Σωστά. Τα semantic elements δίνουν νόημα στη δομή, όχι απλώς εμφάνιση."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="html-semantics" />
-</div>
+<Flashcards
+  title="Semantics — γρήγορο repaso"
+  cards={[
+    {
+      question: "Γιατί semantic HTML αντί για div παντού;",
+      answer: "1) Accessibility: οι screen readers καταλαβαίνουν header/nav/main/article και προσφέρουν πλοήγηση. 2) SEO: οι μηχανές καταλαβαίνουν τη δομή. 3) Αναγνωσιμότητα: ο επόμενος developer βλέπει το νόημα. Το div δεν λέει ΤΙΠΟΤΑ για το περιεχόμενο."
+    },
+    {
+      question: "section vs article vs div;",
+      answer: "article: αυτόνομο περιεχόμενο που στέκεται μόνο του (post, σχόλιο, card). section: θεματική ενότητα με δικό της heading. div: ΚΑΝΕΝΑ σημασιολογικό νόημα — μόνο για styling/layout hooks όταν τίποτα άλλο δεν ταιριάζει."
+    },
+    {
+      question: "Πόσα h1 βάζεις σε μια σελίδα και γιατί έχει σημασία η ιεραρχία;",
+      answer: "Ένα h1 ανά σελίδα (ο κύριος τίτλος), και μετά h2/h3 χωρίς να πηδάς επίπεδα. Οι χρήστες screen reader πλοηγούνται από heading σε heading — σπασμένη ιεραρχία = χαμένη πλοήγηση."
+    },
+    {
+      question: "Τι κάνει το main και πόσες φορές εμφανίζεται;",
+      answer: "Περικλείει το κύριο περιεχόμενο της σελίδας — ΜΙΑ φορά ανά σελίδα, εκτός από header/footer/nav. Τα assistive technologies προσφέρουν 'skip to main content' βασισμένο σε αυτό."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Μετέτρεψε div soup σε semantic page"
+  scenario="Πάρε μια σελίδα άρθρου που είναι γεμάτη divs και ξαναχτίσ' την με header, nav, main, article, section και footer."
+  outcomes={[
+    "Να διαλέγεις semantic element με βάση τον ρόλο του περιεχομένου.",
+    "Να φτιάχνεις καθαρή document outline.",
+    "Να καταλαβαίνεις πώς accessibility και SEO επηρεάζονται από τη δομή."
+  ]}
+  steps={[
+    "Γράψε πρώτα τη σελίδα μόνο με divs και headings.",
+    "Σημείωσε ποια κομμάτια είναι navigation, main content, article και footer.",
+    "Αντικατάστησε τα divs με semantic tags.",
+    "Έλεγξε αν η σελίδα βγάζει νόημα όταν διαβάζεται μόνο το HTML."
+  ]}
+  checkpoints={[
+    "Υπάρχει ένα καθαρό main για το κύριο περιεχόμενο.",
+    "Το article περιέχει self-contained περιεχόμενο.",
+    "Τα headings ακολουθούν λογική σειρά."
+  ]}
+  mistakes={[
+    "Να χρησιμοποιείς section χωρίς heading.",
+    "Να βάζεις πολλά main elements στην ίδια σελίδα.",
+    "Να διαλέγεις tag επειδή μοιάζει ωραίο και όχι επειδή σημαίνει κάτι."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να κοιτάξεις μια σελίδα και να σχεδιάσεις τη semantic δομή της πριν γράψεις CSS."
+/>

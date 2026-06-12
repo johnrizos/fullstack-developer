@@ -45,53 +45,141 @@ document.querySelector("#calculate").addEventListener("click", function () {
 
 # Modules & Code Organization
 
-Όταν ο κώδικας μεγαλώνει, το πρόβλημα δεν είναι μόνο “να δουλεύει”. Πρέπει να είναι κατανοητός, testable και εύκολος να αλλάξει.
+Όταν ο κώδικας μεγαλώνει, το πρόβλημα δεν είναι «να δουλεύει» — είναι να παραμένει κατανοητός, testable και εύκολος να αλλάξει. Στις συνεντεύξεις αυτό εξετάζεται με δύο τρόπους: ερωτήσεις για ES modules (imports/exports) και η ποιότητα οργάνωσης του κώδικά σου στο live coding. Εδώ θα δεις και τα δύο.
 
-Σε πραγματικό project, χωρίζουμε τον κώδικα σε μικρά κομμάτια:
+## ES Modules: το σύστημα οργάνωσης της γλώσσας
 
-- pure functions για λογική,
-- UI/event code για αλληλεπίδραση,
-- modules με imports/exports,
-- καθαρά ονόματα που εξηγούν τι κάνει κάθε κομμάτι.
-
-## Pure functions
-
-Μια pure function επιστρέφει αποτέλεσμα με βάση τα inputs της και δεν αλλάζει εξωτερική κατάσταση.
+Κάθε αρχείο είναι module με δικό του scope — τίποτα δεν είναι global εκτός αν το κάνεις export:
 
 ```js
-function add(a, b) {
-  return a + b;
+// cart.js
+export function calculateTotal(items) {
+  return items.reduce((total, item) => total + item.price * item.quantity, 0);
+}
+
+export const TAX_RATE = 0.24;
+
+export default class Cart { /* ... */ }
+```
+
+```js
+// app.js
+import Cart, { calculateTotal, TAX_RATE } from "./cart.js";
+import * as cart from "./cart.js"; // namespace import: cart.calculateTotal(...)
+```
+
+**Named vs default exports** — η κλασική ερώτηση:
+
+| | Named | Default |
+|---|---|---|
+| Ανά αρχείο | Πολλά | Ένα |
+| Import όνομα | Πρέπει να ταιριάζει (`{ calculateTotal }`) | Ό,τι θες (`import Whatever`) |
+| Refactoring/autocomplete | Καλύτερο — τα ονόματα ελέγχονται | Ευάλωτο σε ασυνέπειες |
+
+Πολλά teams (και style guides) προτιμούν **named exports παντού**: το όνομα ελέγχεται από τον bundler, το rename γίνεται με ασφάλεια, και το autocomplete δουλεύει καλύτερα.
+
+Δύο ακόμα ιδιότητες των ES modules που ρωτιούνται:
+
+- **Τα modules είναι singletons**: το `import` του ίδιου αρχείου από 10 σημεία εκτελεί το module **μία φορά** — όλοι μοιράζονται το ίδιο instance. (Γι' αυτό ένα `export const config = {...}` λειτουργεί ως κοινή κατάσταση.)
+- **ESM vs CommonJS**: το `import/export` είναι το standard (στατικό, αναλύσιμο στο build — επιτρέπει tree-shaking). Το `require()/module.exports` είναι το παλιό σύστημα του Node (δυναμικό, runtime). Σήμερα γράφεις ESM σχεδόν παντού.
+
+## Pure functions: ο πυρήνας του testable κώδικα
+
+Μια **pure function**: (1) ίδια inputs → πάντα ίδιο output, (2) **κανένα side effect** — δεν αλλάζει τίποτα έξω από αυτήν:
+
+```js
+// ✅ Pure: μόνο inputs → output
+function calculateLineTotal(item) {
+  return item.price * item.quantity;
+}
+
+// ❌ Impure: διαβάζει/γράφει εξωτερική κατάσταση
+let total = 0;
+function addToTotal(item) {
+  total += item.price;        // side effect: αλλάζει εξωτερική μεταβλητή
+  document.title = total;     // side effect: αγγίζει το DOM
+}
+
+// ❌ Impure με ύπουλο τρόπο: ΜΕΤΑΛΛΑΣΣΕΙ το input!
+function applyDiscount(item) {
+  item.price = item.price * 0.9; // ο caller δεν το περιμένει αυτό
+  return item;
+}
+
+// ✅ Pure εκδοχή: επιστρέφει νέο object
+function applyDiscount(item) {
+  return { ...item, price: item.price * 0.9 };
 }
 ```
 
-Αυτό είναι εύκολο να τεσταριστεί.
+Γιατί τόση φασαρία; Οι pure functions **τεστάρονται με μία γραμμή** (input → expected output, χωρίς mocks), συνδυάζονται ελεύθερα, και δεν κρύβουν εκπλήξεις. Όσο περισσότερη λογική ζει σε pure functions, τόσο μικρότερο και πιο απλό είναι το «βρώμικο» κομμάτι (DOM, network, storage).
 
-## Separation of concerns
-
-Μη βάζεις όλο τον κώδικα μέσα σε ένα click handler. Κράτα τη λογική χωριστά:
-
-```js
-function calculateTotal(items) {
-  return items.reduce((total, item) => total + item.price, 0);
+<PredictOutput
+  title="Hidden mutation drill"
+  code={`function addItem(cart, item) {
+  cart.push(item);
+  return cart;
 }
+
+const cart1 = [{ name: "Mouse" }];
+const cart2 = addItem(cart1, { name: "Keyboard" });
+
+console.log(cart1.length, cart2.length, cart1 === cart2);`}
+  options={["2 2 true", "1 2 false", "2 2 false", "1 2 true"]}
+  correctOptionIndex={0}
+  answer="2 2 true"
+  explanation="Το push ΜΕΤΑΛΛΑΣΣΕΙ το cart1 και το επιστρέφει — cart1 και cart2 είναι το ΙΔΙΟ array. Αυτή η κρυφή μετάλλαξη είναι πηγή bugs. Pure εκδοχή: return [...cart, item] — τότε θα έβλεπες 1 2 false."
+/>
+
+## Separation of concerns: τα τρία στρώματα
+
+Ακόμα και σε μικρό app, χώρισε τον κώδικα σε ρόλους:
+
+```txt
+┌─────────────────────────────────────────┐
+│ UI layer (events, DOM)                  │ ← «βρώμικο», λεπτό στρώμα
+│   click → καλεί logic → ενημερώνει DOM  │
+├─────────────────────────────────────────┤
+│ Business logic (pure functions)         │ ← ο «εγκέφαλος», 100% testable
+│   calculateTotal, applyDiscount, ...    │
+├─────────────────────────────────────────┤
+│ Data/IO layer (fetch, localStorage)     │ ← side effects στα όρια
+│   saveCart, loadCart, fetchPrices       │
+└─────────────────────────────────────────┘
 ```
 
-Το click handler απλώς καλεί τη λογική και ενημερώνει το UI.
-
-## Modules
-
-Σε πραγματικά projects θα έχεις:
+Το anti-pattern που βλέπεις σε κάθε αρχάριο codebase: **όλα μέσα στο click handler** — υπολογισμοί, validation, DOM updates, fetch, όλα μαζί. Δεν τεστάρεται, δεν επαναχρησιμοποιείται, δεν διαβάζεται.
 
 ```js
-export function calculateTotal(items) {}
-import { calculateTotal } from "./cart";
+// ✅ Το handler είναι "συντονιστής" — λεπτός και βαρετός
+document.querySelector("#calculate").addEventListener("click", () => {
+  const total = calculateCartTotal(cartItems);        // logic (pure)
+  renderTotal(formatCurrency(total));                  // UI
+});
 ```
 
-Το challenge εδώ είναι single-file για να τρέχει στο browser preview, αλλά η λογική είναι γραμμένη σαν να μπορούσε να μεταφερθεί σε module.
+Ο πρακτικός κανόνας: **side effects στα boundaries**. Η καρδιά του προγράμματος είναι pure· το διάβασμα/γράψιμο του κόσμου (DOM, δίκτυο, δίσκος) συμβαίνει στις άκρες.
+
+## Πώς χωρίζεις σε modules — με ευθύνη, όχι με μέγεθος
+
+```txt
+src/
+  cart/
+    calculations.js   ← pure: totals, discounts, tax
+    storage.js        ← IO: save/load από localStorage
+    ui.js             ← DOM: render, event listeners
+  utils/
+    currency.js       ← pure: formatCurrency
+```
+
+Κριτήριο διαχωρισμού: **«τι αλλάζει μαζί;»** — όχι «πόσες γραμμές έχει το αρχείο». Αν αλλάξεις τον τρόπο αποθήκευσης (localStorage → API), πρέπει να αγγίξεις ΜΟΝΟ το `storage.js`. Αν αλλάξει ο ΦΠΑ, μόνο το `calculations.js`. Αυτό είναι το πρακτικό νόημα του «loose coupling, high cohesion» που ακούγεται στις συνεντεύξεις:
+
+- **High cohesion**: ό,τι είναι μαζί σε ένα module, ανήκει πραγματικά μαζί.
+- **Loose coupling**: τα modules μιλούν μεταξύ τους μέσω μικρών, καθαρών APIs — όχι ο καθένας με τα εσωτερικά του άλλου.
 
 ## Mini project: cart logic
 
-Το challenge υπολογίζει cart total με μικρές functions.
+Το challenge υπολογίζει cart total με μικρές, καθαρές functions — πρόσεξε πώς το click handler μένει «λεπτός»:
 
 <CodeChallenge
   title="Cart logic challenge"
@@ -139,24 +227,90 @@ import { calculateTotal } from "./cart";
   ]}
 />
 
-## Interview answer template
+## Πώς απαντάς στη συνέντευξη
 
-Αν σε ρωτήσουν “how do you organize JavaScript code?”, απάντησε:
+«How do you organize JavaScript code?»
 
-> I separate business logic from UI/event code, keep reusable logic in small pure functions, group related functions into modules, and make side effects explicit at the boundaries.
+> I separate business logic from UI and IO. The core logic lives in small pure functions — same input, same output, no side effects — which makes it trivially testable without mocks. Side effects like DOM updates, fetch, and storage stay at the boundaries, in thin modules with a clear responsibility each. I use ES modules with named exports, and I split by responsibility — what changes together stays together — not by file size.
 
 <Exercise
   question="Γιατί είναι χρήσιμες οι pure functions;"
   options={[
-    "Είναι πιο εύκολες να τεσταριστούν και να ξαναχρησιμοποιηθούν.",
-    "Αλλάζουν αυτόματα το CSS.",
-    "Τρέχουν μόνο μέσα σε HTML forms."
+    "Τεστάρονται χωρίς mocks, είναι προβλέψιμες και επαναχρησιμοποιήσιμες — ίδια inputs δίνουν πάντα ίδιο output χωρίς side effects.",
+    "Τρέχουν πιο γρήγορα από τις κανονικές functions.",
+    "Επιτρέπουν στο JavaScript να κάνει multithreading."
   ]}
   correctOptionIndex={0}
-  explanation="Σωστά. Όταν μια function εξαρτάται μόνο από τα inputs της, είναι πιο προβλέψιμη."
+  explanation="Σωστά. Το τεστ μιας pure function είναι μία γραμμή: expect(fn(input)).toBe(output). Χωρίς setup, χωρίς mocks, χωρίς εκπλήξεις."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="javascript-modules-patterns" />
-</div>
+<Exercise
+  question="Το import του ίδιου module από 5 διαφορετικά αρχεία — πόσες φορές εκτελείται ο κώδικάς του;"
+  options={[
+    "Μία — τα ES modules είναι singletons και γίνονται cache.",
+    "Πέντε — μία ανά import.",
+    "Εξαρτάται από τον browser."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Το module εκτελείται την πρώτη φορά και μετά όλα τα imports παίρνουν το ίδιο cached instance. Γι' αυτό ένα exported object λειτουργεί ως κοινή κατάσταση μεταξύ των importers."
+/>
+
+<Flashcards
+  title="Modules & οργάνωση — interview drills"
+  cards={[
+    {
+      question: "Named vs default exports — ποιο και γιατί;",
+      answer: "Named: πολλά ανά αρχείο, το όνομα ελέγχεται στο import, καλύτερο refactoring/autocomplete. Default: ένα ανά αρχείο, ο importer το ονομάζει όπως θέλει (κίνδυνος ασυνέπειας). Πολλά teams προτιμούν named παντού."
+    },
+    {
+      question: "ESM vs CommonJS;",
+      answer: "ESM (import/export): το standard, στατικά αναλύσιμο στο build — επιτρέπει tree-shaking (αφαίρεση αχρησιμοποίητου κώδικα). CommonJS (require/module.exports): το παλιό σύστημα του Node, runtime resolution. Νέος κώδικας: ESM."
+    },
+    {
+      question: "Τι είναι side effect και πού 'επιτρέπεται';",
+      answer: "Κάθε αλληλεπίδραση με τον έξω κόσμο: DOM, network, storage, console, μετάλλαξη εξωτερικών μεταβλητών ή των inputs. Δεν εξαλείφονται — ΟΡΓΑΝΩΝΟΝΤΑΙ: η λογική μένει pure στο κέντρο, τα effects ζουν ρητά στα boundaries (handlers, IO modules)."
+    },
+    {
+      question: "Τι σημαίνει 'loose coupling, high cohesion';",
+      answer: "Cohesion: τα περιεχόμενα ενός module ανήκουν πραγματικά μαζί (αλλάζουν μαζί). Coupling: πόσο εξαρτώνται τα modules μεταξύ τους — θες επικοινωνία μέσω μικρών APIs, όχι πρόσβαση στα εσωτερικά. Μαζί: αλλαγές μένουν τοπικές."
+    },
+    {
+      question: "Τι είναι το tree-shaking;",
+      answer: "Ο bundler αφαιρεί exports που δεν γίνονται import πουθενά — μικρότερο bundle. Δουλεύει επειδή τα ES imports είναι στατικά (αναλύονται χωρίς εκτέλεση). Ένας ακόμα λόγος για ESM + named exports."
+    },
+    {
+      question: "Γιατί μια function που μεταλλάσσει το input της είναι πρόβλημα;",
+      answer: "Ο caller δεν το περιμένει — το object του άλλαξε 'από μακριά'. Δημιουργεί bugs που εμφανίζονται μακριά από την αιτία τους. Pure εναλλακτική: επιστροφή νέου object/array με spread, το αρχικό μένει ανέπαφο."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Χώρισε shopping cart logic"
+  scenario="Πάρε cart code που είναι όλο σε ένα αρχείο και χώρισέ το σε pure functions, UI code και storage code."
+  outcomes={[
+    "Να ξεχωρίζεις business logic από DOM code.",
+    "Να γράφεις pure functions που τεστάρονται εύκολα.",
+    "Να χρησιμοποιείς imports/exports με καθαρά boundaries."
+  ]}
+  steps={[
+    "Γράψε addItem, removeItem και calculateTotal ως pure functions (χωρίς push — με spread).",
+    "Βάλε DOM event handlers σε ξεχωριστό αρχείο που κάνει import τη λογική.",
+    "Βάλε localStorage save/load σε storage module.",
+    "Γράψε μικρά examples/tests για κάθε pure function.",
+    "Άλλαξε το storage σε fake API και μέτρα πόσα αρχεία χρειάστηκε να αγγίξεις."
+  ]}
+  checkpoints={[
+    "Οι pure functions δεν αγγίζουν DOM ή localStorage.",
+    "Κάθε module έχει καθαρή ευθύνη.",
+    "Μπορείς να αλλάξεις storage χωρίς να πειράξεις cart calculations.",
+    "Κανένα function δεν μεταλλάσσει τα inputs του."
+  ]}
+  mistakes={[
+    "Να κάνεις import τα πάντα παντού.",
+    "Να κρύβεις side effects μέσα σε function που μοιάζει pure.",
+    "Να φτιάχνεις modules με βάση file count και όχι responsibility.",
+    "Να επιστρέφεις το ίδιο (μεταλλαγμένο) array και να το λες 'νέο state'."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να εξηγήσεις γιατί κάθε function ζει στο αρχείο που ζει."
+/>

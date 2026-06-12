@@ -1,154 +1,257 @@
 # Node.js, Express & NestJS
 
-Backend developer πρέπει να ξέρει πώς στήνεται server, πώς ορίζονται routes και πώς περνάει ένα request μέσα από middleware μέχρι να επιστραφεί response.
+Backend developer σημαίνει να ξέρεις πώς στήνεται server, πώς περνά ένα request μέσα από middleware μέχρι το response, και πώς οργανώνεις τον κώδικα ώστε να μη γίνει το route handler ένα τεράστιο function. Στις συνεντεύξεις, οι σταθερές ερωτήσεις: «γιατί Node;», «τι είναι middleware;», «Express ή NestJS;».
 
-## Node.js
+## Γιατί Node.js — η σωστή απάντηση
 
-Node.js επιτρέπει να τρέχεις JavaScript στον server. Εκεί χειρίζεσαι:
+Το Node τρέχει JavaScript στον server πάνω στο V8, με ένα κρίσιμο σχεδιαστικό χαρακτηριστικό: **non-blocking I/O σε ένα thread**.
 
-- HTTP requests,
-- business logic,
-- database calls,
-- authentication,
-- background tasks.
+Παραδοσιακά servers δεσμεύουν ένα thread ανά request — αν το request περιμένει τη database, το thread κάθεται. Το Node δουλεύει αλλιώς: όταν ένα request περιμένει I/O (database, αρχείο, εξωτερικό API), ο μοναδικός thread **συνεχίζει να εξυπηρετεί άλλα requests** και επιστρέφει όταν έρθει η απάντηση — ο μηχανισμός είναι ο ίδιος event loop που ξέρεις από τον browser.
 
-Το σημαντικό mental model: ο browser δεν έχει άμεση πρόσβαση στη database. Ο browser κάνει request στον server, ο server ελέγχει auth/validation, μιλάει με database ή τρίτα APIs και επιστρέφει response.
+Συνέπειες που πρέπει να αρθρώνεις:
 
-Τυπική ροή:
+- **Δυνατό σε I/O-bound φορτία**: APIs, proxies, real-time — χιλιάδες ταυτόχρονες συνδέσεις με λίγη μνήμη.
+- **Αδύναμο σε CPU-bound δουλειά**: ένα βαρύ συγχρονισμένο loop (image processing, crypto) **μπλοκάρει όλα τα requests** — γι' αυτό βαριά δουλειά πάει σε worker threads ή ξεχωριστό service.
+- Ίδια γλώσσα με το frontend: κοινά types, κοινά validation schemas, ένα οικοσύστημα.
 
-1. Client στέλνει `GET /api/tasks`.
-2. Middleware ελέγχει logging/auth.
-3. Route handler διαβάζει query params.
-4. Service εφαρμόζει business logic.
-5. Database layer φέρνει δεδομένα.
-6. Server επιστρέφει JSON.
+Η ροή ενός request σε σωστά οργανωμένο backend:
 
-## Express
+```txt
+Client ──> Middleware (logging, auth, parsing)
+       ──> Route handler (HTTP concerns: params, status codes)
+       ──> Service (business logic)
+       ──> Data layer (database queries)
+       <── JSON response
+```
 
-Express είναι minimal framework.
+## Express: minimal αλλά με κανόνες
 
 ```ts
+import express from "express";
+
+const app = express();
+app.use(express.json()); // χωρίς αυτό, το req.body είναι undefined!
+
 app.get("/tasks", async (req, res) => {
-  res.json({ data: [] });
+  const tasks = await taskService.list({ completed: req.query.completed === "true" });
+  res.json({ data: tasks });
 });
-```
 
-Πιο ρεαλιστικό παράδειγμα:
-
-```ts
-app.post("/tasks", async (req, res) => {
-  const title = req.body.title;
-
-  if (typeof title !== "string" || title.trim().length < 2) {
-    return res.status(400).json({ error: "Title is required" });
+app.post("/tasks", async (req, res, next) => {
+  try {
+    const title = req.body.title;
+    if (typeof title !== "string" || title.trim().length < 2) {
+      return res.status(422).json({ error: "Title must be at least 2 characters" });
+    }
+    const task = await taskService.create({ title: title.trim() });
+    res.status(201).json({ data: task });
+  } catch (error) {
+    next(error); // προώθηση στο centralized error handler
   }
-
-  const task = await taskService.createTask({ title });
-  return res.status(201).json({ data: task });
 });
+
+app.listen(3000);
 ```
 
-Το route handler δεν πρέπει να γεμίζει με όλη τη λογική. Συνήθως κρατάς validation/request parsing εκεί και στέλνεις τη δουλειά σε service.
+Το route handler κρατά **μόνο** τα HTTP concerns: parsing, validation, status codes. Η δουλειά γίνεται στο service — έτσι η λογική τεστάρεται χωρίς HTTP και επαναχρησιμοποιείται.
 
-## Middleware
+## Middleware: το pipeline
 
-Middleware τρέχει πριν από route handler.
-
-Χρήσεις:
-
-- logging,
-- auth checks,
-- parsing JSON,
-- validation,
-- error handling.
-
-Παράδειγμα request logger:
+Middleware = functions που τρέχουν **με τη σειρά δήλωσής τους** πριν φτάσει το request στο handler. Κάθε ένα είτε καλεί `next()` είτε τερματίζει το request:
 
 ```ts
+// Logger — τρέχει για όλα τα requests
 app.use((req, _res, next) => {
   console.info({ method: req.method, path: req.path });
   next();
 });
-```
 
-Παράδειγμα error handler:
+// Auth guard — μόνο για /api routes
+app.use("/api", (req, res, next) => {
+  const user = verifyToken(req.headers.authorization);
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+  req.user = user; // διαθέσιμο σε όλα τα επόμενα στάδια
+  next();
+});
 
-```ts
+// Error handler — ΤΕΛΕΥΤΑΙΟ, με 4 παραμέτρους (έτσι το αναγνωρίζει το Express)
 app.use((error, _req, res, _next) => {
   console.error(error);
-  res.status(500).json({ error: "Internal server error" });
+  res.status(500).json({ error: "Internal server error" }); // όχι stack traces έξω!
 });
 ```
 
-## NestJS
+<PredictOutput
+  title="Middleware order drill"
+  code={`app.use((req, res, next) => {
+  console.log("A");
+  next();
+});
 
-NestJS είναι πιο structured Node framework. Χρησιμοποιεί modules, controllers, services και dependency injection. Σε μεγαλύτερες ομάδες εμφανίζεται συχνά επειδή οργανώνει καλύτερα μεγάλα backends.
+app.get("/test", (req, res) => {
+  console.log("C");
+  res.json({ ok: true });
+});
 
-Στο NestJS η ίδια ιδέα χωρίζεται πιο καθαρά:
+app.use((req, res, next) => {
+  console.log("B");
+  next();
+});
 
-- **Controller**: δέχεται HTTP request.
-- **Service**: περιέχει business logic.
-- **Module**: οργανώνει related pieces.
-- **Guard**: ελέγχει auth/permissions.
-- **Pipe**: κάνει validation/transformation.
+// GET /test — τι τυπώνεται;`}
+  options={["A, C", "A, B, C", "B, A, C", "C"]}
+  correctOptionIndex={0}
+  answer="A, C"
+  explanation="Το middleware τρέχει ΜΕ ΤΗ ΣΕΙΡΑ ΔΗΛΩΣΗΣ. Το Α δηλώθηκε πριν το route και τρέχει. Το route στέλνει response και το pipeline τελειώνει — το Β δηλώθηκε ΜΕΤΑ το route, άρα δεν προλαβαίνει ποτέ. Η σειρά του app.use είναι κλασικό interview gotcha."
+/>
+
+> Trap που αξίζει να ξέρεις: στο Express 4, ένα exception μέσα σε **async** handler χωρίς try/catch **δεν** φτάνει στον error handler — το request κρεμάει. Λύσεις: try/catch + `next(error)`, wrapper όπως το `express-async-errors`, ή Express 5 που το χειρίζεται. Το να το αναφέρεις δείχνει πραγματική εμπειρία.
+
+## Η αρχιτεκτονική σε στρώματα
+
+```txt
+src/
+  routes/tasks.routes.ts     ← HTTP: paths, status codes, parsing
+  services/tasks.service.ts  ← business logic (testable, χωρίς HTTP)
+  repositories/tasks.repo.ts ← data access (queries)
+  middleware/auth.ts
+  config.ts                  ← env vars ΕΝΑ σημείο (process.env μόνο εδώ)
+```
+
+```ts
+// services/tasks.service.ts — δεν ξέρει τίποτα από req/res
+export async function create(input: { title: string }) {
+  // business rules εδώ: όρια, ιδιοκτησία, side effects
+  return taskRepo.insert({ ...input, completed: false });
+}
+```
+
+Γιατί; Το service τεστάρεται με απλές κλήσεις. Το repository αλλάζει (SQLite → Postgres) χωρίς να αγγίξεις λογική. Και το route διαβάζεται σε 10 γραμμές.
+
+## NestJS: η ίδια ιδέα, επιβεβλημένη από το framework
+
+Το NestJS παίρνει αυτά τα στρώματα και τα κάνει conventions με decorators και **dependency injection**:
 
 ```ts
 @Controller("tasks")
 export class TasksController {
+  // DI: το Nest ΔΙΝΕΙ το service — δεν κάνεις new TasksService()
   constructor(private readonly tasksService: TasksService) {}
 
   @Get()
-  findAll() {
-    return this.tasksService.findAll();
+  findAll(@Query("completed") completed?: string) {
+    return this.tasksService.findAll({ completed: completed === "true" });
+  }
+
+  @Post()
+  @UsePipes(new ValidationPipe())
+  create(@Body() dto: CreateTaskDto) {
+    return this.tasksService.create(dto);
   }
 }
 ```
 
+Οι έννοιες-κλειδιά: **Controller** (HTTP), **Service/Provider** (logic), **Module** (οργάνωση + DI scope), **Guard** (auth), **Pipe** (validation/transform), **Interceptor** (logging, response shaping).
+
+Το «γιατί DI;» είναι η ερώτηση-φίλτρο: επειδή ο controller **δηλώνει τι χρειάζεται** αντί να το κατασκευάζει, στο test δίνεις mock service με μία γραμμή — και οι εξαρτήσεις του συστήματος είναι ορατές στα constructors αντί κρυμμένες σε imports.
+
+**Express ή NestJS;** Express: μικρά APIs, microservices, πλήρης ελευθερία. NestJS: μεγαλύτερα apps και ομάδες — η δομή είναι έτοιμη και κοινή για όλους, με κόστος boilerplate και καμπύλη εκμάθησης.
+
 ## Mini project: small tasks API
 
-Σχεδίασε backend API για tasks:
+Χτίσε το βήμα-βήμα:
 
-1. `GET /tasks` επιστρέφει λίστα.
-2. `POST /tasks` κάνει validation και δημιουργεί task.
-3. `PATCH /tasks/:id` αλλάζει `completed`.
-4. Middleware γράφει method/path σε log.
-5. Error handler επιστρέφει predictable JSON.
-
-## Backend checklist
-
-- Μην εμπιστεύεσαι input από client.
-- Κράτα secrets server-side.
-- Χώρισε route handlers από business logic.
-- Χρησιμοποίησε σωστά status codes.
-- Πρόσθεσε centralized error handling.
-
-## Interview answer template
-
-> Express is lightweight and flexible. NestJS adds structure with modules, controllers, services, decorators, and dependency injection, which helps larger applications stay maintainable.
+1. `GET /tasks` με optional `?completed=` filter.
+2. `POST /tasks` με validation (422 σε άκυρο input, 201 με το νέο task).
+3. `PATCH /tasks/:id` για το `completed` (404 αν δεν υπάρχει).
+4. Logging middleware + auth middleware στο `/api`.
+5. Centralized error handler — δοκίμασε να πετάξεις error από service και δες ότι βγαίνει καθαρό JSON, όχι stack trace.
+6. Χώρισε σε routes/service/repository — και μετά πρόσθεσε `DELETE /tasks/:id` μετρώντας πόσα αρχεία άγγιξες.
 
 <Exercise
   question="Τι κάνει συνήθως ένα middleware;"
   options={[
-    "Τρέχει πριν από route handler για logging, auth, parsing ή validation.",
-    "Αλλάζει μόνο CSS colors.",
-    "Δημιουργεί React components."
+    "Τρέχει στο request pipeline πριν το route handler — logging, auth, parsing, validation — και είτε καλεί next() είτε τερματίζει το request.",
+    "Εκτελείται μετά το response για caching.",
+    "Συνδέει το frontend με τη database απευθείας."
   ]}
   correctOptionIndex={0}
-  explanation="Σωστά. Middleware είναι ενδιάμεσο βήμα στο request pipeline."
+  explanation="Σωστά. Και η σειρά δήλωσης είναι η σειρά εκτέλεσης — ο error handler (4 παράμετροι) δηλώνεται πάντα τελευταίος."
 />
 
 <Exercise
-  question="Πότε έχει νόημα NestJS αντί για απλό Express;"
+  question="Το API σου κάνει βαρύ image processing σε κάθε request και ΟΛΑ τα requests αργούν. Γιατί;"
   options={[
-    "Όταν θέλουμε πιο οργανωμένη αρχιτεκτονική σε μεγαλύτερο backend.",
-    "Όταν θέλουμε μόνο ένα static HTML αρχείο.",
-    "Όταν γράφουμε CSS media queries."
+    "Το Node είναι single-threaded — η CPU-bound δουλειά μπλοκάρει το event loop και κανένα άλλο request δεν εξυπηρετείται όσο τρέχει.",
+    "Η database έχει αργά indexes.",
+    "Το Express δεν υποστηρίζει εικόνες."
   ]}
   correctOptionIndex={0}
-  explanation="Σωστά. NestJS δίνει structure για πιο μεγάλα projects."
+  explanation="Σωστά. Το non-blocking μοντέλο λάμπει σε I/O αλλά η συγχρονισμένη CPU δουλειά παγώνει τα πάντα. Λύση: worker threads, job queue με ξεχωριστό worker, ή δικό της service."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="backend-node" />
-</div>
+<Flashcards
+  title="Node & frameworks — interview drills"
+  cards={[
+    {
+      question: "Πώς εξυπηρετεί το Node χιλιάδες ταυτόχρονα requests με ένα thread;",
+      answer: "Non-blocking I/O + event loop: όταν ένα request περιμένει database/δίκτυο/δίσκο, ο thread δεν κάθεται — εξυπηρετεί άλλα requests και επιστρέφει στο πρώτο όταν έρθει το αποτέλεσμα (callback/promise). Δουλεύει επειδή τα web φορτία είναι κυρίως I/O-bound."
+    },
+    {
+      question: "Πότε το Node είναι ΚΑΚΗ επιλογή;",
+      answer: "CPU-bound δουλειά: video/image processing, ML inference, βαριά κρυπτογραφία — μπλοκάρουν το event loop και παγώνουν όλο το API. Εναλλακτικές: worker_threads, ξεχωριστός worker μέσω queue, ή service σε άλλη γλώσσα."
+    },
+    {
+      question: "Πώς αναγνωρίζει το Express τον error handler;",
+      answer: "Από την υπογραφή: 4 παράμετροι (error, req, res, next). Δηλώνεται ΤΕΛΕΥΤΑΙΟΣ. Sync errors φτάνουν αυτόματα· async errors στο Express 4 θέλουν next(error) ή wrapper — αλλιώς το request κρεμάει."
+    },
+    {
+      question: "Τι είναι το dependency injection και γιατί το θες;",
+      answer: "Οι εξαρτήσεις δίνονται απ' έξω (constructor) αντί να κατασκευάζονται μέσα στην κλάση. Όφελος: testability (mock με μία γραμμή), ορατές εξαρτήσεις, εύκολη αντικατάσταση υλοποιήσεων. Στο NestJS το κάνει το framework μέσω των providers."
+    },
+    {
+      question: "Controller vs Service — τι ανήκει πού;",
+      answer: "Controller: HTTP concerns — parsing params, status codes, response shape. Service: business rules — δεν ξέρει τίποτα από req/res, ώστε να τεστάρεται απλά και να επαναχρησιμοποιείται (π.χ. από cron job ή queue consumer)."
+    },
+    {
+      question: "Πού ζουν τα secrets/config ενός Node app;",
+      answer: "Σε environment variables — ποτέ hardcoded, ποτέ στο Git. Καλό pattern: ένα config module που διαβάζει και ΕΠΙΚΥΡΩΝΕΙ τα process.env στο startup (fail fast αν λείπει κάτι), και ο υπόλοιπος κώδικας κάνει import το config, όχι το process.env."
+    }
+  ]}
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«Express ή NestJS;»
+
+> Express is minimal and unopinionated — great for small services where I set up my own layering: routes for HTTP concerns, services for business logic, repositories for data access, and a centralized error handler. NestJS bakes that same architecture into the framework with modules, controllers, providers, and dependency injection, which pays off in larger codebases and teams because the structure is consistent and testing is easy — you inject mocks instead of patching imports.
+
+<TrainingLab
+  title="Χτίσε tasks API με layers"
+  scenario="Φτιάξε μικρό tasks API και χώρισε route handler, validation, service και data access. Ο στόχος είναι να μη γίνει το route ένα τεράστιο function."
+  outcomes={[
+    "Να καταλαβαίνεις request pipeline και middleware order.",
+    "Να χωρίζεις HTTP concerns από business logic.",
+    "Να επιστρέφεις σωστά status codes και error responses."
+  ]}
+  steps={[
+    "Γράψε GET /tasks και POST /tasks.",
+    "Πρόσθεσε validation για title (422) και 201 στο create.",
+    "Μετέφερε create/list logic σε taskService και τα queries σε taskRepo.",
+    "Πρόσθεσε logging middleware και centralized error handler.",
+    "Πέτα ένα error μέσα από async handler και επιβεβαίωσε ότι ΔΕΝ κρεμάει το request."
+  ]}
+  checkpoints={[
+    "Το route δεν ξέρει λεπτομέρειες storage.",
+    "Invalid input επιστρέφει 422 με predictable JSON.",
+    "Unexpected error δεν διαρρέει stack trace στον client.",
+    "Το service τεστάρεται χωρίς να σηκώσεις server."
+  ]}
+  mistakes={[
+    "Να βάζεις database calls, validation και response formatting όλα στο route.",
+    "Να επιστρέφεις πάντα 200 ακόμα και σε error.",
+    "Να ξεχνάς το express.json() και να απορείς γιατί το body είναι undefined.",
+    "Να εμπιστεύεσαι input επειδή έρχεται από δικό σου frontend."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να προσθέσεις PATCH /tasks/:id χωρίς να αντιγράψεις όλη τη λογική."
+/>

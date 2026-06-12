@@ -121,7 +121,51 @@ button {
   explanation="Σωστά. Έτσι ο browser ξέρει ποιο label περιγράφει ποιο input."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="html-forms-accessibility" />
-</div>
+<Flashcards
+  title="Forms & a11y — γρήγορο repaso"
+  cards={[
+    {
+      question: "Γιατί κάθε input χρειάζεται label με for;",
+      answer: "1) Οι screen readers διαβάζουν το label όταν εστιάζει το input. 2) Click στο label εστιάζει το input — μεγαλύτερος στόχος αφής. Το placeholder ΔΕΝ είναι label: εξαφανίζεται μόλις γράψεις και δεν διαβάζεται αξιόπιστα."
+    },
+    {
+      question: "Τι δίνει το σωστό type στα inputs (email, number, tel);",
+      answer: "Σωστό πληκτρολόγιο σε κινητά (π.χ. @ για email), δωρεάν browser validation (type=email ελέγχει μορφή), και σωστή σημασιολογία για assistive technologies. Το type=text για όλα είναι χαμένη λειτουργικότητα."
+    },
+    {
+      question: "Τι είναι το keyboard navigation και πώς το ελέγχεις;",
+      answer: "Πλήρης χρήση της σελίδας μόνο με Tab/Shift+Tab/Enter/Space. Έλεγχος: παράτα το ποντίκι και συμπλήρωσε τη φόρμα — βλέπεις πάντα πού είναι το focus (focus outline); Φτάνεις παντού; Αν όχι, αποκλείεις χρήστες."
+    },
+    {
+      question: "Πότε χρησιμοποιείς button και πότε a;",
+      answer: "button: εκτελεί ενέργεια (submit, toggle, άνοιγμα modal). a: πηγαίνει κάπου (έχει href). Το div με onClick δεν είναι κανένα από τα δύο — χάνει keyboard support, focus και σημασιολογία δωρεάν."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Φτιάξε accessible contact form"
+  scenario="Χτίσε φόρμα επικοινωνίας που μπορεί να χρησιμοποιηθεί με keyboard και screen reader, όχι μόνο με mouse."
+  outcomes={[
+    "Να συνδέεις labels με inputs.",
+    "Να ξεχωρίζεις required, validation και error message.",
+    "Να ελέγχεις keyboard navigation."
+  ]}
+  steps={[
+    "Φτιάξε πεδία name, email και message με label για το καθένα.",
+    "Πρόσθεσε required και σωστό input type για email.",
+    "Γράψε error messages που λένε τι πρέπει να διορθωθεί.",
+    "Πέρασε όλη τη φόρμα μόνο με Tab και Enter."
+  ]}
+  checkpoints={[
+    "Κάθε input έχει ορατό label.",
+    "Η σειρά focus ακολουθεί τη σειρά της φόρμας.",
+    "Τα errors είναι κοντά στο αντίστοιχο input και κατανοητά."
+  ]}
+  mistakes={[
+    "Να χρησιμοποιείς placeholder αντί για label.",
+    "Να δείχνεις error μόνο με χρώμα.",
+    "Να έχεις button που δεν λέει καθαρά τι κάνει."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να χρησιμοποιήσεις τη φόρμα χωρίς mouse και να καταλάβεις κάθε error χωρίς να μαντεύεις."
+/>

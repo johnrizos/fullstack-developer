@@ -151,7 +151,51 @@ document.querySelector("#increase").addEventListener("click", increaseCount);
   explanation="Σωστά. Το addEventListener λέει στον browser ποια function να τρέξει όταν γίνει click."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="javascript-intro" />
-</div>
+<Flashcards
+  title="Basics — γρήγορο repaso"
+  cards={[
+    {
+      question: "const vs let — πότε το καθένα;",
+      answer: "const: default επιλογή — η μεταβλητή δεν ξανα-ανατίθεται. let: μόνο όταν η τιμή πρέπει να αλλάξει (counters, accumulators). Το var είναι παρελθόν — μην το χρησιμοποιείς."
+    },
+    {
+      question: "Τι είναι ένα event listener;",
+      answer: "Function που λες στον browser να τρέξει όταν συμβεί κάτι: element.addEventListener('click', fn). Ο browser την καλεί κάθε φορά που γίνεται το event — εσύ δεν την καλείς ποτέ απευθείας."
+    },
+    {
+      question: "Γιατί βάζουμε λογική σε functions;",
+      answer: "Επαναχρησιμοποίηση (την καλείς από πολλά σημεία), ονοματισμός (ο κώδικας διαβάζεται), και απομόνωση (αλλάζεις τη συμπεριφορά σε ΕΝΑ σημείο). Ένα click handler χωρίς function θα αντιγραφόταν παντού."
+    },
+    {
+      question: "Τι κάνει το document.querySelector;",
+      answer: "Βρίσκει το ΠΡΩΤΟ element που ταιριάζει στο CSS selector ('#id', '.class', 'button') και το επιστρέφει — ή null αν δεν υπάρχει. Από εκεί αλλάζεις textContent, classList, value κ.λπ."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Χτίσε counter με σκέψη state"
+  scenario="Φτιάξε counter που αυξάνει, μειώνει και κάνει reset. Ο στόχος δεν είναι το κουμπί, αλλά να καταλάβεις πού ζει η τιμή και πότε αλλάζει."
+  outcomes={[
+    "Να ξεχωρίζεις variable, function και event handler.",
+    "Να ενημερώνεις UI μετά από αλλαγή state.",
+    "Να προβλέπεις τι θα εμφανιστεί πριν τρέξεις τον κώδικα."
+  ]}
+  steps={[
+    "Δήλωσε count με αρχική τιμή 0.",
+    "Γράψε render function που δείχνει το count στο DOM.",
+    "Σύνδεσε τρία buttons: increment, decrement, reset.",
+    "Πρόσθεσε κανόνα να μην πέφτει κάτω από 0 και εξήγησε πού μπαίνει."
+  ]}
+  checkpoints={[
+    "Κάθε click αλλάζει πρώτα data και μετά UI.",
+    "Οι functions έχουν καθαρά ονόματα.",
+    "Μπορείς να εξηγήσεις τι γίνεται αν πατήσεις reset δύο φορές."
+  ]}
+  mistakes={[
+    "Να αλλάζεις μόνο το text στο DOM και να ξεχνάς το πραγματικό state.",
+    "Να γράφεις όλη τη λογική μέσα σε ένα click handler.",
+    "Να μη σκέφτεσαι edge cases όπως negative count."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να φτιάξεις μικρό interactive widget χωρίς να αντιγράφεις έτοιμο snippet."
+/>

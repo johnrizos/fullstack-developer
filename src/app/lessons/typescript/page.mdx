@@ -51,58 +51,215 @@ console.log(completed.map(formatTask));`;
 
 # TypeScript: types, interfaces, unions και generics
 
-TypeScript είναι JavaScript με στατικό type checking. Δεν αντικαθιστά τη JavaScript. Σε βοηθά να βρεις λάθη νωρίτερα και να κάνεις τον κώδικα πιο ξεκάθαρο.
+Το TypeScript είναι JavaScript με στατικό type checking — τα types εξαφανίζονται στο compile, άρα **δεν** αλλάζουν τη runtime συμπεριφορά. Η αξία του: πιάνει λάθη πριν τρέξει ο κώδικας, τεκμηριώνει contracts, και κάνει το refactoring ασφαλές. Σε fullstack αγγελίες είναι πλέον σχεδόν υποχρεωτικό, και στις συνεντεύξεις οι ερωτήσεις πάνε αρκετά πιο βαθιά από «τι είναι interface».
 
-Σε fullstack αγγελίες, TypeScript ζητείται συχνά μαζί με React και Node. Για συνέντευξη πρέπει να μπορείς να εξηγήσεις όχι μόνο τι είναι, αλλά και πώς το χρησιμοποιείς σε πραγματικό app.
+## Η βάση: structural typing
 
-## Type aliases
+Πρώτο πράγμα που πρέπει να ξέρεις: το TypeScript συγκρίνει **σχήματα**, όχι ονόματα. Αυτό λέγεται structural typing (ή «duck typing»):
 
-Με `type` μπορείς να ορίσεις δικό σου σχήμα ή union.
+```ts
+interface Point {
+  x: number;
+  y: number;
+}
+
+const spot = { x: 1, y: 2, label: "home" };
+const p: Point = spot; // ✅ ΟΚ — έχει ό,τι χρειάζεται το Point (και παραπάνω)
+
+function logPoint(point: Point) {}
+logPoint({ x: 1, y: 2 });               // ✅
+logPoint({ x: 1, y: 2, label: "hi" });  // ❌ object literal: excess property check!
+```
+
+Παρατήρησε την ασυμμετρία — όταν περνάς **object literal απευθείας**, το TypeScript κάνει αυστηρότερο έλεγχο για «έξτρα» properties. Μέσω μεταβλητής, αρκεί το σχήμα να καλύπτεται.
+
+## Union types & narrowing — το καθημερινό εργαλείο
 
 ```ts
 type TaskStatus = "todo" | "doing" | "done";
 ```
 
-Αυτό λέει ότι το status επιτρέπεται να είναι μόνο μία από αυτές τις τιμές.
-
-## Interfaces
-
-Τα interfaces περιγράφουν το σχήμα ενός object.
+Τα **literal unions** αντικαθιστούν τα enums στα περισσότερα modern codebases: απλά strings στη runtime, πλήρης έλεγχος στο compile. Με unions έρχεται το **narrowing** — το TypeScript «στενεύει» τον τύπο καθώς ελέγχεις:
 
 ```ts
-interface Task {
-  id: string;
-  title: string;
-  status: TaskStatus;
+function describe(value: string | number | null) {
+  if (value === null) return "empty";        // εδώ: null
+  if (typeof value === "string") {
+    return value.toUpperCase();              // εδώ: string
+  }
+  return value.toFixed(2);                   // εδώ: number — δεν χρειάστηκε cast!
 }
 ```
 
-Αν ένα object λείπει `title` ή έχει λάθος `status`, το TypeScript θα το πιάσει.
+## Discriminated unions — το πιο δυνατό pattern
 
-## Optional properties
-
-Το `?` σημαίνει ότι μια property είναι προαιρετική.
+Αυτό είναι το pattern που ξεχωρίζει όσους «γράφουν TypeScript» από όσους τον αξιοποιούν. Ένα κοινό literal field (ο **discriminant**) κάνει τα invalid states αδύνατα να γραφτούν:
 
 ```ts
-estimateHours?: number;
+type ApiResult<T> =
+  | { status: "loading" }
+  | { status: "success"; data: T }
+  | { status: "error"; message: string };
+
+function render(result: ApiResult<Task[]>) {
+  switch (result.status) {
+    case "loading":
+      return "Loading…";
+    case "success":
+      return result.data.length;     // ✅ το data υπάρχει ΜΟΝΟ εδώ
+    case "error":
+      return result.message;         // ✅ το message υπάρχει ΜΟΝΟ εδώ
+  }
+}
 ```
 
-## Generics
+Σύγκρινε με το «αφελές» μοντέλο `{ loading: boolean; data?: T; error?: string }` — εκεί τίποτα δεν εμποδίζει `loading: true` μαζί με `error`. Με το discriminated union, ο compiler **αποδεικνύει** ότι χειρίστηκες κάθε περίπτωση. Κι αν αργότερα προσθέσεις `status: "empty"`, κάθε switch που το ξέχασε γίνεται compile error — αυτό λέγεται **exhaustiveness checking**:
 
-Τα generics κάνουν ένα type επαναχρησιμοποιήσιμο.
+```ts
+default: {
+  const unreachable: never = result; // error αν έμεινε case εκτός switch
+  return unreachable;
+}
+```
+
+<PredictOutput
+  title="Narrowing drill"
+  code={`type Shape =
+  | { kind: "circle"; radius: number }
+  | { kind: "square"; side: number };
+
+function area(shape: Shape) {
+  if (shape.kind === "circle") {
+    return Math.PI * shape.radius ** 2;
+  }
+  return shape.side ** 2;
+}
+
+// Τι λέει ο compiler για αυτό;
+area({ kind: "circle", side: 5 });`}
+  options={[
+    "Compile error — ο circle δεν έχει side",
+    "Τρέχει και επιστρέφει NaN",
+    "Compile ΟΚ, runtime error",
+    "Επιστρέφει 25"
+  ]}
+  correctOptionIndex={0}
+  answer="Compile error"
+  explanation="Το { kind: 'circle', side: 5 } δεν ταιριάζει σε κανένα μέλος του union: ο circle απαιτεί radius, ο square απαιτεί kind: 'square'. Ο compiler το κόβει ΠΡΙΝ τρέξει οτιδήποτε — αυτή είναι όλη η αξία των discriminated unions."
+/>
+
+## type vs interface — η σίγουρη ερώτηση
+
+Και τα δύο περιγράφουν object shapes. Οι πραγματικές διαφορές:
+
+| | `interface` | `type` |
+|---|---|---|
+| Object shapes | ✅ | ✅ |
+| Unions, primitives, tuples | ❌ | ✅ `type ID = string \| number` |
+| Επέκταση | `extends` | `&` (intersection) |
+| Declaration merging | ✅ — δηλώσεις με ίδιο όνομα ενώνονται | ❌ — διπλό όνομα = error |
+
+Πρακτικός κανόνας που αρκεί σε συνέντευξη: **interface για δημόσια object contracts** (props, models — και για library types όπου το merging βοηθά), **type για unions και συνθέσεις**. Μέσα σε ένα project, η συνέπεια μετράει περισσότερο από την επιλογή.
+
+## Generics — επαναχρησιμοποιήσιμα types
+
+Τα generics είναι «παράμετροι τύπων». Χωρίς αυτά, θα έγραφες το ίδιο type ξανά και ξανά:
 
 ```ts
 interface ApiResponse<T> {
   data: T;
   error?: string;
 }
+
+type TasksResponse = ApiResponse<Task[]>;
+type UserResponse = ApiResponse<User>;
+
+// Σε functions — με inference, δεν χρειάζεται να δηλώσεις το T:
+function first<T>(items: T[]): T | undefined {
+  return items[0];
+}
+const task = first(tasks);  // T = Task, αυτόματα
 ```
 
-Έτσι μπορείς να έχεις `ApiResponse<Task[]>`, `ApiResponse<User>` κ.λπ.
+Με **constraints** περιορίζεις τι δέχεται το generic:
+
+```ts
+function getById<T extends { id: string }>(items: T[], id: string): T | undefined {
+  return items.find((item) => item.id === id);
+}
+
+getById(tasks, "1");      // ✅ τα Task έχουν id
+getById([1, 2, 3], "1");  // ❌ τα numbers δεν έχουν id
+```
+
+## Utility types — το λεξιλόγιο που εξετάζεται
+
+Το TypeScript έχει ενσωματωμένα «εργαλεία μετασχηματισμού» — αυτά τα τέσσερα-πέντε πέφτουν συνέχεια:
+
+```ts
+interface Task {
+  id: string;
+  title: string;
+  status: TaskStatus;
+  createdAt: Date;
+}
+
+type TaskDraft = Omit<Task, "id" | "createdAt">; // χωρίς server-generated fields
+type TaskPatch = Partial<TaskDraft>;             // όλα optional — για PATCH body
+type TaskPreview = Pick<Task, "id" | "title">;   // μόνο όσα δείχνει η λίστα
+type TasksById = Record<string, Task>;           // map από id σε Task
+
+function createTask(draft: TaskDraft): Task { /* ... */ }
+type Created = ReturnType<typeof createTask>;    // Task — παράγεται, δεν αντιγράφεται
+```
+
+Το πραγματικό μάθημα εδώ: **ένα source of truth**. Ορίζεις το `Task` μία φορά και **παράγεις** τα συγγενικά types, αντί να τα γράφεις (και να τα ξεσυγχρονίζεις) με το χέρι.
+
+## any vs unknown — η ερώτηση-φίλτρο
+
+```ts
+function parse(json: string): unknown {
+  return JSON.parse(json);
+}
+
+const data = parse('{"title":"hi"}');
+data.title;                       // ❌ error — το unknown ΔΕΝ επιτρέπει πρόσβαση
+if (
+  typeof data === "object" && data !== null && "title" in data
+) {
+  // εδώ μπορείς να το χρησιμοποιήσεις — απέδειξες το σχήμα
+}
+```
+
+- `any`: **απενεργοποιεί** τον έλεγχο — ό,τι κάνεις περνάει, και «μολύνει» ό,τι αγγίζει.
+- `unknown`: «δεν ξέρω τι είναι» — δεν μπορείς να το αγγίξεις **μέχρι να το αποδείξεις** με narrowing ή validation.
+
+Για δεδομένα από έξω (API responses, JSON, query params), το σωστό pattern σε production είναι `unknown` + runtime validation (π.χ. με Zod) — γιατί τα types εξαφανίζονται στη runtime και ένα `as User` δεν ελέγχει τίποτα στην πραγματικότητα. Το **type assertion (`as`) λέει στον compiler «εμπιστέψου με»** — δεν μετατρέπει δεδομένα.
+
+<PredictOutput
+  title="Runtime drill — τα types εξαφανίζονται"
+  code={`interface User {
+  name: string;
+}
+
+const raw = '{"username": "ada"}';
+const user = JSON.parse(raw) as User;
+
+console.log(user.name.toUpperCase());`}
+  options={[
+    "Runtime TypeError — το name είναι undefined",
+    "Compile error στο as User",
+    '"ADA"',
+    "undefined"
+  ]}
+  correctOptionIndex={0}
+  answer="TypeError: Cannot read properties of undefined"
+  explanation="Το as User είναι υπόσχεση προς τον compiler, ΟΧΙ έλεγχος. Το JSON έχει username, όχι name — άρα user.name είναι undefined και το .toUpperCase() σκάει στη runtime. Γι' αυτό external data θέλει unknown + runtime validation, όχι assertion."
+/>
 
 ## Mini project: typed task model
 
-Το challenge δεν εκτελεί TypeScript στον browser. Ελέγχει αν έχεις τα βασικά κομμάτια ενός typed model που θα χρησιμοποιούσες σε React ή Node app.
+Το challenge ελέγχει αν έχεις τα βασικά κομμάτια ενός typed model όπως θα τα περίμενε ένα code review:
 
 <CodeChallenge
   title="Typed task model challenge"
@@ -150,24 +307,94 @@ interface ApiResponse<T> {
   ]}
 />
 
-## Interview answer template
+## Πώς απαντάς στη συνέντευξη
 
-Αν σε ρωτήσουν “why TypeScript?”, απάντησε:
+«Why TypeScript?»
 
-> TypeScript catches type-related mistakes before runtime, documents object shapes, improves refactoring, and makes API contracts clearer across frontend and backend.
+> TypeScript catches type errors at compile time, documents contracts between modules, and makes refactoring safe — renaming a field shows every broken usage instantly. Types are erased at runtime, so there's no performance cost, but that also means external data still needs runtime validation.
 
-Αν σε ρωτήσουν “type vs interface;”, πες:
+«type vs interface?»
 
-> Both can describe object shapes. Interfaces are commonly used for object contracts and can be extended or merged. Type aliases are more flexible for unions, primitives, tuples, and complex compositions.
+> Both describe object shapes. Interfaces support extends and declaration merging, which matters for public APIs and libraries. Type aliases handle unions, tuples, and compositions that interfaces can't. My default: interfaces for object contracts, type aliases for unions — and consistency within the codebase above all.
 
 <Exercise
   question="Ποιο TypeScript feature χρησιμοποιούμε για τιμές όπως 'todo' | 'doing' | 'done';"
-  options={["Union type", "CSS grid", "HTTP header"]}
+  options={["Union type από string literals", "Generic constraint", "Type assertion", "Declaration merging"]}
   correctOptionIndex={0}
-  explanation="Σωστά. Το union type περιορίζει την τιμή σε συγκεκριμένες επιλογές."
+  explanation="Σωστά. Literal union — περιορίζει την τιμή σε συγκεκριμένες επιλογές, με μηδενικό runtime κόστος. Στα modern codebases προτιμάται από τα enums."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="typescript" />
-</div>
+<Exercise
+  question="Παίρνεις JSON από εξωτερικό API. Ποια είναι η ασφαλέστερη προσέγγιση;"
+  options={[
+    "const data = response as MyType — γρήγορο και καθαρό.",
+    "Τύπος unknown και μετά runtime validation (π.χ. Zod) πριν τη χρήση.",
+    "Τύπος any για ευελιξία και έλεγχος με try/catch."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Τα types εξαφανίζονται στη runtime — το as δεν ελέγχει τίποτα. Το unknown σε αναγκάζει να αποδείξεις το σχήμα, και ένα schema validator το κάνει σωστά και δίνει καθαρά errors."
+/>
+
+<Flashcards
+  title="TypeScript — interview drills"
+  cards={[
+    {
+      question: "Τι σημαίνει structural typing;",
+      answer: "Η συμβατότητα κρίνεται από το ΣΧΗΜΑ, όχι το όνομα του τύπου. Αν ένα object έχει όλα τα πεδία που απαιτεί το type, ταιριάζει — ακόμα κι αν δηλώθηκε αλλού. Αντίθετο: nominal typing (Java/C#), όπου μετράει το όνομα της κλάσης."
+    },
+    {
+      question: "any vs unknown;",
+      answer: "any: απενεργοποιεί το type checking — όλα επιτρέπονται και διαδίδεται. unknown: type-safe άγνωστο — δεν επιτρέπει καμία πράξη μέχρι να κάνεις narrowing (typeof, in, instanceof) ή validation. Για external data: πάντα unknown."
+    },
+    {
+      question: "Τι είναι discriminated union και γιατί είναι χρήσιμο;",
+      answer: "Union όπου κάθε μέλος έχει κοινό literal field (π.χ. status). Ο compiler κάνει narrowing ανά branch και exhaustiveness checking — invalid συνδυασμοί (loading + error μαζί) γίνονται αδύνατο να γραφτούν. Ιδανικό για UI/API states."
+    },
+    {
+      question: "Τι κάνουν τα Partial, Pick, Omit, Record;",
+      answer: "Partial<T>: όλα optional. Pick<T, K>: κρατά μόνο τα K πεδία. Omit<T, K>: όλα εκτός των K. Record<K, V>: object με keys τύπου K και values τύπου V. Σκοπός: παράγεις types από ένα source of truth αντί να τα αντιγράφεις."
+    },
+    {
+      question: "Είναι ασφαλές το type assertion (as);",
+      answer: "Όχι από μόνο του — λέει στον compiler 'εμπιστέψου με' χωρίς κανέναν runtime έλεγχο. Δικαιολογείται όταν ξέρεις κάτι που ο compiler δεν μπορεί να συμπεράνει (π.χ. document.getElementById που ξέρεις ότι είναι input). Για external data είναι αντι-pattern."
+    },
+    {
+      question: "Τι είναι το never και πού χρησιμεύει;",
+      answer: "Ο τύπος του 'αδύνατου' — τιμή που δεν μπορεί να υπάρξει. Πρακτική χρήση: exhaustiveness checking σε switch — αναθέτεις το 'υπόλοιπο' union σε never· αν προστεθεί νέο μέλος που ξέχασες, γίνεται compile error."
+    },
+    {
+      question: "Γιατί literal unions αντί για enum;",
+      answer: "Τα unions είναι σκέτα strings στη runtime (μηδενικό overhead, εύκολο JSON), συγκρίνονται structurally και δεν χρειάζονται import. Τα enums παράγουν runtime object και έχουν ιδιαιτερότητες (number enums με reverse mapping). Συνήθης σύσταση: as const objects ή literal unions."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Τύπωσε API response χωρίς να κοροϊδεύεις τον compiler"
+  scenario="Πάρε ένα task API response και φτιάξε types για success, error και loading states. Ο στόχος είναι να κάνεις invalid states δύσκολα να γραφτούν."
+  outcomes={[
+    "Να ορίζεις interfaces για data models και API responses.",
+    "Να χρησιμοποιείς discriminated unions για UI states.",
+    "Να αφήνεις τον TypeScript compiler να σε οδηγεί σε missing cases."
+  ]}
+  steps={[
+    "Ορισμός Task με id, title, completed και createdAt.",
+    "Ορισμός ApiResult ως discriminated union (loading | success | error).",
+    "Γράψε render function με switch και exhaustiveness check (never).",
+    "Παράξε TaskDraft και TaskPatch με Omit/Partial από το Task.",
+    "Πρόσθεσε νέο status και δες πού σε αναγκάζει ο compiler να αλλάξεις κώδικα."
+  ]}
+  checkpoints={[
+    "Δεν χρησιμοποιείς any για να περάσεις το πρόβλημα.",
+    "Τα optional fields έχουν πραγματικό λόγο.",
+    "Κάθε UI state έχει ξεκάθαρο shape και δεν συνδυάζεται με άλλο.",
+    "Τα παράγωγα types παράγονται με utility types, όχι copy-paste."
+  ]}
+  mistakes={[
+    "Να βάζεις ? σε όλα επειδή δεν ξέρεις το data contract.",
+    "Να κάνεις type assertion αντί να διορθώσεις το type.",
+    "Να μπερδεύεις database model με API response model.",
+    "Να εμπιστεύεσαι as MyType για δεδομένα από fetch."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν ο compiler πιάνει λάθη πριν τα δεις στο browser."
+/>

@@ -1,0 +1,400 @@
+# Redis, Caching & Sessions
+
+Redis είναι in-memory key-value store. Δεν το μαθαίνεις μόνο σαν "βάση δεδομένων", αλλά σαν backend infrastructure tool για γρήγορα reads, temporary state και coordination ανάμεσα σε services.
+
+## Τι πρέπει να μπορείς να κάνεις στο τέλος
+
+Στο τέλος του μαθήματος πρέπει να μπορείς να εξηγήσεις και να σχεδιάσεις:
+
+- πότε ένα API χρειάζεται cache,
+- πώς δουλεύει cache hit/cache miss,
+- γιατί κάθε temporary key χρειάζεται TTL,
+- πώς αποθηκεύεται ένα server-side session,
+- πώς χτίζεται απλό rate limit,
+- πώς Redis βοηθάει WebSockets και background jobs.
+
+Αν απλά θυμάσαι ότι "Redis είναι γρήγορο", δεν έχεις τελειώσει το μάθημα. Πρέπει να μπορείς να πάρεις ένα αργό endpoint και να γράψεις το caching flow του.
+
+## Πριν ξεκινήσεις
+
+Πρέπει ήδη να ξέρεις:
+
+- βασικά HTTP requests,
+- τι είναι database query,
+- τι σημαίνει login session,
+- τι σημαίνει JSON response.
+
+Δεν χρειάζεται να ξέρεις Redis commands απέξω. Θα τα μάθεις μέσα από use cases.
+
+## Πού χρησιμοποιείται Redis
+
+Συνηθισμένες χρήσεις:
+
+- caching,
+- sessions,
+- rate limiting,
+- queues,
+- Pub/Sub για real-time systems,
+- temporary job status,
+- distributed locks.
+
+Το βασικό mental model είναι απλό: γράφεις value σε ένα key και συχνά βάζεις expiration με TTL.
+
+```txt
+user:123:profile -> cached profile JSON
+session:abc123 -> user id and session metadata
+rate-limit:login:ip -> counter with expiration
+job:456:status -> running / completed / failed
+```
+
+## Cache
+
+Cache σημαίνει ότι κρατάς προσωρινά ένα ακριβό αποτέλεσμα ώστε να μην το ξαναϋπολογίζεις ή να μη χτυπάς συνέχεια τη database.
+
+Τυπικό flow:
+
+```txt
+Request comes in
+Check Redis cache
+If cache hit, return cached data
+If cache miss, query database
+Store result in Redis with TTL
+Return data
+```
+
+Παράδειγμα:
+
+```ts
+const cached = await redis.get("tasks:user-123");
+
+if (cached) {
+  return JSON.parse(cached);
+}
+
+const tasks = await db.task.findMany({ where: { userId: "user-123" } });
+await redis.set("tasks:user-123", JSON.stringify(tasks), { ex: 60 });
+
+return tasks;
+```
+
+Το δύσκολο κομμάτι δεν είναι να βάλεις cache. Είναι να ξέρεις πότε πρέπει να την καθαρίσεις.
+
+### Άσκηση 1: σκέψου πριν γράψεις κώδικα
+
+Έχεις endpoint:
+
+```txt
+GET /api/products?category=laptops
+```
+
+Η database αργεί επειδή κάνει joins και sorting. Απάντησε:
+
+1. Ποιο θα είναι το Redis key;
+2. Πόσο TTL θα βάλεις;
+3. Πότε πρέπει να κάνεις invalidate το cache;
+4. Τι συμβαίνει αν δύο requests έρθουν ταυτόχρονα και δεν υπάρχει cache;
+
+Καλή απάντηση:
+
+```txt
+Key: products:category:laptops
+TTL: 60-300 seconds, ανάλογα πόσο συχνά αλλάζουν τα προϊόντα
+Invalidate: όταν αλλάζει product/category/price/stock που επηρεάζει το listing
+Race: μπορεί και τα δύο requests να χτυπήσουν database, άρα σε advanced setup βάζεις lock ή request coalescing
+```
+
+Αυτό το είδος σκέψης είναι πιο σημαντικό από το να απομνημονεύσεις ένα Redis command.
+
+### Cache patterns — η ορολογία της συνέντευξης
+
+Το flow που είδες παραπάνω έχει όνομα: **cache-aside (lazy loading)** — η εφαρμογή διαβάζει πρώτα το cache, και στο miss φορτώνει από τη DB και γράφει το cache. Είναι το default pattern. Οι εναλλακτικές που αξίζει να ονομάζεις:
+
+- **Write-through**: σε κάθε write, ενημερώνεις DB **και** cache μαζί — το cache είναι πάντα φρέσκο, με κόστος σε κάθε write.
+- **Write-behind**: γράφεις πρώτα στο cache και η DB ενημερώνεται ασύγχρονα — γρήγορο αλλά ρισκάρεις απώλεια δεδομένων.
+
+Και το διασημότερο πρόβλημα: **cache stampede (thundering herd)**. Ένα δημοφιλές key λήγει, και 1000 ταυτόχρονα requests βλέπουν miss και χτυπούν **όλα** τη database μαζί. Λύσεις: lock/request coalescing (μόνο ένα request ξαναφορτώνει, τα άλλα περιμένουν), staggered TTLs (τυχαία διασπορά λήξης), ή background refresh πριν τη λήξη.
+
+> Η φράση «two hard things in computer science: cache invalidation and naming things» δεν είναι αστείο στις συνεντεύξεις — το invalidation είναι όντως το δύσκολο μέρος, και το δείχνεις λέγοντας ΠΟΤΕ καθαρίζεις κάθε key, όχι μόνο πώς το γράφεις.
+
+## TTL
+
+TTL σημαίνει time to live. Το key λήγει μόνο του μετά από συγκεκριμένο χρόνο.
+
+```txt
+cache:dashboard:user-123 expires in 60 seconds
+session:abc123 expires in 7 days
+rate-limit:signup:ip expires in 1 minute
+```
+
+Χωρίς TTL, μπορεί να κρατήσεις stale data ή άχρηστα keys για πάντα.
+
+### Checkpoint
+
+Διάλεξε TTL:
+
+```txt
+Homepage trending products
+User profile after login
+Password reset token
+Login rate limit counter
+AI job status while processing
+```
+
+Πιθανές επιλογές:
+
+- trending products: 1-5 λεπτά,
+- user profile: 1-10 λεπτά ή καθάρισμα σε profile update,
+- password reset token: 10-30 λεπτά,
+- login rate limit counter: 1-15 λεπτά,
+- job status: λίγα λεπτά ή ώρες μετά την ολοκλήρωση.
+
+Δεν υπάρχει μία σωστή τιμή. Υπάρχει tradeoff ανάμεσα σε φρεσκάδα, performance και product behavior.
+
+## Sessions
+
+Redis χρησιμοποιείται συχνά για server-side sessions. Το cookie κρατάει ένα session id, ενώ τα πραγματικά session data μένουν server-side.
+
+```txt
+Browser cookie: sessionId=abc123
+Redis: session:abc123 -> { userId, role, expiresAt }
+```
+
+Αυτό βοηθάει όταν θες:
+
+- logout να ακυρώνει αμέσως session,
+- session data να μη ζουν στο browser,
+- πολλά backend instances να διαβάζουν κοινό session store.
+
+### Build step: session lookup
+
+Γράψε το flow με δικά σου λόγια:
+
+```txt
+1. Browser στέλνει cookie με session id.
+2. Backend διαβάζει session:{id} από Redis.
+3. Αν δεν υπάρχει, επιστρέφει 401.
+4. Αν υπάρχει, φορτώνει userId/role.
+5. Το request συνεχίζει ως authenticated.
+```
+
+Μετά απάντησε: τι αλλάζει στο logout;
+
+Καλή απάντηση: το backend σβήνει το `session:{id}` από Redis και το cookie δεν μπορεί πλέον να χρησιμοποιηθεί για πρόσβαση.
+
+## Rate limiting
+
+Rate limit σημαίνει ότι μετράς πόσες φορές κάποιος έκανε μια ενέργεια σε μικρό χρονικό διάστημα.
+
+Παράδειγμα:
+
+```txt
+rate-limit:login:192.168.1.10 -> 5 attempts, expires in 60 seconds
+```
+
+Αν το counter περάσει το όριο, επιστρέφεις `429 Too Many Requests`.
+
+### Build step: login protection
+
+Σχεδίασε rate limit για login:
+
+```txt
+Key: rate-limit:login:{ip}
+Limit: 5 attempts
+Window: 60 seconds
+When limit exceeded: 429 Too Many Requests
+```
+
+Μετά κάνε το πιο σωστό:
+
+```txt
+rate-limit:login:ip:{ip}
+rate-limit:login:user:{email}
+```
+
+Γιατί και τα δύο; Το IP limit πιάνει brute force από ένα σημείο. Το email/user limit πιάνει distributed attempts εναντίον ενός account.
+
+## Queues and Pub/Sub
+
+Redis μπορεί επίσης να βοηθήσει σε background jobs και real-time features.
+
+Queues:
+
+```txt
+API pushes job
+Worker picks job
+Worker stores result/status
+```
+
+Pub/Sub:
+
+```txt
+Service publishes event
+WebSocket servers receive event
+Connected clients get update
+```
+
+Γι' αυτό το Redis συνδέεται με WebSockets και Python workers. Δεν είναι μόνο data topic, είναι κομμάτι της backend architecture.
+
+## Guided project: cached dashboard
+
+Χτίσε σταδιακά Redis layer για dashboard. Δεν χρειάζεται πραγματικός Redis server για την πρώτη εκδοχή. Μπορείς να ξεκινήσεις με fake in-memory map και μετά να αντικαταστήσεις το API με Redis client.
+
+### Step 1: χωρίς cache
+
+Γράψε endpoint που επιστρέφει dashboard data:
+
+```ts
+async function getDashboard(userId: string) {
+  const tasks = await db.task.findMany({ where: { userId } });
+  const stats = await db.stats.findUnique({ where: { userId } });
+
+  return { tasks, stats };
+}
+```
+
+Ερώτηση: ποιο σημείο είναι ακριβό; Αν δεν ξέρεις, πρόσθεσε logging με duration.
+
+### Step 2: πρόσθεσε cache key
+
+```ts
+const cacheKey = `dashboard:${userId}`;
+```
+
+Το key πρέπει να περιέχει ό,τι αλλάζει το αποτέλεσμα. Αν το dashboard έχει filters, το key πρέπει να τα περιέχει.
+
+```txt
+dashboard:user-123:range-7d
+dashboard:user-123:range-30d
+```
+
+### Step 3: cache hit/cache miss
+
+Υλοποίησε:
+
+1. `GET /dashboard` κοιτάει πρώτα Redis.
+2. Αν δεν υπάρχει cache, διαβάζει από database.
+3. Αποθηκεύει το result για 60 seconds.
+4. `POST /tasks` καθαρίζει το dashboard cache του χρήστη.
+5. Login attempts έχουν rate limit ανά IP.
+
+### Step 4: invalidation
+
+Όταν αλλάξει task, κάνε delete:
+
+```txt
+dashboard:{userId}
+```
+
+Αν έχεις πολλά variants όπως `range-7d`, θέλει key pattern strategy ή explicit list of cache keys. Αυτό είναι από τα πρώτα σημεία που το cache γίνεται δύσκολο.
+
+### Step 5: advanced έκδοση
+
+- αποθήκευσε `job:{id}:status`,
+- κάνε publish `job:completed`,
+- άφησε WebSocket server να ενημερώσει τον client.
+
+## Common mistakes
+
+- Cache χωρίς TTL.
+- Cache key που δεν περιέχει filters/user/locale.
+- Να χρησιμοποιείς Redis ως source of truth χωρίς να έχεις σκεφτεί persistence.
+- Να κάνεις cache private user data με shared key.
+- Να ξεχνάς invalidation μετά από write.
+- Να μετράς μόνο cache hits και όχι cache correctness.
+
+## Debugging prompts
+
+Όταν κάτι πάει λάθος, ρώτα:
+
+- Το key είναι ακριβώς αυτό που περιμένω;
+- Υπάρχει TTL;
+- Το data είναι stale ή απλά αργεί να ανανεωθεί;
+- Το cache είναι per-user ή shared;
+- Ποιο write πρέπει να καθαρίζει αυτό το key;
+
+## Πώς απαντάς στη συνέντευξη
+
+> Redis is an in-memory store I use for fast, temporary state: cache-aside for expensive reads, server-side sessions, rate limiting, queues, and Pub/Sub for fanning out real-time events across instances. Every temporary key gets a TTL, cache keys include everything that changes the result — user, filters, locale — and writes explicitly invalidate the keys they affect. The hard part isn't adding the cache, it's invalidation and avoiding stampedes on hot keys, which I handle with request coalescing or staggered TTLs. I don't treat Redis as the source of truth — that stays in the database.
+
+<Exercise
+  question="Ποια είναι καλή χρήση του Redis σε backend app;"
+  options={[
+    "Caching, sessions, rate limiting, queues και Pub/Sub.",
+    "Να αντικαταστήσει πάντα κάθε SQL database.",
+    "Μόνιμη αποθήκευση των κρίσιμων δεδομένων της εφαρμογής."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Redis είναι πολύ χρήσιμο για γρήγορο temporary state και coordination — όχι ως source of truth για κρίσιμα δεδομένα χωρίς πολύ προσεκτική σκέψη για persistence."
+/>
+
+<Exercise
+  question="Δημοφιλές cache key λήγει και 500 ταυτόχρονα requests χτυπούν τη database μαζί. Πώς λέγεται και τι κάνεις;"
+  options={[
+    "Cache stampede — request coalescing/lock ώστε ένα μόνο request να ξαναφορτώσει, ή staggered TTLs.",
+    "N+1 problem — eager loading.",
+    "Race condition — βάζεις transaction στη βάση."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Stampede/thundering herd: όλα τα requests βλέπουν ταυτόχρονα miss. Με lock ή coalescing, ένα request ανανεώνει το cache και τα υπόλοιπα περιμένουν ή σερβίρουν το stale value."
+/>
+
+<Flashcards
+  title="Redis — interview drills"
+  cards={[
+    {
+      question: "Γιατί το Redis είναι τόσο γρήγορο;",
+      answer: "Όλα τα δεδομένα ζουν στη μνήμη (RAM) — όχι δίσκος στο hot path. Single-threaded event loop για τα commands (δεν χρειάζονται locks), απλές δομές δεδομένων με O(1)/O(log n) πράξεις. Persistence (RDB snapshots / AOF log) γίνεται στο παρασκήνιο."
+    },
+    {
+      question: "Cache-aside vs write-through;",
+      answer: "Cache-aside: διαβάζεις cache → στο miss φορτώνεις από DB και γράφεις cache. Απλό, το cache γεμίζει on demand, αλλά το πρώτο read είναι αργό και υπάρχει παράθυρο staleness. Write-through: κάθε write ενημερώνει DB + cache μαζί — πάντα φρέσκο, ακριβότερα writes."
+    },
+    {
+      question: "Τι είναι το cache stampede και 2 λύσεις;",
+      answer: "Hot key λήγει → μαζικά ταυτόχρονα misses → όλα τα requests χτυπούν τη DB. Λύσεις: 1) lock/request coalescing — ένα request ανανεώνει, τα άλλα περιμένουν ή παίρνουν stale, 2) staggered/jittered TTLs ή background refresh πριν τη λήξη."
+    },
+    {
+      question: "Πώς δουλεύει session store με Redis;",
+      answer: "Cookie κρατά μόνο το session id· το session:{id} key στο Redis κρατά userId/role με TTL. Όλα τα instances διαβάζουν το ίδιο store (λύνει το multi-instance), και το logout είναι ένα DEL — άμεσο revoke, σε αντίθεση με JWT."
+    },
+    {
+      question: "Πώς υλοποιείς rate limit με Redis;",
+      answer: "Fixed window: INCR στο key rate:{action}:{ip} + EXPIRE στο πρώτο hit· πάνω από το όριο → 429. Πιο ομαλό: sliding window με sorted set των timestamps. Διπλό όριο ανά IP ΚΑΙ ανά λογαριασμό για login brute force."
+    },
+    {
+      question: "Redis Pub/Sub: τι εγγυάται και τι όχι;",
+      answer: "Fire-and-forget broadcast: όποιος είναι συνδεδεμένος subscriber το λαμβάνει, όποιος λείπει το χάνει — καμία αποθήκευση/replay. Ιδανικό για WebSocket fan-out όπου το REST resync καλύπτει τα χαμένα. Για durable queues: Redis Streams ή πραγματικός broker."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Χτίσε caching layer με συνείδηση invalidation"
+  scenario="Πάρε ένα αργό dashboard endpoint και πρόσθεσε Redis cache, session lookup και rate limit — με ρητό σχέδιο για το πότε καθαρίζεται κάθε key."
+  outcomes={[
+    "Να σχεδιάζεις cache keys που περιέχουν ό,τι αλλάζει το αποτέλεσμα.",
+    "Να διαλέγεις TTL με tradeoff φρεσκάδας/φορτίου.",
+    "Να γράφεις invalidation δίπλα σε κάθε write, όχι εκ των υστέρων."
+  ]}
+  steps={[
+    "Μέτρησε το αργό endpoint με logging πριν βάλεις cache.",
+    "Σχεδίασε το key schema: dashboard:{userId}:{range} κ.λπ.",
+    "Υλοποίησε cache-aside με TTL 60s.",
+    "Σε κάθε write (POST/PATCH task) γράψε ποια keys καθαρίζονται.",
+    "Πρόσθεσε rate limit στο login: ανά IP και ανά email.",
+    "Σκέψου το stampede: τι γίνεται όταν λήξει το key του πιο ενεργού χρήστη;"
+  ]}
+  checkpoints={[
+    "Κάθε temporary key έχει TTL.",
+    "Το key περιλαμβάνει user/filters — όχι shared key για private data.",
+    "Κάθε write έχει αντίστοιχη invalidation.",
+    "Ξέρεις τι επιστρέφει το σύστημα όταν το Redis πέσει (γνωστό failure mode: degrade σε DB reads)."
+  ]}
+  mistakes={[
+    "Cache χωρίς TTL.",
+    "Cache key χωρίς τα filters/user/locale.",
+    "Redis ως source of truth χωρίς σκέψη για persistence.",
+    "Invalidation που ξεχάστηκε μετά από νέο write endpoint."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν για κάθε key μπορείς να απαντήσεις: τι περιέχει, πότε λήγει, ποιος το καθαρίζει, και τι γίνεται αν χαθεί."
+/>

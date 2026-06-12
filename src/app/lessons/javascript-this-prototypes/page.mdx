@@ -49,64 +49,252 @@ console.log(User.prototype);`;
 
 # this, Prototypes & Classes
 
-Το `this` είναι από τα πιο συχνά σημεία που πέφτουν σε JavaScript interviews. Δεν σημαίνει πάντα “το object που βλέπω δίπλα”. Η τιμή του εξαρτάται από το **πώς καλείται** μια function.
+Το `this` είναι το σημείο όπου «κόβονται» οι περισσότεροι υποψήφιοι σε JavaScript interviews. Ο λόγος: το `this` **δεν** καθορίζεται από το πού γράφτηκε η function, αλλά από το **πώς καλείται** — το λεγόμενο call-site. Μάθε τους 4 κανόνες και θα απαντάς με σιγουριά.
 
-## this σε object method
+## Οι 4 κανόνες του this
+
+Όταν βλέπεις ένα function call, έλεγξε με αυτή τη σειρά:
+
+**1. `new` binding** — κλήση με `new`; Το `this` είναι το φρέσκο object:
+
+```js
+function User(name) {
+  this.name = name;
+}
+const ada = new User("Ada"); // this → το νέο object
+```
+
+**2. Explicit binding** — κλήση με `call`, `apply` ή «κλειδωμένο» με `bind`:
+
+```js
+function greet() {
+  return `Hi, ${this.name}`;
+}
+
+const user = { name: "Ada" };
+greet.call(user);  // "Hi, Ada" — this ορίζεται ρητά
+const bound = greet.bind(user);
+bound();           // "Hi, Ada" — μόνιμα δεμένο, ό,που κι αν κληθεί
+```
+
+**3. Implicit binding** — κλήση ως method; Το `this` είναι **το object πριν την τελεία**:
 
 ```js
 const user = {
   name: "Ada",
   greet() {
     return this.name;
-  }
+  },
 };
+user.greet(); // "Ada" — this → user
 ```
 
-Όταν καλείς `user.greet()`, το `this` μέσα στη method δείχνει στο `user`.
-
-## this και function calls
-
-Αν πάρεις τη method και την καλέσεις μόνη της, μπορεί να χάσει το αρχικό object context.
+**4. Default binding** — σκέτη κλήση; `undefined` σε strict mode (ή το global object σε sloppy mode):
 
 ```js
+const fn = user.greet;
+fn(); // TypeError σε strict mode — this είναι undefined
+```
+
+Η σειρά προτεραιότητας: `new` > explicit (`bind`/`call`/`apply`) > implicit (τελεία) > default.
+
+## Το κλασικό bug: «χαμένο» this
+
+Μόλις **αποσπάσεις** μια method από το object της, το implicit binding χάνεται:
+
+```js
+const user = {
+  name: "Ada",
+  greet() {
+    return `Hi, ${this.name}`;
+  },
+};
+
+user.greet();             // ✅ "Hi, Ada" — κλήση με τελεία
 const greet = user.greet;
-greet(); // το this δεν δείχνει πια απαραίτητα στο user
+greet();                  // ❌ this undefined — σκέτη κλήση!
+
+setTimeout(user.greet, 100); // ❌ ίδιο πρόβλημα — το setTimeout
+                             // καλεί τη function "σκέτη"
 ```
 
-Αυτό εξηγεί πολλά bugs σε callbacks.
-
-## Prototypes
-
-Στη JavaScript, objects μπορούν να “κληρονομούν” properties και methods από άλλο object μέσω prototype chain.
+Λύσεις:
 
 ```js
-const user = new User("Ada");
-user.greet();
+setTimeout(() => user.greet(), 100);     // 1. wrapper — η κλήση κρατά την τελεία
+setTimeout(user.greet.bind(user), 100);  // 2. bind — μόνιμο δέσιμο
 ```
 
-Η method `greet` δεν χρειάζεται να αντιγραφεί σε κάθε instance. Υπάρχει στο `User.prototype`.
+<PredictOutput
+  title="Call-site drill"
+  code={`const counter = {
+  count: 0,
+  increment() {
+    this.count++;
+    return this.count;
+  },
+};
 
-## Classes
+console.log(counter.increment());
 
-Το `class` είναι πιο καθαρό syntax πάνω από prototypes.
+const inc = counter.increment;
+const other = { count: 100, increment: inc };
+
+console.log(other.increment());
+console.log(counter.count);`}
+  options={["1, 101, 1", "1, 2, 2", "1, 101, 2", "1, 1, 1"]}
+  correctOptionIndex={0}
+  answer="1, 101, 1"
+  explanation="Πρώτη κλήση: this → counter, count γίνεται 1. Η inc αποθηκεύεται στο other και καλείται ως other.increment() — this → other, οπότε το other.count γίνεται 101. Το counter.count μένει 1. Μετράει ΜΟΝΟ το object πριν την τελεία στη στιγμή της κλήσης."
+/>
+
+## Arrow functions: ΔΕΝ έχουν δικό τους this
+
+Οι arrow functions δεν παίζουν με τους 4 κανόνες — **κληρονομούν το `this` από το lexical scope** όπου γράφτηκαν. Αυτό τις κάνει ιδανικές για callbacks:
+
+```js
+class Timer {
+  constructor() {
+    this.seconds = 0;
+  }
+
+  start() {
+    // Arrow: κληρονομεί το this του start() → το instance ✅
+    setInterval(() => {
+      this.seconds++;
+    }, 1000);
+  }
+
+  brokenStart() {
+    // Κανονική function: ΔΙΚΟ της this → undefined ❌
+    setInterval(function () {
+      this.seconds++; // TypeError
+    }, 1000);
+  }
+}
+```
+
+Αντίστροφη παγίδα: **μην** χρησιμοποιείς arrow ως object method:
+
+```js
+const user = {
+  name: "Ada",
+  greet: () => `Hi, ${this.name}`, // ❌ this ΔΕΝ είναι το user —
+};                                  // είναι το this του εξωτερικού scope
+user.greet(); // "Hi, undefined"
+```
+
+> Σημείωση: στις arrow functions το `bind`/`call`/`apply` **αγνοείται** για το this — δεν μπορείς να το αλλάξεις.
+
+## Prototype chain — πώς δουλεύει η «κληρονομικότητα»
+
+Κάθε object έχει έναν κρυφό σύνδεσμο (`[[Prototype]]`) προς ένα άλλο object. Όταν ζητάς ένα property που δεν υπάρχει στο object, η JavaScript ψάχνει **πάνω στην αλυσίδα**:
+
+```js
+const animal = {
+  eats: true,
+  describe() {
+    return `eats: ${this.eats}`;
+  },
+};
+
+const rabbit = Object.create(animal); // rabbit → animal
+rabbit.jumps = true;
+
+rabbit.jumps;      // true — δικό του property
+rabbit.eats;       // true — βρέθηκε στο prototype (animal)
+rabbit.describe(); // "eats: true" — method από το prototype,
+                   // αλλά this → rabbit (αυτός που κάλεσε!)
+rabbit.flies;      // undefined — εξαντλήθηκε η αλυσίδα
+```
+
+Όταν φτιάχνεις instances με `new`, οι methods ζουν **μία φορά** στο `prototype` — δεν αντιγράφονται σε κάθε instance:
+
+```js
+class User {
+  constructor(name) {
+    this.name = name; // instance property — μία ανά object
+  }
+  greet() {
+    return this.name; // ζει στο User.prototype — κοινή για όλους
+  }
+}
+
+const a = new User("Ada");
+const b = new User("Grace");
+a.greet === b.greet; // true — Η ΙΔΙΑ function, μέσω prototype
+```
+
+Αυτό είναι και θέμα μνήμης: 10.000 users = 10.000 `name` strings, αλλά **1** `greet` function.
+
+## Classes = syntax πάνω από prototypes
+
+Το `class` δεν είναι νέο object model — είναι καθαρότερο συντακτικό για το prototype system. Σε συνέντευξη αυτή η πρόταση μετράει πολύ:
 
 ```js
 class User {
   constructor(name) {
     this.name = name;
   }
-
   greet() {
-    return this.name;
+    return `Hi, ${this.name}`;
   }
 }
+
+// Ισοδύναμο "παλιό" pattern:
+function OldUser(name) {
+  this.name = name;
+}
+OldUser.prototype.greet = function () {
+  return `Hi, ${this.name}`;
+};
+
+typeof User;                 // "function" — οι classes ΕΙΝΑΙ functions!
+User.prototype.greet;        // εκεί ζει η method
 ```
 
-Σε συνέντευξη είναι καλό να ξέρεις ότι classes στη JavaScript βασίζονται ακόμα στο prototype system.
+Με `extends` η αλυσίδα μεγαλώνει:
+
+```js
+class Admin extends User {
+  constructor(name, level) {
+    super(name); // υποχρεωτικό ΠΡΙΝ το this σε subclass
+    this.level = level;
+  }
+  greet() {
+    return `${super.greet()} (admin level ${this.level})`;
+  }
+}
+
+const admin = new Admin("Grace", 9);
+admin.greet(); // "Hi, Grace (admin level 9)"
+// Αναζήτηση: admin → Admin.prototype → User.prototype → Object.prototype
+```
+
+<PredictOutput
+  title="Prototype chain drill"
+  code={`class A {
+  hello() {
+    return "A";
+  }
+}
+
+class B extends A {}
+
+const b = new B();
+
+console.log(b.hello());
+console.log(b.hasOwnProperty("hello"));
+console.log(Object.getPrototypeOf(b) === B.prototype);`}
+  options={['"A", false, true', '"A", true, true', '"A", true, false', 'TypeError']}
+  correctOptionIndex={0}
+  answer='"A", false, true'
+  explanation="Η hello δεν υπάρχει στο b ούτε στο B.prototype — βρίσκεται στο A.prototype μέσω της αλυσίδας. Το hasOwnProperty είναι false γιατί η hello ΔΕΝ είναι δικό του property. Το prototype του b είναι το B.prototype."
+/>
 
 ## Mini project: user model
 
-Το challenge φτιάχνει ένα μικρό model με class, constructor, this και method.
+Φτιάξε ένα μικρό model με class, constructor, `this` και method που καλείται από click event:
 
 <CodeChallenge
   title="User model challenge"
@@ -154,24 +342,90 @@ class User {
   ]}
 />
 
-## Interview answer template
+## Πώς απαντάς στη συνέντευξη
 
-Αν σε ρωτήσουν “what is this in JavaScript?”, απάντησε:
+Αν σε ρωτήσουν «what is `this` in JavaScript?»:
 
-> `this` is a dynamic binding. Its value depends on how a function is called. In object method calls, it usually refers to the object before the dot. In classes, instance methods use `this` to access instance properties.
+> `this` is determined by how a function is called, not where it's defined. There are four rules: with `new` it's the newly created object; with `call`/`apply`/`bind` it's set explicitly; in a method call it's the object before the dot; otherwise it's undefined in strict mode. Arrow functions are the exception — they inherit `this` lexically from their enclosing scope, which is why they're ideal for callbacks.
 
 <Exercise
-  question="Από τι εξαρτάται κυρίως η τιμή του this;"
+  question="Από τι εξαρτάται κυρίως η τιμή του this σε μια κανονική function;"
   options={[
-    "Από το πώς καλείται η function.",
-    "Από το όνομα του αρχείου.",
-    "Από το χρώμα του button."
+    "Από το πώς καλείται η function (call-site).",
+    "Από το πού γράφτηκε η function.",
+    "Από το αν η function είναι δηλωμένη με const ή function."
   ]}
   correctOptionIndex={0}
-  explanation="Σωστά. Το this είναι δυναμικό και εξαρτάται από το call-site."
+  explanation="Σωστά. Το this είναι δυναμικό — καθορίζεται στη στιγμή της κλήσης. Η μόνη εξαίρεση είναι οι arrow functions, που το κληρονομούν lexically."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="javascript-this-prototypes" />
-</div>
+<Exercise
+  question="Γιατί ΔΕΝ πρέπει να ορίσεις object method ως arrow function;"
+  options={[
+    "Γιατί οι arrow functions είναι πιο αργές.",
+    "Γιατί η arrow δεν παίρνει το object ως this — κληρονομεί το this του εξωτερικού scope.",
+    "Γιατί οι arrow functions δεν μπορούν να επιστρέψουν τιμή."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Το user.greet() με arrow ΔΕΝ κάνει this → user. Η arrow αγνοεί το implicit binding και κρατά το this του scope όπου γράφτηκε."
+/>
+
+<Flashcards
+  title="this & Prototypes — interview drills"
+  cards={[
+    {
+      question: "Ποιοι είναι οι 4 κανόνες του this binding, με σειρά προτεραιότητας;",
+      answer: "1) new binding (νέο object), 2) explicit binding (call/apply/bind), 3) implicit binding (object πριν την τελεία), 4) default binding (undefined σε strict mode, αλλιώς global object)."
+    },
+    {
+      question: "call vs apply vs bind;",
+      answer: "call(thisArg, a, b): καλεί ΑΜΕΣΩΣ με ορίσματα ένα-ένα. apply(thisArg, [a, b]): καλεί αμέσως με array. bind(thisArg): ΔΕΝ καλεί — επιστρέφει νέα function με μόνιμα δεμένο this."
+    },
+    {
+      question: "Πώς βρίσκει η JavaScript ένα property που δεν υπάρχει στο object;",
+      answer: "Ανεβαίνει το prototype chain: object → Object.getPrototypeOf(object) → ... → Object.prototype → null. Επιστρέφει το πρώτο match ή undefined αν εξαντληθεί η αλυσίδα."
+    },
+    {
+      question: "Γιατί οι methods μπαίνουν στο prototype αντί στο constructor;",
+      answer: "Μνήμη και συνέπεια: μία function κοινή για όλα τα instances αντί για αντίγραφο ανά instance. 10.000 objects μοιράζονται την ίδια greet — a.greet === b.greet είναι true."
+    },
+    {
+      question: "Τι κάνει το super() και πότε είναι υποχρεωτικό;",
+      answer: "Καλεί τον parent constructor. Σε subclass με δικό της constructor, ΠΡΕΠΕΙ να κληθεί πριν από οποιαδήποτε χρήση του this — αλλιώς ReferenceError. Το super.method() καλεί την parent εκδοχή μιας method."
+    },
+    {
+      question: "Μπορείς να αλλάξεις το this μιας arrow function με bind;",
+      answer: "Όχι. Οι arrow functions δεν έχουν δικό τους this — το κληρονομούν lexically και τα call/apply/bind το αγνοούν (περνούν μόνο τα arguments)."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Μοντελοποίησε user methods"
+  scenario="Φτιάξε user object/class με methods και εξήγησε πότε το this δείχνει στο object και πότε χάνεται."
+  outcomes={[
+    "Να καταλαβαίνεις πώς καλείται μια method.",
+    "Να αναγνωρίζεις bugs όπου χάνεται το this.",
+    "Να εξηγείς class syntax ως wrapper γύρω από prototype behavior."
+  ]}
+  steps={[
+    "Φτιάξε user με firstName, lastName και getFullName method.",
+    "Κάλεσε user.getFullName() και πρόβλεψε το this.",
+    "Αποθήκευσε τη method σε μεταβλητή και δες τι αλλάζει.",
+    "Διόρθωσέ το με bind και μετά με arrow wrapper.",
+    "Ξαναγράψε το παράδειγμα με class και extends Admin."
+  ]}
+  checkpoints={[
+    "Μπορείς να πεις ποιος είναι ο call-site σε κάθε κλήση.",
+    "Ξέρεις γιατί arrow functions δεν έχουν δικό τους this.",
+    "Η class έκδοση έχει ίδια συμπεριφορά με method σε prototype.",
+    "Μπορείς να απαριθμήσεις τους 4 κανόνες από μνήμης."
+  ]}
+  mistakes={[
+    "Να νομίζεις ότι this σημαίνει πάντα το object όπου γράφτηκε η function.",
+    "Να χρησιμοποιείς arrow method χωρίς να καταλαβαίνεις το tradeoff.",
+    "Να περνάς user.greet ως callback χωρίς bind ή wrapper.",
+    "Να αποστηθίζεις prototype χωρίς να τρέχεις παραδείγματα."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να κοιτάξεις ένα function call και να πεις τι είναι το this πριν τρέξει."
+/>

@@ -101,7 +101,51 @@ Content-Type: text/html
   explanation="Σωστά. Ο server σερβίρει δεδομένα στον client, δηλαδή στον browser ή στην εφαρμογή που τα ζητά."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="web-basics" />
-</div>
+<Flashcards
+  title="Web foundations — γρήγορο repaso"
+  cards={[
+    {
+      question: "Τι συμβαίνει όταν γράφεις ένα URL και πατάς Enter;",
+      answer: "1) DNS lookup: το domain γίνεται IP. 2) TCP σύνδεση (+ TLS για https). 3) Ο browser στέλνει HTTP request. 4) Ο server απαντά με HTML. 5) Ο browser κάνει parse, κατεβάζει CSS/JS/εικόνες και κάνει render. Κλασική interview ερώτηση — μάθε τα 5 βήματα."
+    },
+    {
+      question: "Τι είναι το DNS;",
+      answer: "Ο 'τηλεφωνικός κατάλογος' του internet: μεταφράζει domains (example.com) σε IP διευθύνσεις (93.184.216.34). Χωρίς αυτό θα θυμόμασταν αριθμούς αντί για ονόματα."
+    },
+    {
+      question: "Client vs server;",
+      answer: "Client: ο browser του χρήστη — ζητάει resources και τρέχει το frontend. Server: μηχάνημα που ακούει requests και απαντά — HTML, JSON, αρχεία. Η σχέση είναι πάντα request → response πάνω από HTTP."
+    },
+    {
+      question: "HTTP vs HTTPS;",
+      answer: "Το HTTPS είναι HTTP πάνω από TLS: η επικοινωνία κρυπτογραφείται ώστε κανείς στο δίκτυο να μη βλέπει ή να αλλάζει τα δεδομένα. Passwords, cookies και sessions δεν ταξιδεύουν ποτέ σε σκέτο HTTP."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Χαρτογράφησε ένα πραγματικό request"
+  scenario="Πάρε μια απλή σελίδα login και περιέγραψε ακριβώς τι συμβαίνει από τη στιγμή που ο χρήστης πατάει submit μέχρι να εμφανιστεί το dashboard."
+  outcomes={[
+    "Να ξεχωρίζεις browser, server, database και third-party services.",
+    "Να εξηγείς request, response, headers, status code και payload.",
+    "Να μπορείς να εντοπίσεις πού μπορεί να αποτύχει ένα web flow."
+  ]}
+  steps={[
+    "Σχεδίασε το flow: browser -> server -> database -> server -> browser.",
+    "Γράψε τι data στέλνει το browser και τι δεν πρέπει να εμπιστευτεί ο server.",
+    "Πρόσθεσε τρία πιθανά failures: λάθος password, server error, network timeout.",
+    "Για κάθε failure γράψε τι status code και τι UI message θα έδειχνες."
+  ]}
+  checkpoints={[
+    "Μπορείς να εξηγήσεις γιατί ο browser δεν μιλάει απευθείας με τη database.",
+    "Ξέρεις ποια δεδομένα είναι request body και ποια είναι response.",
+    "Έχεις τουλάχιστον ένα παράδειγμα 200, 400/401 και 500 status."
+  ]}
+  mistakes={[
+    "Να λες απλά 'το frontend καλεί το backend' χωρίς λεπτομέρειες.",
+    "Να βάζεις secrets ή database access στον browser.",
+    "Να μη σκέφτεσαι failure states."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να πάρεις οποιοδήποτε κουμπί σε web app και να εξηγήσεις το πλήρες client-server flow του."
+/>

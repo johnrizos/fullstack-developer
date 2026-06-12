@@ -1,127 +1,263 @@
 # Databases
 
-Fullstack σημαίνει ότι δεν αρκεί να εμφανίζεις δεδομένα. Πρέπει να ξέρεις πώς αποθηκεύονται, πώς σχεδιάζονται και πώς ανακτώνται.
+Fullstack σημαίνει ότι δεν αρκεί να εμφανίζεις δεδομένα — πρέπει να ξέρεις πώς αποθηκεύονται, πώς σχεδιάζονται και πώς ανακτώνται γρήγορα. Στις συνεντεύξεις τα database θέματα είναι σταθερά: JOINs, indexes, N+1 problem, transactions, SQL vs NoSQL. Όλα εδώ.
 
-## SQL
+## SQL: tables, constraints, σχέσεις
 
-SQL databases όπως PostgreSQL χρησιμοποιούν tables, rows, columns και relationships.
-
-Παράδειγμα:
-
-```sql
-CREATE TABLE tasks (
-  id UUID PRIMARY KEY,
-  title TEXT NOT NULL,
-  completed BOOLEAN NOT NULL DEFAULT false,
-  user_id UUID NOT NULL
-);
-```
-
-Το μεγάλο πλεονέκτημα είναι ότι μπορείς να δηλώσεις constraints. Αν ένα `title` είναι `NOT NULL`, η database προστατεύει τα δεδομένα ακόμα και αν το backend έχει bug.
-
-Συχνά constraints:
-
-- `PRIMARY KEY` για μοναδική ταυτότητα,
-- `NOT NULL` για required πεδία,
-- `UNIQUE` για email ή slug,
-- `FOREIGN KEY` για σχέσεις,
-- `CHECK` για business rules.
-
-## Relationships
-
-Συχνά έχεις σχέσεις:
-
-- user έχει πολλά tasks,
-- order έχει πολλά order items,
-- product ανήκει σε category.
-
-Παράδειγμα με foreign key:
+SQL databases όπως η PostgreSQL οργανώνουν δεδομένα σε tables με αυστηρό schema:
 
 ```sql
 CREATE TABLE users (
-  id UUID PRIMARY KEY,
-  email TEXT NOT NULL UNIQUE
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE tasks (
-  id UUID PRIMARY KEY,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title TEXT NOT NULL,
-  user_id UUID NOT NULL REFERENCES users(id)
+  completed BOOLEAN NOT NULL DEFAULT false,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```
 
-Έτσι δεν μπορεί να υπάρξει task για user που δεν υπάρχει.
+Η μεγάλη δύναμη του SQL: τα **constraints** προστατεύουν τα δεδομένα ακόμα κι αν το backend έχει bug:
 
-## Indexes
+- `PRIMARY KEY` — μοναδική ταυτότητα κάθε row.
+- `NOT NULL` — required πεδία.
+- `UNIQUE` — δεν θα υπάρξουν ποτέ δύο users με ίδιο email, ό,τι κι αν κάνει το app.
+- `FOREIGN KEY ... REFERENCES` — δεν μπορεί να υπάρξει task για ανύπαρκτο user.
+- `CHECK (price >= 0)` — business rules στο επίπεδο της βάσης.
+- `ON DELETE CASCADE` — σβήνεις τον user, σβήνονται και τα tasks του (εναλλακτικά: `RESTRICT`, `SET NULL`).
 
-Index βοηθά τα queries να βρίσκουν δεδομένα πιο γρήγορα.
+## Τα queries που πρέπει να γράφεις με κλειστά μάτια
+
+```sql
+-- Φιλτράρισμα, ταξινόμηση, σελιδοποίηση
+SELECT id, title, completed
+FROM tasks
+WHERE user_id = $1 AND completed = false
+ORDER BY created_at DESC
+LIMIT 20 OFFSET 0;
+
+-- Aggregation: πόσα tasks ανά user
+SELECT user_id, COUNT(*) AS task_count
+FROM tasks
+GROUP BY user_id
+HAVING COUNT(*) > 5;
+```
+
+> Προσοχή: το `WHERE` φιλτράρει **rows πριν** το grouping, το `HAVING` φιλτράρει **groups μετά**. Κλασική interview ερώτηση.
+
+## JOINs — η πιο σίγουρη SQL ερώτηση συνέντευξης
+
+```sql
+-- Tasks μαζί με το email του ιδιοκτήτη τους
+SELECT tasks.title, users.email
+FROM tasks
+INNER JOIN users ON users.id = tasks.user_id;
+
+-- ΟΛΟΙ οι users, με τα tasks τους ΑΝ έχουν
+SELECT users.email, tasks.title
+FROM users
+LEFT JOIN tasks ON tasks.user_id = users.id;
+```
+
+| JOIN | Τι επιστρέφει |
+|---|---|
+| `INNER JOIN` | Μόνο rows που ταιριάζουν **και στους δύο** πίνακες |
+| `LEFT JOIN` | Όλα τα rows του αριστερού + matches (ή NULL) από τον δεξιό |
+| `RIGHT JOIN` | Το αντίστροφο του LEFT |
+| `FULL OUTER JOIN` | Όλα τα rows και των δύο, με NULL όπου δεν υπάρχει match |
+
+Πρακτικό τεστ κατανόησης: «βρες τους users **χωρίς κανένα task**» — η απάντηση συνδυάζει LEFT JOIN με NULL check:
+
+```sql
+SELECT users.email
+FROM users
+LEFT JOIN tasks ON tasks.user_id = users.id
+WHERE tasks.id IS NULL;
+```
+
+<Exercise
+  question="Θες όλους τους users, μαζί με τα orders τους ΑΝ έχουν. Ποιο JOIN;"
+  options={["INNER JOIN", "LEFT JOIN από users προς orders", "FULL OUTER JOIN", "CROSS JOIN"]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Το LEFT JOIN κρατά ΟΛΑ τα rows του αριστερού πίνακα (users) — όσοι δεν έχουν orders εμφανίζονται με NULL. Το INNER JOIN θα έκρυβε τους users χωρίς orders."
+/>
+
+## Indexes — γιατί το query σου είναι αργό
+
+Χωρίς index, η βάση κάνει **full table scan** — διαβάζει κάθε row. Με index (B-tree), βρίσκει τα rows σχεδόν αμέσως, όπως το ευρετήριο ενός βιβλίου:
 
 ```sql
 CREATE INDEX tasks_user_id_idx ON tasks(user_id);
+
+-- Composite index: για queries που φιλτράρουν και στα δύο
+CREATE INDEX tasks_user_status_idx ON tasks(user_id, completed);
 ```
 
-Τα indexes δεν είναι δωρεάν. Κάνουν τα reads πιο γρήγορα, αλλά προσθέτουν κόστος σε writes και storage. Τα βάζεις σε columns που χρησιμοποιούνται συχνά σε `WHERE`, `JOIN`, `ORDER BY`.
+Τα indexes **δεν είναι δωρεάν**: κάθε INSERT/UPDATE πρέπει να ενημερώσει και τα indexes, και καταναλώνουν χώρο. Πότε προσθέτεις index:
 
-## NoSQL
+- Columns σε συχνά `WHERE` / `JOIN ON` / `ORDER BY`.
+- Foreign keys (σχεδόν πάντα).
+- **Όχι** σε columns με λίγες διακριτές τιμές (π.χ. boolean μόνο του) ή σε tables που δέχονται κυρίως writes.
 
-NoSQL όπως MongoDB αποθηκεύει documents. Είναι χρήσιμο όταν τα δεδομένα είναι πιο flexible, αλλά πρέπει πάλι να σχεδιάζεις προσεκτικά.
+Για το composite index ισχύει ο **leftmost prefix κανόνας**: το `(user_id, completed)` εξυπηρετεί queries με `WHERE user_id = ?` και `WHERE user_id = ? AND completed = ?`, αλλά **όχι** σκέτο `WHERE completed = ?`.
 
-Παράδειγμα document:
+Το εργαλείο διάγνωσης: `EXPLAIN ANALYZE SELECT ...` — αν δεις «Seq Scan» σε μεγάλο table, λείπει index.
+
+## Το N+1 problem — το πιο συχνό performance bug
+
+Εμφανίζεται παντού όπου υπάρχει ORM, και οι interviewers το λατρεύουν:
+
+```js
+// ❌ N+1: 1 query για τα posts + 1 query ΓΙΑ ΚΑΘΕ post
+const posts = await db.post.findMany();          // 1 query
+for (const post of posts) {
+  post.author = await db.user.findUnique({       // N queries!
+    where: { id: post.authorId },
+  });
+}
+
+// ✅ Λύση: eager loading — 1-2 queries συνολικά
+const postsWithAuthors = await db.post.findMany({
+  include: { author: true }, // ο ORM κάνει JOIN ή ένα IN query
+});
+```
+
+Με 100 posts, το πρώτο κάνει **101 queries**, το δεύτερο 1-2. Σε raw SQL η λύση είναι ένα JOIN ή `WHERE id IN (...)`.
+
+## Transactions & ACID
+
+**Transaction** = πολλά βήματα εκτελούνται όλα μαζί ή κανένα:
+
+```sql
+BEGIN;
+UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+COMMIT; -- ή ROLLBACK αν κάτι πήγε στραβά
+```
+
+Αν ο server πέσει ανάμεσα στα δύο UPDATEs, χωρίς transaction θα είχες χαμένα χρήματα. Οι εγγυήσεις συνοψίζονται στο **ACID**:
+
+- **A**tomicity: όλα ή τίποτα.
+- **C**onsistency: η βάση πάει από έγκυρη κατάσταση σε έγκυρη (constraints τηρούνται).
+- **I**solation: παράλληλα transactions δεν βλέπουν τα μισοτελειωμένα δεδομένα του άλλου.
+- **D**urability: μετά το COMMIT, τα δεδομένα επιβιώνουν από crash.
+
+## SQL vs NoSQL — πώς απαντάς στο «ποιο να διαλέξω;»
+
+NoSQL (π.χ. MongoDB) αποθηκεύει ευέλικτα documents:
 
 ```json
 {
-  "id": "task_1",
+  "_id": "task_1",
   "title": "Learn databases",
   "completed": false,
-  "tags": ["backend", "sql"]
+  "tags": ["backend", "sql"],
+  "subtasks": [{ "title": "Read about indexes", "done": true }]
 }
 ```
 
-Το NoSQL δεν σημαίνει “χωρίς schema thinking”. Σημαίνει ότι το schema συχνά ζει περισσότερο στο app layer και στα access patterns.
+| | SQL (PostgreSQL) | NoSQL (MongoDB) |
+|---|---|---|
+| Schema | Αυστηρό, στη βάση | Ευέλικτο, ζει στο app layer |
+| Σχέσεις | JOINs, foreign keys | Embedding ή manual references |
+| Transactions | Πλήρη ACID παντού | Υπάρχουν, αλλά λιγότερο κεντρικά |
+| Scaling | Κάθετο + read replicas | Οριζόντιο (sharding) πιο φυσικό |
+| Ιδανικό για | Σχεσιακά δεδομένα, συναλλαγές, reporting | Ευέλικτα documents, μεγάλο write throughput |
 
-## Transactions
+Η σωστή default απάντηση σε συνέντευξη: **«Ξεκινάω με PostgreSQL εκτός αν υπάρχει συγκεκριμένος λόγος όχι»** — σχέσεις, constraints και transactions καλύπτουν το 90% των εφαρμογών. NoSQL όταν το σχήμα είναι πραγματικά ευμετάβλητο ή το scale το απαιτεί. Και θυμήσου: NoSQL **δεν** σημαίνει «χωρίς schema thinking» — το schema απλώς μετακομίζει στο app layer και στα access patterns.
 
-Transaction σημαίνει ότι πολλά βήματα γίνονται όλα μαζί ή κανένα.
-
-Παράδειγμα: σε checkout δεν θέλεις να χρεωθεί ο χρήστης αλλά να μη δημιουργηθεί order. Εκεί χρειάζεσαι transaction ή προσεκτικό distributed workflow.
+<Exercise
+  question="Το app σου κάνει 1 query για λίστα 50 προϊόντων και μετά 50 queries για την κατηγορία του καθενός. Πώς λέγεται αυτό και ποια η λύση;"
+  options={[
+    "Race condition — βάζεις mutex.",
+    "N+1 problem — eager loading με JOIN ή include.",
+    "Deadlock — αλλάζεις τη σειρά των queries.",
+    "Full table scan — προσθέτεις index."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Είναι το κλασικό N+1: 1 query για τη λίστα + N για τις σχέσεις. Λύση: ένα JOIN, ένα WHERE IN, ή το include/populate του ORM — από 51 queries σε 1-2."
+/>
 
 ## Mini project: persistent tasks database
 
-Σχεδίασε database για todo app με users:
+Σχεδίασε database για todo app με users — γράψε πραγματικό SQL:
 
-1. `users` table με `id`, `email`, `created_at`.
+1. `users` table με `id`, `email` (UNIQUE), `created_at`.
 2. `tasks` table με `id`, `user_id`, `title`, `completed`, `created_at`.
-3. Foreign key από `tasks.user_id` σε `users.id`.
-4. Index στο `tasks.user_id`.
-5. Query που φέρνει μόνο τα tasks του current user.
+3. Foreign key από `tasks.user_id` σε `users.id` με `ON DELETE CASCADE`.
+4. Index στο `tasks.user_id` και composite στο `(user_id, completed)`.
+5. Queries: τα ενεργά tasks ενός user, πλήθος tasks ανά user, users χωρίς tasks.
+6. Τρέξε `EXPLAIN` στο κύριο query σου πριν και μετά το index.
 
-## Interview answer template
-
-> I choose SQL when relationships, constraints, and transactions matter. I design schemas around access patterns, add indexes for common queries, and avoid loading more data than needed.
-
-<Exercise
-  question="Πότε είναι συχνά καλή επιλογή SQL database;"
-  options={[
-    "Όταν έχεις σχέσεις, constraints και transactions.",
-    "Όταν θέλεις μόνο CSS animations.",
-    "Όταν δεν υπάρχουν δεδομένα."
+<Flashcards
+  title="Databases — interview drills"
+  cards={[
+    {
+      question: "Τι σημαίνει ACID;",
+      answer: "Atomicity (όλα ή τίποτα), Consistency (έγκυρη → έγκυρη κατάσταση), Isolation (παράλληλα transactions δεν βλέπουν ενδιάμεσες καταστάσεις), Durability (μετά το COMMIT τα δεδομένα επιβιώνουν crash)."
+    },
+    {
+      question: "INNER vs LEFT JOIN σε μία πρόταση;",
+      answer: "INNER: μόνο τα rows που ταιριάζουν και στους δύο πίνακες. LEFT: όλα τα rows του αριστερού, με NULL εκεί που δεν υπάρχει match στον δεξιό."
+    },
+    {
+      question: "Πότε ΔΕΝ βάζεις index;",
+      answer: "Σε write-heavy tables (κάθε index επιβραδύνει inserts/updates), σε columns με χαμηλή cardinality (π.χ. boolean μόνο του), σε μικρά tables όπου το scan είναι ήδη φθηνό, και σε columns που δεν εμφανίζονται σε WHERE/JOIN/ORDER BY."
+    },
+    {
+      question: "Τι είναι το N+1 problem;",
+      answer: "1 query για μια λίστα + 1 query ανά στοιχείο για τις σχέσεις του — με 100 στοιχεία γίνονται 101 queries. Λύση: eager loading (JOIN, WHERE IN, ή include του ORM). Το εντοπίζεις με query logging."
+    },
+    {
+      question: "Τι είναι normalization και πότε κάνεις denormalize;",
+      answer: "Normalization: κάθε πληροφορία αποθηκεύεται ΜΙΑ φορά (χωριστά tables + σχέσεις) — αποφεύγεις ασυνέπειες. Denormalization: σκόπιμη αντιγραφή δεδομένων για να γλιτώσεις ακριβά JOINs σε read-heavy συστήματα — με κόστος συγχρονισμού."
+    },
+    {
+      question: "Πώς βρίσκεις γιατί ένα query είναι αργό;",
+      answer: "EXPLAIN ANALYZE: δείχνει το execution plan. Ψάχνεις για Seq Scan σε μεγάλα tables (λείπει index), nested loops σε μεγάλα datasets, και rows estimates που αποκλίνουν πολύ από τα πραγματικά."
+    },
+    {
+      question: "WHERE vs HAVING;",
+      answer: "WHERE φιλτράρει rows ΠΡΙΝ το GROUP BY, HAVING φιλτράρει τα groups ΜΕΤΑ — μόνο το HAVING μπορεί να χρησιμοποιήσει aggregates όπως COUNT(*) > 5."
+    }
   ]}
-  correctOptionIndex={0}
-  explanation="Σωστά. SQL είναι δυνατό όταν το relational model έχει σημασία."
 />
 
-<Exercise
-  question="Τι κάνει ένα index;"
-  options={[
-    "Βοηθά συγκεκριμένα queries να βρίσκουν δεδομένα πιο γρήγορα.",
-    "Δημιουργεί React component.",
-    "Κρύβει API secrets."
-  ]}
-  correctOptionIndex={0}
-  explanation="Σωστά. Τα indexes βελτιώνουν αναζητήσεις αλλά έχουν και κόστος σε writes/storage."
-/>
+## Πώς απαντάς στη συνέντευξη
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="databases" />
-</div>
+> I default to PostgreSQL because relationships, constraints, and ACID transactions cover most application needs. I design schemas around access patterns, index foreign keys and frequent WHERE columns, and watch out for N+1 queries by using eager loading. When a query is slow, EXPLAIN ANALYZE tells me whether it's a missing index or a bad query plan.
+
+<TrainingLab
+  title="Σχεδίασε schema για tasks με users"
+  scenario="Φτιάξε database model για users και tasks. Ο στόχος είναι να καταλάβεις ownership, relations, constraints και queries πριν διαλέξεις ORM."
+  outcomes={[
+    "Να ξεχωρίζεις entity, field, relation και constraint.",
+    "Να σχεδιάζεις βασικά SQL tables με foreign keys.",
+    "Να γράφεις queries που απαντούν σε πραγματικές UI ανάγκες."
+  ]}
+  steps={[
+    "Ορισμός users table και tasks table με constraints.",
+    "Πρόσθεσε user_id foreign key στα tasks με ON DELETE συμπεριφορά.",
+    "Γράψε query για active tasks ενός user με ORDER BY και LIMIT.",
+    "Γράψε JOIN query και ένα LEFT JOIN + IS NULL query.",
+    "Πρόσθεσε indexes και επιβεβαίωσε με EXPLAIN τη διαφορά."
+  ]}
+  checkpoints={[
+    "Κάθε task ανήκει σε user — και η βάση το εγγυάται, όχι μόνο το app.",
+    "Υπάρχουν created_at/updated_at όπου χρειάζεται.",
+    "Ξέρεις ποια query θα γίνει αργή όσο μεγαλώνουν τα data.",
+    "Μπορείς να εξηγήσεις το N+1 και τη λύση του."
+  ]}
+  mistakes={[
+    "Να σχεδιάζεις schema μόνο από το UI screenshot.",
+    "Να μη βάζεις constraints και να βασίζεσαι μόνο στο app code.",
+    "Να αγνοείς indexes μέχρι να γίνει αργό το app.",
+    "Να κάνεις loop με query μέσα αντί για JOIN."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να εξηγήσεις γιατί κάθε column υπάρχει και ποια queries εξυπηρετεί."
+/>

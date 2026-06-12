@@ -135,7 +135,51 @@ if (role === "admin" || role === "owner") {
   explanation="Σωστά. Το else είναι η εναλλακτική διαδρομή όταν το if δεν περνάει."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="javascript-logic" />
-</div>
+<Flashcards
+  title="Logic — γρήγορο repaso"
+  cards={[
+    {
+      question: "Τι επιστρέφει μια σύγκριση όπως score >= 60;",
+      answer: "Boolean: true ή false. Μπορείς να το αποθηκεύσεις σε μεταβλητή (const isPassing = score >= 60) και να το χρησιμοποιήσεις σε if — ο κώδικας διαβάζεται σαν πρόταση."
+    },
+    {
+      question: "== ή === ;",
+      answer: "Πάντα ===. Το == κάνει type coercion πριν συγκρίνει ('5' == 5 είναι true) και κρύβει bugs. Το === συγκρίνει τιμή ΚΑΙ τύπο — προβλέψιμο."
+    },
+    {
+      question: "&& και || — τι κάνουν;",
+      answer: "&& (AND): true μόνο αν ΚΑΙ οι δύο πλευρές true. || (OR): true αν τουλάχιστον μία. Διαβάζονται αριστερά→δεξιά με short-circuit: το && σταματά στο πρώτο false, το || στο πρώτο true."
+    },
+    {
+      question: "for loop vs while — πότε το καθένα;",
+      answer: "for: όταν ξέρεις πόσες επαναλήψεις (ή διατρέχεις array — αν και εκεί προτίμησε for...of ή array methods). while: όταν επαναλαμβάνεις 'μέχρι να συμβεί κάτι' χωρίς γνωστό πλήθος."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Γράψε κανόνες σαν product logic"
+  scenario="Φτιάξε score checker για assessment: fail, pass, strong pass. Ο στόχος είναι να μετατρέπεις business rules σε καθαρό if/else."
+  outcomes={[
+    "Να γράφεις conditions που δεν συγκρούονται.",
+    "Να ελέγχεις boundary values.",
+    "Να διαβάζεις product rule και να το κάνεις code."
+  ]}
+  steps={[
+    "Γράψε rules: κάτω από 50 fail, 50-79 pass, 80+ strong pass.",
+    "Φτιάξε function getResult(score).",
+    "Δοκίμασε scores 49, 50, 79, 80 και 100.",
+    "Πρόσθεσε validation για score κάτω από 0 ή πάνω από 100."
+  ]}
+  checkpoints={[
+    "Τα boundary values δίνουν σωστό αποτέλεσμα.",
+    "Δεν υπάρχει unreachable branch.",
+    "Η function επιστρέφει predictable value για invalid input."
+  ]}
+  mistakes={[
+    "Να γράφεις conditions με λάθος σειρά.",
+    "Να ξεχνάς το ακριβώς 50 ή ακριβώς 80.",
+    "Να μπερδεύεις validation με business result."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να πάρεις οποιονδήποτε κανόνα προϊόντος και να φτιάξεις test cases πριν γράψεις if/else."
+/>

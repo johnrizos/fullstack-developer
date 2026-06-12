@@ -51,44 +51,132 @@ describe("cart utilities", () => {
 
 # Testing & Debugging
 
-Testing δεν σημαίνει “γράφω tests για να γράψω tests”. Σημαίνει ότι μπορώ να αλλάζω κώδικα χωρίς να φοβάμαι ότι έσπασα βασική συμπεριφορά.
+Testing δεν σημαίνει «γράφω tests για το coverage report». Σημαίνει **μπορώ να αλλάζω κώδικα χωρίς φόβο** — τα tests είναι το δίχτυ ασφαλείας που κάνει το refactoring δυνατό. Debugging δεν σημαίνει «console.log παντού» — σημαίνει υπόθεση, έλεγχος, απομόνωση. Και τα δύο εξετάζονται σε συνεντεύξεις: το πρώτο με «πώς τεστάρεις;», το δεύτερο συχνά live, με ένα πραγματικό bug μπροστά σου.
 
-Debugging δεν σημαίνει “βάζω console.log παντού”. Σημαίνει ότι απομονώνω το πρόβλημα, φτιάχνω υπόθεση και την ελέγχω.
+## Η πυραμίδα των tests
 
-## Unit tests
+Η κλασική απάντηση στο «τι tests γράφεις;» — από τα πολλά/γρήγορα στα λίγα/αργά:
 
-Unit test ελέγχει μικρή μονάδα λογικής, συνήθως function.
-
-```ts
-expect(calculateTotal(items)).toBe(25);
+```txt
+        ┌─────────┐
+        │   E2E   │  ← λίγα: πλήρη user flows σε πραγματικό browser
+        │(Playwright)│   (αργά, εύθραυστα, ακριβά — αλλά ρεαλιστικά)
+       ┌┴─────────┴┐
+       │Integration│  ← μέτρια: components + συνεργασίες
+       │   (RTL)   │   (render component, click, assert τι βλέπει ο χρήστης)
+      ┌┴───────────┴┐
+      │    Unit     │  ← πολλά: pure functions, business logic
+      │(Vitest/Jest)│   (χιλιάδες σε δευτερόλεπτα)
+      └─────────────┘
 ```
 
-Οι pure functions είναι εύκολες για unit tests γιατί έχουν input και output χωρίς side effects.
+Ο κανόνας: **όσο πιο κάτω μπορεί να ζήσει ένα test, τόσο το καλύτερο** — τρέχει γρηγορότερα και σπάει σπανιότερα. Το E2E το κρατάς για τα 3-5 flows που «αν σπάσουν, χάνουμε λεφτά»: signup, login, checkout.
 
-## Integration και UI tests
+## Unit tests: η ανατομία
 
-Για frontend apps θα δεις συχνά:
+Κάθε καλό test έχει τρία μέρη — **Arrange, Act, Assert**:
 
-- React Testing Library για component behavior,
-- Playwright ή Cypress για end-to-end user flows.
+```ts
+import { describe, it, expect } from "vitest";
 
-Παράδειγμα user-flow σκέψης:
+describe("applyDiscount", () => {
+  it("applies a 50% discount", () => {
+    const total = 200;                          // Arrange
+    const result = applyDiscount(total, 50);    // Act
+    expect(result).toBe(100);                   // Assert
+  });
 
-> Ο χρήστης γράφει email, πατά submit, βλέπει success ή validation error.
+  // Τα boundary values είναι εκεί που ζουν τα bugs:
+  it("handles 0% and 100%", () => {
+    expect(applyDiscount(200, 0)).toBe(200);
+    expect(applyDiscount(200, 100)).toBe(0);
+  });
 
-## Debugging workflow
+  it("throws for out-of-range discount", () => {
+    expect(() => applyDiscount(200, 120)).toThrow();
+    //      ↑ wrapper function — αλλιώς το throw σκάει ΠΡΙΝ το expect
+  });
+});
+```
 
-Καλός τρόπος debugging:
+Δύο λεπτομέρειες που προσέχουν οι reviewers:
 
-1. Αναπαράγω το bug.
-2. Μικραίνω το πρόβλημα.
-3. Διαβάζω error message και stack trace.
-4. Ελέγχω inputs/state/network.
-5. Γράφω test αν το bug είναι σημαντικό.
+- **Ένα test, μία συμπεριφορά** — το όνομα του test διαβάζεται σαν spec: «applies a 50% discount».
+- Τα **edge cases** είναι το ζητούμενο: κενό array, 0, αρνητικά, όρια. Το happy path το γράφουν όλοι.
+
+## Mocking: πότε και πόσο
+
+Όταν η μονάδα που τεστάρεις μιλά με τον έξω κόσμο, αντικαθιστάς τον έξω κόσμο:
+
+```ts
+import { vi, it, expect } from "vitest";
+
+it("sends a welcome email after signup", async () => {
+  const emailService = { send: vi.fn() }; // mock: καταγράφει τις κλήσεις
+  const userService = createUserService({ emailService });
+
+  await userService.signup({ email: "ada@example.com" });
+
+  expect(emailService.send).toHaveBeenCalledWith(
+    expect.objectContaining({ to: "ada@example.com" })
+  );
+});
+```
+
+Ο χρυσός κανόνας: **mock τα boundaries (network, DB, time, random), όχι τη λογική σου**. Αν χρειάζεσαι 10 mocks για ένα test, το design φταίει — η λογική είναι μπλεγμένη με τα side effects (θυμήσου το μάθημα των modules). Και το anti-pattern που κόβει σε code review: tests που ελέγχουν **πώς** δουλεύει ο κώδικας (internals, ποια private function κλήθηκε) αντί για **τι** κάνει — σπάνε σε κάθε refactoring χωρίς να πιάνουν bugs.
+
+## Component tests: τεστάρεις ό,τι βλέπει ο χρήστης
+
+Με React Testing Library, η φιλοσοφία είναι «queries όπως ο χρήστης»:
+
+```tsx
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+
+it("adds a todo", async () => {
+  render(<TodoApp />);
+
+  await userEvent.type(screen.getByLabelText("New todo"), "Learn testing");
+  await userEvent.click(screen.getByRole("button", { name: "Add" }));
+
+  expect(screen.getByText("Learn testing")).toBeInTheDocument();
+});
+```
+
+Βρίσκεις στοιχεία με **role/label/text** (όπως ο χρήστης), όχι με CSS classes ή test-ids όπου γίνεται — έτσι το test επιβιώνει από restyling και πιάνει και accessibility προβλήματα δωρεάν.
+
+## Debugging: μέθοδος, όχι μαντεψιά
+
+Το επιστημονικό loop που περιγράφεις και σε συνέντευξη:
+
+1. **Αναπαραγωγή** — αν δεν μπορείς να το προκαλέσεις κατά βούληση, δεν μπορείς να το φτιάξεις.
+2. **Σμίκρυνση** — αφαίρεσε κομμάτια μέχρι το μικρότερο σενάριο που ακόμα αποτυγχάνει.
+3. **Διάβασε το error πραγματικά** — το stack trace δείχνει αρχείο και γραμμή· το πρώτο δικό σου frame στο trace είναι ο πρώτος ύποπτος.
+4. **Υπόθεση → έλεγχος** — «νομίζω ότι το Χ είναι null εδώ» → βάλε breakpoint/log ΕΚΕΙ → επιβεβαίωσε ή απόρριψε. Ένα ερώτημα τη φορά.
+5. **Fix + regression test** — το bug γίνεται failing test ΠΡΙΝ τη διόρθωση· έτσι δεν ξαναγυρνά ποτέ.
+
+Εργαλεία πέρα από το console.log: **breakpoints** στο DevTools/VS Code (βλέπεις όλο το state, όχι ό,τι θυμήθηκες να τυπώσεις), **Network tab** (τι ΠΡΑΓΜΑΤΙΚΑ στάλθηκε/ήρθε), **git bisect** (ποιο commit το έσπασε), και `console.table` για arrays από objects.
+
+<PredictOutput
+  title="Spot the bug με test"
+  code={`function applyDiscount(total, discountPercent) {
+  return total - total * discountPercent;
+}
+
+// Το test:
+expect(applyDiscount(200, 50)).toBe(100);`}
+  options={[
+    "Το test αποτυγχάνει: η function επιστρέφει -9800 — ξέχασε το /100",
+    "Το test περνάει",
+    "Το test πετάει TypeError",
+    "Το test επιστρέφει 150"
+  ]}
+  correctOptionIndex={0}
+  answer="Αποτυγχάνει: expected 100, received -9800"
+  explanation="200 - 200*50 = -9800. Η function χειρίζεται το 50 ως συντελεστή αντί για ποσοστό — λείπει το discountPercent / 100. Αυτό είναι το νόημα του test-first για bugs: το failing test ΑΠΟΔΕΙΚΝΥΕΙ το bug πριν το φτιάξεις, και μετά γίνεται regression test."
+/>
 
 ## Mini project: tested utility functions
-
-Το challenge ζητά κώδικα που έχει pure functions και tests.
 
 <CodeChallenge
   title="Testing utilities challenge"
@@ -136,24 +224,90 @@ expect(calculateTotal(items)).toBe(25);
   ]}
 />
 
-## Interview answer template
+## Πώς απαντάς στη συνέντευξη
 
-Αν σε ρωτήσουν “how do you test frontend/fullstack code?”, απάντησε:
+«How do you approach testing?»
 
-> I test pure business logic with unit tests, component behavior with React Testing Library, and critical user flows with Playwright or Cypress. I also use CI so tests run before code is merged.
+> I follow the testing pyramid: lots of fast unit tests for business logic, component tests with React Testing Library that interact the way a user would, and a handful of end-to-end tests for the flows that matter most — signup, login, checkout. I mock at the boundaries — network, database, time — never my own logic, and I test behavior, not implementation details, so refactoring doesn't break the suite. Every real bug becomes a failing test first, then a fix, so it can never silently return. CI runs everything before merge.
 
 <Exercise
-  question="Τι είναι unit test;"
+  question="Γιατί τα tests πρέπει να ελέγχουν συμπεριφορά και όχι implementation details;"
   options={[
-    "Test μικρής μονάδας λογικής, όπως μια function.",
-    "Deploy σε AWS.",
-    "HTML tag για φόρμες."
+    "Γιατί tests δεμένα με τα internals σπάνε σε κάθε refactoring χωρίς να πιάνουν πραγματικά bugs — ενώ τα behavior tests επιβιώνουν όσο η συμπεριφορά μένει σωστή.",
+    "Γιατί τα implementation tests είναι πιο αργά.",
+    "Δεν έχει σημασία — ό,τι ανεβάζει το coverage."
   ]}
   correctOptionIndex={0}
-  explanation="Σωστά. Unit tests ελέγχουν μικρά απομονωμένα κομμάτια συμπεριφοράς."
+  explanation="Σωστά. Το test είναι συμβόλαιο για το ΤΙ κάνει ο κώδικας. Αν ελέγχει το ΠΩΣ (ποια εσωτερική function κλήθηκε, ποιο state υπάρχει), γίνεται βαρίδι: κόκκινο σε κάθε αλλαγή, πράσινο σε πραγματικά bugs."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="testing-debugging" />
-</div>
+<Exercise
+  question="Ποιο είναι το ΠΡΩΤΟ βήμα όταν αναλαμβάνεις ένα bug;"
+  options={[
+    "Αξιόπιστη αναπαραγωγή — αν δεν μπορείς να το προκαλέσεις, δεν μπορείς ούτε να το διορθώσεις ούτε να επιβεβαιώσεις το fix.",
+    "Γράφεις console.log σε όλα τα σχετικά αρχεία.",
+    "Κάνεις revert το τελευταίο deploy."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Χωρίς αναπαραγωγή, κάθε 'fix' είναι μαντεψιά. Μετά: σμίκρυνση στο ελάχιστο σενάριο, υπόθεση, στοχευμένος έλεγχος, fix + regression test."
+/>
+
+<Flashcards
+  title="Testing — interview drills"
+  cards={[
+    {
+      question: "Τι είναι η πυραμίδα των tests;",
+      answer: "Πολλά γρήγορα unit tests στη βάση, λιγότερα integration/component tests στη μέση, ελάχιστα E2E στην κορυφή. Λογική: όσο ανεβαίνεις, τόσο πιο ρεαλιστικά αλλά πιο αργά/εύθραυστα/ακριβά — κράτα κάθε έλεγχο στο χαμηλότερο επίπεδο που τον καλύπτει."
+    },
+    {
+      question: "Mock vs stub vs spy;",
+      answer: "Stub: επιστρέφει προκαθορισμένες τιμές (αντικαθιστά dependency). Spy: καταγράφει κλήσεις χωρίς να αλλάζει συμπεριφορά. Mock: και τα δύο + expectations για το πώς κλήθηκε. Στην πράξη (vi.fn/jest.fn) οι όροι συγχέονται — ξέρε τη διάκριση εννοιολογικά."
+    },
+    {
+      question: "Τι κάνεις με ένα flaky test;",
+      answer: "Δεν το αγνοείς και δεν βάζεις απλά retry. Συνήθεις αιτίες: race conditions (λείπει await/waitFor), εξάρτηση από χρόνο/σειρά εκτέλεσης, κοινό state μεταξύ tests, πραγματικό δίκτυο. Το απομονώνεις, βρίσκεις την αιτία — τα flaky tests σκοτώνουν την εμπιστοσύνη στο suite."
+    },
+    {
+      question: "Τι είναι το TDD;",
+      answer: "Red-Green-Refactor: γράφεις failing test, τον ελάχιστο κώδικα που τον περνάει, μετά καθαρίζεις με το δίχτυ ασφαλείας. Δεν το επιβάλλουν παντού — αλλά το test-first για bug fixes (regression tests) είναι σχεδόν καθολικά αποδεκτή πρακτική."
+    },
+    {
+      question: "Είναι το 100% coverage στόχος;",
+      answer: "Όχι. Το coverage λέει ποιες γραμμές ΕΚΤΕΛΕΣΤΗΚΑΝ, όχι ότι ελέγχθηκαν σωστά — μπορείς να έχεις 100% χωρίς ούτε ένα ουσιαστικό assertion. Καλύτερος στόχος: κρίσιμα paths + edge cases + κάθε διορθωμένο bug. Το coverage είναι ένδειξη για ΑΔΕΙΑ σημεία, όχι μετρική ποιότητας."
+    },
+    {
+      question: "Πώς κάνεις debug κάτι που συμβαίνει 'μόνο στο production';",
+      answer: "Logs/error tracking (Sentry) με stack trace και context, αναπαραγωγή με τα ίδια δεδομένα/περιβάλλον (feature flags, ίδιο build), git bisect αν ξέρεις πότε ξεκίνησε, και προσθήκη στοχευμένου logging στο ύποπτο path στο επόμενο deploy. Ποτέ τυχαίες αλλαγές με 'μπας και'."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Μετέτρεψε bug report σε test"
+  scenario="Έχεις bug: το discount calculation δίνει λάθος αποτέλεσμα στο 0%, 50% και 100%. Γράψε πρώτα tests, μετά διόρθωσε τη function."
+  outcomes={[
+    "Να αναπαράγεις bug με μικρό input.",
+    "Να γράφεις tests για edge cases.",
+    "Να debug-άρεις με hypothesis αντί για τυχαίες αλλαγές."
+  ]}
+  steps={[
+    "Γράψε failing test για το πραγματικό bug.",
+    "Πρόσθεσε tests για boundary values (0, 50, 100, αρνητικά, πάνω από 100).",
+    "Βρες τη μικρότερη αλλαγή που περνάει τα tests.",
+    "Πρόσθεσε regression test ώστε να μην ξανασπάσει.",
+    "Bonus: τρέξε τα tests σε κάθε commit με ένα CI workflow."
+  ]}
+  checkpoints={[
+    "Το test αποτυγχάνει πριν τη διόρθωση.",
+    "Το fix δεν αλλάζει άσχετη συμπεριφορά.",
+    "Τα ονόματα των tests διαβάζονται σαν προδιαγραφή.",
+    "Το bug report έχει μετατραπεί σε μόνιμη κάλυψη."
+  ]}
+  mistakes={[
+    "Να διορθώνεις χωρίς να μπορείς να αναπαράγεις.",
+    "Να κάνεις console.log παντού χωρίς υπόθεση.",
+    "Να γράφεις μόνο happy path tests.",
+    "Να τεστάρεις internals που σπάνε με κάθε refactoring."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν κάθε bug γίνεται πρώτα failing test και μετά fix."
+/>

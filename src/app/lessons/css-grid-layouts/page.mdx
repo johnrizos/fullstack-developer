@@ -218,7 +218,51 @@ export const gridCss = `body {
   explanation="Σωστά. Το Grid είναι ιδανικό για δύο διαστάσεις: γραμμές και στήλες."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="css-grid-layouts" />
-</div>
+<Flashcards
+  title="Grid — γρήγορο repaso"
+  cards={[
+    {
+      question: "Τι είναι το fr unit;",
+      answer: "Fraction του διαθέσιμου χώρου: grid-template-columns: 1fr 2fr = η δεύτερη στήλη παίρνει διπλάσιο χώρο από την πρώτη, ΑΦΟΥ αφαιρεθούν τα fixed μεγέθη και τα gaps. Πιο ευέλικτο από ποσοστά γιατί συνεργάζεται με το gap."
+    },
+    {
+      question: "Τι κάνει το repeat(auto-fit, minmax(250px, 1fr));",
+      answer: "Responsive card grid ΧΩΡΙΣ media queries: χωράει όσες στήλες των τουλάχιστον 250px χωρούν, και τις τεντώνει να μοιραστούν τον χώρο. Στενή οθόνη → 1 στήλη, φαρδιά → 4. Το πιο χρήσιμο grid pattern."
+    },
+    {
+      question: "grid-template-areas — γιατί είναι τόσο αγαπητό;",
+      answer: "Ζωγραφίζεις το layout με λέξεις: 'sidebar header' / 'sidebar main'. Κάθε στοιχείο δηλώνει grid-area: sidebar. Το layout διαβάζεται σαν σχέδιο, και το responsive rearrangement είναι απλώς νέο 'σχέδιο' στο media query."
+    },
+    {
+      question: "Πώς απλώνεται ένα στοιχείο σε πολλές στήλες/γραμμές;",
+      answer: "grid-column: 1 / 3 (από γραμμή-όριο 1 έως 3 = 2 στήλες) ή το βολικό grid-column: span 2. Αντίστοιχα grid-row. Προσοχή: οι αριθμοί είναι ΟΡΙΑ (lines), όχι στήλες — 4 στήλες έχουν 5 lines."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Σχεδίασε dashboard grid"
+  scenario="Χτίσε dashboard με sidebar, header, stats cards και main content. Ο στόχος είναι να ελέγχεις τη συνολική σελίδα, όχι μόνο μία σειρά από cards."
+  outcomes={[
+    "Να διαλέγεις grid όταν χρειάζεσαι rows και columns.",
+    "Να χρησιμοποιείς minmax και repeat για responsive layouts.",
+    "Να αποφεύγεις fragile fixed-width dashboards."
+  ]}
+  steps={[
+    "Σχεδίασε πρώτα τα regions: header, sidebar, content, cards.",
+    "Χρησιμοποίησε grid-template-columns για desktop.",
+    "Κάνε τα cards grid με repeat(auto-fit, minmax()).",
+    "Γράψε mobile version όπου το sidebar δεν σπρώχνει το content έξω."
+  ]}
+  checkpoints={[
+    "Το dashboard δεν έχει horizontal scroll σε mobile.",
+    "Τα cards αλλάζουν αριθμό στηλών χωρίς media query όπου γίνεται.",
+    "Κάθε region έχει σαφή ρόλο στο layout."
+  ]}
+  mistakes={[
+    "Να χρησιμοποιείς Grid για ένα απλό inline alignment που θέλει Flexbox.",
+    "Να βάζεις fixed columns που σπάνε σε μικρές οθόνες.",
+    "Να μη σκέφτεσαι empty/loading states στο layout."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να σχεδιάσεις σε χαρτί το grid πριν γράψεις CSS και μετά να το υλοποιήσεις χωρίς trial-and-error."
+/>

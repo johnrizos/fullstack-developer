@@ -103,7 +103,51 @@ button {
   explanation="Σωστά. Το padding είναι ο χώρος ανάμεσα στο περιεχόμενο και το border."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="css-box-model" />
-</div>
+<Flashcards
+  title="Box model — γρήγορο repaso"
+  cards={[
+    {
+      question: "Ποια είναι τα 4 στρώματα του box model, από μέσα προς τα έξω;",
+      answer: "Content (το περιεχόμενο) → padding (εσωτερική απόσταση, μέσα στο background) → border (το περίγραμμα) → margin (εξωτερική απόσταση από τα γειτονικά στοιχεία, διάφανη)."
+    },
+    {
+      question: "Τι κάνει το box-sizing: border-box και γιατί όλοι το βάζουν παντού;",
+      answer: "Με το default (content-box), width:300px + padding 20px = 340px πραγματικό πλάτος — μπέρδεμα. Με border-box, το width ΠΕΡΙΛΑΜΒΑΝΕΙ padding+border: ό,τι γράφεις είναι ό,τι βλέπεις. Γι' αυτό το κλασικό reset: *, *::before, *::after { box-sizing: border-box }."
+    },
+    {
+      question: "padding ή margin — πώς διαλέγεις;",
+      answer: "Padding: χώρος ΜΕΣΑ στο στοιχείο (μεταξύ περιεχομένου και border) — μεγαλώνει το clickable area, παίρνει το background. Margin: χώρος ΕΞΩ από το στοιχείο — αποστάσεις μεταξύ στοιχείων. 'Αέρας μέσα στην κάρτα' = padding· 'απόσταση ανάμεσα σε κάρτες' = margin (ή gap)."
+    },
+    {
+      question: "Τι είναι το margin collapse;",
+      answer: "Κάθετα margins γειτονικών block στοιχείων ΕΝΩΝΟΝΤΑΙ στο μεγαλύτερο αντί να αθροίζονται: 24px + 16px = 24px, όχι 40px. Δεν συμβαίνει σε flex/grid containers — ένας ακόμα λόγος που το gap είναι πιο προβλέψιμο."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Debug spacing σαν developer"
+  scenario="Σου δίνεται μια κάρτα που φαίνεται στριμωγμένη και ασύμμετρη. Πρέπει να τη διορθώσεις χρησιμοποιώντας box model, όχι τυχαία margins."
+  outcomes={[
+    "Να ξεχωρίζεις content, padding, border και margin.",
+    "Να εξηγείς γιατί ένα element πιάνει συγκεκριμένο χώρο.",
+    "Να διορθώνεις spacing με συστηματικό τρόπο."
+  ]}
+  steps={[
+    "Σημείωσε ποιο spacing είναι εσωτερικό και ποιο εξωτερικό.",
+    "Βάλε padding στην κάρτα πριν πειράξεις margin.",
+    "Πρόσθεσε border για να δεις τα όρια του element.",
+    "Χρησιμοποίησε consistent values όπως 8, 12, 16, 24."
+  ]}
+  checkpoints={[
+    "Το content δεν ακουμπάει στο border.",
+    "Τα margins χρησιμοποιούνται για απόσταση ανάμεσα σε elements.",
+    "Μπορείς να εξηγήσεις γιατί άλλαξες κάθε spacing value."
+  ]}
+  mistakes={[
+    "Να λύνεις εσωτερικό spacing με margin.",
+    "Να βάζεις random pixels μέχρι να 'φαίνεται καλά'.",
+    "Να ξεχνάς πώς επηρεάζει το width το padding."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να κοιτάξεις ένα layout πρόβλημα και να πεις αν χρειάζεται padding, margin, border ή width αλλαγή."
+/>

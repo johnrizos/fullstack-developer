@@ -50,61 +50,155 @@ document.querySelector("#run").addEventListener("click", runDemo);`;
 
 # Async JavaScript & Event Loop
 
-Σε fullstack συνεντεύξεις, πολλές JavaScript ερωτήσεις είναι “τι θα εκτυπωθεί πρώτο;”. Για να απαντήσεις, πρέπει να καταλαβαίνεις event loop.
+Η JavaScript τρέχει σε **ένα μόνο thread** — μπορεί να κάνει ένα πράγμα τη φορά. Κι όμως, σερβίρει requests, κάνει animations και περιμένει timers ταυτόχρονα. Το «μαγικό» πίσω από αυτό είναι το **event loop**, και είναι από τις πιο σίγουρες ερωτήσεις σε κάθε JavaScript συνέντευξη.
 
-## Synchronous code
+## Το μοντέλο: call stack, queues, event loop
 
-Ο synchronous κώδικας τρέχει πρώτος, γραμμή-γραμμή.
+Για να προβλέπεις output order χρειάζεσαι τέσσερα κομμάτια:
+
+1. **Call stack** — εδώ εκτελείται ο κώδικας, μία function τη φορά. Ό,τι είναι synchronous μπαίνει και βγαίνει από εδώ.
+2. **Web APIs** — ο browser (ή το Node) αναλαμβάνει timers, fetch, DOM events. Δουλεύουν **έξω** από το thread της JavaScript.
+3. **Task queue (macrotasks)** — εδώ περιμένουν callbacks από `setTimeout`, `setInterval`, DOM events.
+4. **Microtask queue** — εδώ περιμένουν τα `.then()` callbacks των promises, το `queueMicrotask`, και η συνέχεια μετά από `await`.
+
+Το **event loop** κάνει συνέχεια το εξής:
+
+> Όταν αδειάσει το call stack → τρέξε **ΟΛΑ** τα microtasks → μετά πάρε **ΕΝΑ** macrotask → επανάλαβε.
+
+Αυτή η μία πρόταση απαντά το 90% των async interview ερωτήσεων. Τα microtasks έχουν **πάντα προτεραιότητα** έναντι των macrotasks.
+
+## Βήμα 1: synchronous κώδικας πρώτα
 
 ```js
-console.log("start");
-console.log("end");
+console.log("A");
+
+setTimeout(() => console.log("C"), 0);
+
+console.log("B");
+// Output: A, B, C
 ```
 
-## setTimeout
+Ακόμα και με `0ms`, το `setTimeout` callback **δεν τρέχει αμέσως**. Πάει στο Web API, μετά στο task queue, και περιμένει να αδειάσει το call stack. Το `0` σημαίνει «το συντομότερο δυνατό», όχι «τώρα».
 
-Το `setTimeout` στέλνει callback σε task queue. Ακόμα και με `0ms`, δεν τρέχει πριν τελειώσει ο τρέχων synchronous κώδικας.
+## Βήμα 2: microtasks πριν από macrotasks
 
 ```js
-setTimeout(() => console.log("timeout"), 0);
+setTimeout(() => console.log("timeout"), 0); // macrotask
+
+Promise.resolve().then(() => console.log("promise")); // microtask
+
 console.log("sync");
+
+// Output: sync → promise → timeout
 ```
 
-Πρώτα εμφανίζεται `sync`.
+Γιατί; Ο synchronous κώδικας τελειώνει (`sync`). Το event loop κοιτάει πρώτα τη microtask queue (`promise`), και μόνο μετά παίρνει το επόμενο macrotask (`timeout`).
 
-## Promises και microtasks
+<PredictOutput
+  title="Microtask priority drill"
+  code={`console.log("1");
 
-Τα promise callbacks μπαίνουν σε microtask queue. Τα microtasks συνήθως εκτελούνται πριν τα normal timer tasks.
+setTimeout(() => console.log("2"), 0);
 
-```js
-setTimeout(() => console.log("timeout"), 0);
-Promise.resolve().then(() => console.log("promise"));
-console.log("sync");
-```
+Promise.resolve()
+  .then(() => console.log("3"))
+  .then(() => console.log("4"));
 
-Σειρά:
+console.log("5");`}
+  options={["1 5 3 4 2", "1 2 3 4 5", "1 5 2 3 4", "1 3 4 5 2"]}
+  correctOptionIndex={0}
+  answer="1, 5, 3, 4, 2"
+  explanation="Synchronous πρώτα: 1, 5. Μετά ΟΛΗ η microtask queue: 3, και το chained .then βάζει νέο microtask που τρέχει αμέσως μετά: 4. Τέλος το macrotask: 2. Τα chained .then παραμένουν microtasks — δεν χάνουν την προτεραιότητά τους."
+/>
 
-1. `sync`
-2. `promise`
-3. `timeout`
+## async/await — promises με ωραίο συντακτικό
 
-## async/await
+Το `async/await` δεν είναι νέος μηχανισμός — είναι **syntax πάνω σε promises**. Δύο κανόνες:
 
-Το `await` σταματά προσωρινά τη συνέχεια της async function και αφήνει τον υπόλοιπο κώδικα να συνεχίσει.
+- Μια `async function` επιστρέφει **πάντα** Promise.
+- Το `await` παγώνει **μόνο την async function**, όχι το πρόγραμμα. Ό,τι ακολουθεί το `await` συνεχίζει ως microtask.
 
 ```js
 async function load() {
-  console.log("before");
+  console.log("before await"); // synchronous!
   await Promise.resolve();
-  console.log("after");
+  console.log("after await"); // microtask
+}
+
+console.log("start");
+load();
+console.log("end");
+
+// Output: start → before await → end → after await
+```
+
+Προσοχή στο σημείο-κλειδί: το σώμα της async function **μέχρι το πρώτο await τρέχει synchronously**. Μόνο η συνέχεια μετά το `await` μπαίνει στη microtask queue.
+
+<PredictOutput
+  title="async/await drill"
+  code={`async function foo() {
+  console.log("A");
+  await null;
+  console.log("B");
+}
+
+console.log("C");
+foo();
+console.log("D");`}
+  options={["C A D B", "C A B D", "A C D B", "C D A B"]}
+  correctOptionIndex={0}
+  answer="C, A, D, B"
+  explanation="Το C τυπώνεται, η foo() καλείται και τρέχει synchronously μέχρι το await (τυπώνει A). Το await null αναστέλλει τη foo και επιστρέφει τον έλεγχο — τυπώνεται το D. Όταν αδειάσει το stack, η συνέχεια της foo τρέχει ως microtask: B."
+/>
+
+## Error handling σε async κώδικα
+
+Στη συνέντευξη συχνά ακολουθεί ερώτηση για errors. Με `async/await` χρησιμοποιείς `try/catch`:
+
+```js
+async function fetchUser(id) {
+  try {
+    const response = await fetch(`/api/users/${id}`);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error("Failed to fetch user:", error);
+    throw error; // ή επίστρεψε fallback τιμή
+  }
 }
 ```
 
-Το `after` συνεχίζει σε microtask.
+> Κλασικό trap: το `fetch` **δεν** κάνει reject σε HTTP errors όπως 404 ή 500 — μόνο σε network failures. Πάντα έλεγξε το `response.ok`.
+
+## Παράλληλα ή σειριακά; Promise.all
+
+Άλλο αγαπημένο interview θέμα — αυτά τα δύο ΔΕΝ είναι ίδια:
+
+```js
+// ΣΕΙΡΙΑΚΑ: ~2 δευτερόλεπτα συνολικά (το ένα περιμένει το άλλο)
+const a = await fetchA(); // 1s
+const b = await fetchB(); // 1s
+
+// ΠΑΡΑΛΛΗΛΑ: ~1 δευτερόλεπτο συνολικά (ξεκινούν μαζί)
+const [a2, b2] = await Promise.all([fetchA(), fetchB()]);
+```
+
+Οι βασικές combinator functions:
+
+| Method | Συμπεριφορά |
+|---|---|
+| `Promise.all` | Περιμένει όλα. Αν ΕΝΑ κάνει reject → όλο reject. |
+| `Promise.allSettled` | Περιμένει όλα, ποτέ δεν κάνει reject — δίνει status ανά promise. |
+| `Promise.race` | Επιστρέφει το πρώτο που τελειώνει (resolve Ή reject). |
+| `Promise.any` | Επιστρέφει το πρώτο που κάνει **resolve** — αγνοεί rejects. |
+
+Πρακτικός κανόνας: ανεξάρτητα requests → `Promise.all`. Αν θες να μη ρίξει όλο το batch ένα αποτυχημένο request → `Promise.allSettled`.
 
 ## Mini project: async timeline
 
-Πάτα το κουμπί και δες τη σειρά εκτέλεσης. Το αποτέλεσμα εξηγεί την κλασική interview ερώτηση για `setTimeout` και `Promise`.
+Πάτα το κουμπί και δες live τη σειρά εκτέλεσης — synchronous, microtask, macrotask:
 
 <CodeChallenge
   title="Async timeline challenge"
@@ -146,24 +240,119 @@ async function load() {
   ]}
 />
 
-## Interview answer template
+## Το «τελικό boss» drill
 
-Αν σε ρωτήσουν “why does Promise run before setTimeout?”, απάντησε:
+Αυτό το pattern — mix από όλα — πέφτει αυτούσιο σε συνεντεύξεις:
 
-> After the current call stack is empty, JavaScript processes microtasks such as promise callbacks before moving to the next task like a setTimeout callback.
+<PredictOutput
+  title="Full event loop drill"
+  code={`console.log("start");
+
+setTimeout(() => console.log("timeout 1"), 0);
+
+Promise.resolve().then(() => {
+  console.log("promise 1");
+  setTimeout(() => console.log("timeout 2"), 0);
+});
+
+Promise.resolve().then(() => console.log("promise 2"));
+
+console.log("end");`}
+  options={[
+    "start, end, promise 1, promise 2, timeout 1, timeout 2",
+    "start, end, timeout 1, promise 1, promise 2, timeout 2",
+    "start, promise 1, promise 2, end, timeout 1, timeout 2",
+    "start, end, promise 1, timeout 1, promise 2, timeout 2"
+  ]}
+  correctOptionIndex={0}
+  answer="start, end, promise 1, promise 2, timeout 1, timeout 2"
+  explanation="Synchronous: start, end. Microtasks με τη σειρά εγγραφής: promise 1 (που προγραμματίζει το timeout 2 ΜΕΤΑ το timeout 1 στην queue), promise 2. Macrotasks με τη σειρά τους: timeout 1, μετά timeout 2."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+Αν σε ρωτήσουν «why does a Promise run before setTimeout?»:
+
+> JavaScript is single-threaded with an event loop. When the call stack empties, the engine drains the entire microtask queue — which includes promise callbacks — before picking up the next macrotask, like a setTimeout callback. That's why microtasks always win, even against setTimeout with 0ms.
 
 <Exercise
   question="Σε τυπικό browser event loop, τι τρέχει πριν από setTimeout callback;"
   options={[
     "Promise microtasks.",
-    "CSS selectors.",
-    "HTML attributes."
+    "Μόνο τα DOM events.",
+    "Τίποτα — το setTimeout 0 τρέχει αμέσως."
   ]}
   correctOptionIndex={0}
-  explanation="Σωστά. Τα promise callbacks είναι microtasks και συνήθως εκτελούνται πριν από timer tasks."
+  explanation="Σωστά. Όταν αδειάσει το call stack, αδειάζει ΟΛΗ η microtask queue πριν εκτελεστεί το επόμενο macrotask."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="javascript-async-event-loop" />
-</div>
+<Exercise
+  question="Τι επιστρέφει πάντα μια async function;"
+  options={[
+    "Την τιμή του return απευθείας.",
+    "Ένα Promise.",
+    "undefined, εκτός αν έχει await."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Ακόμα κι αν γράψεις return 5, ο caller παίρνει Promise που κάνει resolve σε 5. Γι' αυτό χρειάζεσαι await ή .then() για να πάρεις την τιμή."
+/>
+
+<Flashcards
+  title="Event Loop — interview drills"
+  cards={[
+    {
+      question: "Microtask vs macrotask — δώσε παραδείγματα.",
+      answer: "Microtasks: promise .then/.catch/.finally, queueMicrotask, συνέχεια μετά από await. Macrotasks: setTimeout, setInterval, DOM events, I/O. Η microtask queue αδειάζει ΟΛΟΚΛΗΡΗ πριν από κάθε macrotask."
+    },
+    {
+      question: "Μπλοκάρει το await το main thread;",
+      answer: "Όχι. Αναστέλλει μόνο τη συγκεκριμένη async function. Ο υπόλοιπος κώδικας συνεχίζει κανονικά, και η συνέχεια της function μπαίνει στη microtask queue όταν γίνει resolve το promise."
+    },
+    {
+      question: "Γιατί το setTimeout(fn, 0) δεν τρέχει αμέσως;",
+      answer: "Το callback πρέπει να περάσει από το task queue, που εξυπηρετείται μόνο όταν αδειάσει το call stack ΚΑΙ η microtask queue. Το 0 σημαίνει 'το συντομότερο δυνατό', και οι browsers έχουν και ελάχιστο delay (~4ms σε nested timeouts)."
+    },
+    {
+      question: "Promise.all vs Promise.allSettled;",
+      answer: "Promise.all: fail-fast — αν ένα reject, όλο reject. allSettled: περιμένει όλα και επιστρέφει array με {status, value/reason} ανά promise — ποτέ δεν κάνει reject. Χρήσιμο όταν δεν θες ένα failure να ρίξει το batch."
+    },
+    {
+      question: "Πότε κάνει reject το fetch;",
+      answer: "ΜΟΝΟ σε network errors (DNS failure, offline, CORS block). HTTP 404/500 είναι 'επιτυχημένα' responses με ok=false. Πάντα ελέγχεις response.ok ή response.status."
+    },
+    {
+      question: "Τι είναι το 'callback hell' και πώς λύθηκε;",
+      answer: "Βαθιά nested callbacks που κάνουν τον κώδικα δυσανάγνωστο και δύσκολο σε error handling. Λύθηκε σταδιακά: promises (flat chains με .then), και μετά async/await (γραμμικός, synchronous-style κώδικας με try/catch)."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Πρόβλεψε async output order"
+  scenario="Πριν τρέξεις κώδικα με promises, timers και async/await, γράψε πρώτα ποια γραμμή θα εκτυπωθεί πρώτη, δεύτερη και τρίτη."
+  outcomes={[
+    "Να ξεχωρίζεις synchronous code, microtasks και macrotasks.",
+    "Να καταλαβαίνεις γιατί async/await δεν μπλοκάρει το thread.",
+    "Να debug-άρεις loading states χωρίς μαντεψιά."
+  ]}
+  steps={[
+    "Γράψε snippet με console.log, Promise.then και setTimeout.",
+    "Πρόβλεψε output order σε χαρτί.",
+    "Τρέξε το και σύγκρινε με την πρόβλεψη.",
+    "Μετέτρεψε ένα promise chain σε async/await και ξανακάνε πρόβλεψη.",
+    "Σύγκρινε σειριακά awaits με Promise.all σε δύο fetch calls και μέτρα τον χρόνο."
+  ]}
+  checkpoints={[
+    "Ξέρεις ποιο code τρέχει άμεσα.",
+    "Μπορείς να εξηγήσεις γιατί Promise.then προηγείται από setTimeout 0.",
+    "Το UI έχει loading/error state γύρω από async work.",
+    "Ξέρεις πότε να διαλέξεις Promise.all αντί για διαδοχικά await."
+  ]}
+  mistakes={[
+    "Να νομίζεις ότι setTimeout 0 τρέχει αμέσως.",
+    "Να ξεχνάς await και να δουλεύεις με pending Promise.",
+    "Να μη χειρίζεσαι rejected promise.",
+    "Να κάνεις await σε loop αντί για Promise.all σε ανεξάρτητα requests."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να εξηγήσεις output order σε async interview question χωρίς να αποστηθίζεις."
+/>

@@ -1,123 +1,254 @@
 # Authentication & Authorization
 
-Authentication και authorization δεν είναι το ίδιο.
+Από τα πιο κρίσιμα θέματα σε fullstack συνέντευξη — και από αυτά όπου ένα λάθος στην απάντηση «καίει». Ξεκινάμε από τη θεμελιώδη διάκριση:
 
-- **Authentication**: ποιος είσαι;
-- **Authorization**: τι επιτρέπεται να κάνεις;
+- **Authentication (AuthN)**: ποιος είσαι; — login, sessions, tokens.
+- **Authorization (AuthZ)**: τι επιτρέπεται να κάνεις; — roles, permissions, ownership.
 
-## Sessions
+Ένας 401 status code αφορά authentication, ένας 403 αφορά authorization. Αν τα μπερδέψεις σε συνέντευξη, μετράει αρνητικά.
 
-Session-based auth κρατά state στον server ή σε session store. Ο browser κρατά session cookie.
+## Passwords: το πρώτο layer
 
-Πλεονεκτήματα:
+Ποτέ plain text, ποτέ απλό hash. Τα passwords αποθηκεύονται με **αργό, salted hashing αλγόριθμο** — bcrypt, scrypt ή argon2:
 
-- εύκολο revoke,
-- καλό για server-rendered apps,
-- τα secrets μένουν server-side.
+```ts
+import bcrypt from "bcrypt";
 
-Ένα secure session cookie συνήθως έχει:
+// Εγγραφή: hash με cost factor (12 = ~250ms ανά hash)
+const passwordHash = await bcrypt.hash(plainPassword, 12);
+await db.user.create({ data: { email, passwordHash } });
 
-- `HttpOnly`, για να μην το διαβάζει JavaScript,
-- `Secure`, για HTTPS,
-- `SameSite`, για CSRF protection,
-- λογικό expiration.
+// Login: σύγκριση σταθερού χρόνου
+const user = await db.user.findUnique({ where: { email } });
+const valid = user && (await bcrypt.compare(plainPassword, user.passwordHash));
+if (!valid) {
+  // Ίδιο μήνυμα είτε δεν υπάρχει ο user είτε το password είναι λάθος —
+  // δεν αποκαλύπτεις ποια emails έχουν λογαριασμό
+  return res.status(401).json({ error: "Invalid credentials" });
+}
+```
 
-Το frontend μπορεί να ξέρει ότι ο χρήστης είναι logged in, αλλά δεν χρειάζεται να κρατά το raw session secret.
+Γιατί όχι SHA-256; Γιατί είναι **σχεδιασμένο να είναι γρήγορο** — ένας attacker δοκιμάζει δισεκατομμύρια hashes/δευτερόλεπτο. Το bcrypt είναι σκόπιμα αργό και έχει ενσωματωμένο salt που εξουδετερώνει τα rainbow tables.
 
-## JWT
+## Sessions — η κλασική, στιβαρή προσέγγιση
 
-JWT είναι signed token που περιέχει claims.
+Μετά το login, ο server δημιουργεί **session record** (σε DB ή Redis) και δίνει στον browser ένα cookie με το session id:
 
-Προσοχή:
+```text
+1. POST /login (email, password)
+2. Server: επαλήθευση → δημιουργία session στο store → Set-Cookie: sid=abc123
+3. Κάθε επόμενο request: ο browser στέλνει αυτόματα το cookie
+4. Server: lookup του sid στο store → ξέρει ποιος είσαι
+5. Logout: διαγραφή του session από το store → το cookie αχρηστεύεται
+```
 
-- μην βάζεις ευαίσθητα δεδομένα μέσα,
-- χρειάζεσαι strategy για expiration/revocation,
-- πρόσεχε πού το αποθηκεύεις.
+Το cookie πρέπει να έχει τα σωστά flags — αυτά ρωτιούνται ευθέως:
 
-JWT payload δεν είναι encrypted από μόνο του. Είναι απλά encoded και signed. Άρα αν βάλεις email, role ή user id, υπολόγισε ότι μπορεί να διαβαστεί από όποιον έχει το token.
+```http
+Set-Cookie: sid=abc123; HttpOnly; Secure; SameSite=Lax; Max-Age=604800; Path=/
+```
+
+- `HttpOnly` — η JavaScript **δεν** μπορεί να το διαβάσει → προστασία από XSS theft.
+- `Secure` — αποστολή μόνο μέσω HTTPS.
+- `SameSite=Lax/Strict` — δεν στέλνεται σε cross-site requests → προστασία από CSRF.
+- `Max-Age` — λογικό expiration.
+
+Δυνατά σημεία των sessions: **άμεσο revoke** (σβήνεις το record και ο χρήστης είναι έξω), όλα τα secrets server-side. Αδυναμία: κάθε request θέλει lookup στο session store — γι' αυτό συχνά μπαίνει Redis.
+
+## JWT — stateless tokens
+
+Το **JWT (JSON Web Token)** είναι ένα signed token με τρία μέρη: `header.payload.signature`.
 
 ```json
 {
   "sub": "user_123",
   "role": "admin",
+  "iat": 1735603200,
   "exp": 1735689600
 }
 ```
 
-Το backend πρέπει πάντα να επαληθεύει signature και expiration.
+Ο server το υπογράφει με secret (HMAC) ή private key (RSA). Σε κάθε request, ο client το στέλνει στο `Authorization: Bearer <token>` και ο server **επαληθεύει την υπογραφή χωρίς database lookup** — αυτό είναι το stateless πλεονέκτημα.
 
-## OAuth
+Τα τρία πράγματα που ΠΡΕΠΕΙ να πεις σωστά σε συνέντευξη:
 
-OAuth χρησιμοποιείται για login με third-party providers όπως Google/GitHub.
+1. **Το payload ΔΕΝ είναι encrypted** — είναι base64-encoded, ο καθένας το διαβάζει. Η υπογραφή εγγυάται μόνο ότι δεν **τροποποιήθηκε**. Ποτέ ευαίσθητα δεδομένα μέσα.
+2. **Revocation είναι το αδύνατο σημείο** — δεν μπορείς να «σβήσεις» ένα εκδομένο JWT. Γι' αυτό: short-lived access tokens (5-15 λεπτά) + refresh tokens.
+3. **Πάντα επαληθεύεις signature ΚΑΙ expiration** server-side — και ορίζεις ρητά τον αλγόριθμο (η επίθεση `alg: none` είναι κλασική).
 
-Συνέντευξη: μην πεις “OAuth είναι password login”. Είναι delegation/authorization flow.
+### Access + Refresh token pattern
 
-Στο login με GitHub, η εφαρμογή σου δεν παίρνει το GitHub password του χρήστη. Παίρνει authorization code, το ανταλλάσσει server-side για token και μετά ζητά profile data από τον provider.
+```text
+Login → access token (15 λεπτά) + refresh token (7 ημέρες, αποθηκευμένο σε DB)
+API requests → access token στο Authorization header
+Access token έληξε → POST /refresh με το refresh token → νέο access token
+Logout / κλοπή → revoke το refresh token στη DB → μετά από ≤15 λεπτά ο χρήστης είναι έξω
+```
 
-## Protected routes
+Έτσι συνδυάζεις stateless ταχύτητα (κάθε request) με δυνατότητα revoke (στο refresh).
 
-Σε fullstack app πρέπει να προστατεύεις και:
+### Πού αποθηκεύεις το token στον browser;
 
-- UI routes,
-- API routes,
-- database queries.
+| Αποθήκευση | Κίνδυνος |
+|---|---|
+| `localStorage` | Ευάλωτο σε **XSS** — κάθε injected script το διαβάζει |
+| Cookie χωρίς flags | Ευάλωτο σε **CSRF** |
+| `HttpOnly` + `SameSite` cookie | Η ασφαλέστερη συνήθης επιλογή |
+| Μνήμη (in-memory) | Ασφαλές αλλά χάνεται στο refresh — συνδυάζεται με refresh cookie |
 
-Μην βασίζεσαι μόνο στο frontend για security.
+<Exercise
+  question="Γιατί ΔΕΝ βάζουμε ευαίσθητα δεδομένα στο JWT payload;"
+  options={[
+    "Γιατί το JWT έχει όριο μεγέθους 100 bytes.",
+    "Γιατί το payload είναι απλά base64-encoded — όποιος έχει το token το διαβάζει. Η υπογραφή εμποδίζει μόνο την τροποποίηση.",
+    "Γιατί τα JWT αποθηκεύονται πάντα στη database."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Signed ≠ encrypted. Το atob() αρκεί για να διαβάσει κανείς το payload. Η υπογραφή εγγυάται integrity (δεν άλλαξε), όχι confidentiality (δεν διαβάζεται)."
+/>
 
-Παράδειγμα server-side authorization:
+## Sessions vs JWT — η ερώτηση-κλειδί
+
+| | Sessions | JWT |
+|---|---|---|
+| State | Server-side (DB/Redis) | Stateless — όλα στο token |
+| Revoke | Άμεσο | Δύσκολο — θέλει short expiry + refresh |
+| Κόστος ανά request | Store lookup | Μόνο verify signature |
+| Microservices | Θέλουν κοινό store | Κάθε service επαληθεύει μόνο του |
+| Ιδανικό για | Web apps, server-rendered | APIs, mobile, distributed systems |
+
+Καλή συνεντευξιακή απάντηση: «Για ένα κλασικό web app ξεκινάω με sessions + HttpOnly cookies γιατί το revoke είναι άμεσο και απλό. JWT όταν έχω πολλά services ή mobile clients — με short-lived access tokens και refresh rotation.»
+
+## OAuth 2.0 — «Login with Google»
+
+Το OAuth είναι **delegation protocol**, όχι password login — η εφαρμογή σου δεν βλέπει ΠΟΤΕ το Google password του χρήστη:
+
+```text
+1. Ο χρήστης πατά "Login with GitHub"
+2. Redirect στο GitHub: client_id, redirect_uri, scope, state
+3. Ο χρήστης εγκρίνει στο GitHub (εκεί βάζει το password του — όχι σε σένα)
+4. GitHub redirect πίσω: ?code=AUTH_CODE&state=...
+5. Ο server σου ανταλλάσσει SERVER-SIDE το code + client_secret για access token
+6. Με το token ζητάς profile data → βρίσκεις/δημιουργείς τον δικό σου user
+7. Από εκεί και πέρα: ΔΙΚΟ σου session/JWT όπως πάντα
+```
+
+Σημεία που ξεχωρίζουν τον καλό υποψήφιο: το **authorization code** ανταλλάσσεται server-side (το `client_secret` δεν αγγίζει ποτέ τον browser), το **state** parameter προστατεύει από CSRF, και το **PKCE** είναι η επέκταση για mobile/SPA clients που δεν μπορούν να κρατήσουν secret.
+
+## Authorization: το δεύτερο μισό που όλοι ξεχνούν
+
+Το login λέει ποιος είσαι. Η εξουσιοδότηση πρέπει να ελέγχεται **σε κάθε ενέργεια, server-side**:
 
 ```ts
+// ❌ ΛΑΘΟΣ: ο έλεγχος βασίζεται σε κρυμμένο UI
+// (ο attacker καλεί το API απευθείας με curl)
+
+// ✅ ΣΩΣΤΟ: ownership check στο data layer
 async function getTask(taskId: string, currentUserId: string) {
   const task = await db.task.findUnique({ where: { id: taskId } });
 
-  if (!task || task.userId !== currentUserId) {
-    throw new Error("Not allowed");
-  }
+  if (!task) throw new NotFoundError();
+  if (task.userId !== currentUserId) throw new ForbiddenError(); // 403
 
   return task;
 }
 ```
 
+Η πιο διάσημη ευπάθεια αυτής της κατηγορίας: **IDOR (Insecure Direct Object Reference)** — ο χρήστης αλλάζει το `/tasks/42` σε `/tasks/43` στο URL και βλέπει ξένα δεδομένα, επειδή ο server έλεγξε μόνο «είναι logged in;» και όχι «του ανήκει;».
+
+Επίπεδα προστασίας σε fullstack app — και τα τρία:
+
+1. **UI routes** — redirect αν δεν υπάρχει session (UX, όχι security).
+2. **API routes** — middleware που απαιτεί έγκυρο session/token (security).
+3. **Data queries** — ownership/role checks σε κάθε query (η τελική γραμμή άμυνας).
+
+<Exercise
+  question="Χρήστης αλλάζει το /api/orders/15 σε /api/orders/16 και βλέπει την παραγγελία άλλου. Πώς λέγεται η ευπάθεια;"
+  options={[
+    "XSS (Cross-Site Scripting)",
+    "IDOR (Insecure Direct Object Reference)",
+    "CSRF (Cross-Site Request Forgery)",
+    "SQL Injection"
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. IDOR: ο server επαλήθευσε το authentication αλλά ΟΧΙ το ownership. Λύση: κάθε query φιλτράρει με το currentUserId — ποτέ δεν εμπιστεύεσαι το id από το URL μόνο του."
+/>
+
 ## Mini project: protected dashboard
 
-Σχεδίασε auth flow για dashboard:
+Σχεδίασε (και ιδανικά υλοποίησε) πλήρες auth flow:
 
-1. Login page.
-2. Session cookie ή JWT strategy.
-3. Server-side check πριν φορτώσει το dashboard.
-4. API route που επιστρέφει μόνο τα δεδομένα του current user.
-5. Logout που καθαρίζει session/token.
+1. `POST /register` με bcrypt hash και validation.
+2. `POST /login` → session cookie (HttpOnly, Secure, SameSite) ή access+refresh tokens.
+3. Middleware που προστατεύει το `/api/me` και το dashboard.
+4. API route που επιστρέφει **μόνο** τα δεδομένα του current user (όχι IDOR!).
+5. `POST /logout` που καταστρέφει το session ή κάνει revoke το refresh token.
+6. Rate limiting στο login endpoint (προστασία από brute force).
 
-## Συχνά λάθη
-
-- Κρύβω κουμπί στο frontend αλλά αφήνω ανοιχτό API route.
-- Βάζω role στο localStorage και το εμπιστεύομαι.
-- Δεν ελέγχω owner id σε database queries.
-- Κρατάω tokens χωρίς expiration.
-
-## Interview answer template
-
-> Authentication verifies identity, authorization checks permissions. I enforce authorization on the server, protect API routes, store secrets server-side, and choose sessions or JWT depending on the app requirements.
-
-<Exercise
-  question="Ποια είναι η διαφορά authentication και authorization;"
-  options={[
-    "Authentication είναι ποιος είσαι, authorization είναι τι επιτρέπεται να κάνεις.",
-    "Είναι ακριβώς το ίδιο.",
-    "Authentication είναι CSS και authorization είναι HTML."
+<Flashcards
+  title="Auth — interview drills"
+  cards={[
+    {
+      question: "Authentication vs Authorization;",
+      answer: "AuthN: επαλήθευση ταυτότητας — ποιος είσαι (login, 401). AuthZ: έλεγχος δικαιωμάτων — τι επιτρέπεται να κάνεις (roles, ownership, 403). Το ένα δεν αντικαθιστά το άλλο."
+    },
+    {
+      question: "Γιατί bcrypt και όχι SHA-256 για passwords;",
+      answer: "Το SHA-256 είναι σχεδιασμένο γρήγορο → δισεκατομμύρια guesses/sec σε GPU. Το bcrypt/argon2 είναι σκόπιμα αργά (tunable cost factor) και έχουν ενσωματωμένο salt — κάνουν brute force και rainbow tables πρακτικά ασύμφορα."
+    },
+    {
+      question: "Πώς κάνεις 'logout' έναν χρήστη με JWT;",
+      answer: "Δεν μπορείς να ανακαλέσεις εκδομένο JWT. Στρατηγικές: short-lived access tokens (5-15min) + refresh tokens που ΜΠΟΡΟΥΝ να γίνουν revoked στη DB, ή token blacklist (που όμως ξαναφέρνει state). Το revoke του refresh σταματά τον χρήστη στο επόμενο refresh."
+    },
+    {
+      question: "Τι προστατεύει το HttpOnly flag και τι το SameSite;",
+      answer: "HttpOnly: η JS δεν διαβάζει το cookie → ένα XSS δεν μπορεί να κλέψει το session. SameSite (Lax/Strict): το cookie δεν στέλνεται σε cross-site requests → βασική άμυνα κατά CSRF."
+    },
+    {
+      question: "Περίγραψε το OAuth authorization code flow σε 4 βήματα.",
+      answer: "1) Redirect στον provider με client_id + state. 2) Ο χρήστης εγκρίνει εκεί. 3) Redirect πίσω με authorization code. 4) Ο server ανταλλάσσει server-side το code + client_secret για access token. Το password μένει στον provider, το secret δεν φτάνει ποτέ στον browser."
+    },
+    {
+      question: "Τι είναι το IDOR και πώς το αποτρέπεις;",
+      answer: "Insecure Direct Object Reference: αλλάζοντας ένα id στο URL βλέπεις ξένα δεδομένα. Πρόληψη: ownership check σε ΚΑΘΕ query (WHERE user_id = currentUser), όχι μόνο έλεγχος ότι υπάρχει session."
+    },
+    {
+      question: "localStorage ή cookie για tokens;",
+      answer: "localStorage: ευάλωτο σε XSS — κάθε injected script διαβάζει το token. HttpOnly+Secure+SameSite cookie: άτρωτο σε XSS theft, προστατευμένο από CSRF μέσω SameSite. Default επιλογή: το cookie."
+    }
   ]}
-  correctOptionIndex={0}
-  explanation="Σωστά. Είναι διαφορετικά επίπεδα ασφάλειας."
 />
 
-<Exercise
-  question="Πού πρέπει να γίνεται ο τελικός authorization έλεγχος;"
-  options={["Server-side", "Μόνο στο CSS", "Μόνο στο localStorage"]}
-  correctOptionIndex={0}
-  explanation="Σωστά. Το frontend μπορεί να κρύβει UI, αλλά ο server πρέπει να προστατεύει τα δεδομένα."
-/>
+## Πώς απαντάς στη συνέντευξη
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="authentication" />
-</div>
+> Authentication verifies identity; authorization checks permissions — and I enforce both server-side. Passwords are hashed with bcrypt, sessions live in HttpOnly SameSite cookies, and if I use JWTs I keep them short-lived with refresh token rotation since JWTs can't be revoked. Every data query includes an ownership check, because hiding a button in the UI is not security — that's how you get IDOR vulnerabilities.
+
+<TrainingLab
+  title="Σχεδίασε login flow με threat thinking"
+  scenario="Χτίσε mental model για login, session, protected route και logout. Ο στόχος είναι να ξέρεις ποιος αποδεικνύει τι και πού αποθηκεύεται η ταυτότητα."
+  outcomes={[
+    "Να ξεχωρίζεις authentication από authorization.",
+    "Να εξηγείς session cookie, JWT και refresh token tradeoffs.",
+    "Να προστατεύεις route, API και query — όχι μόνο UI button."
+  ]}
+  steps={[
+    "Γράψε flow για POST /login με validation και bcrypt.",
+    "Περιέγραψε πού αποθηκεύεται session ή token και με ποια cookie flags.",
+    "Πρόσθεσε middleware/check για protected dashboard.",
+    "Πρόσθεσε ownership check σε ένα GET /tasks/:id.",
+    "Γράψε logout flow που ακυρώνει πρόσβαση — και εξήγησε τι αλλάζει αν έχεις JWT."
+  ]}
+  checkpoints={[
+    "Το password δεν αποθηκεύεται ποτέ plain text ούτε με γρήγορο hash.",
+    "Protected API δεν βασίζεται μόνο στο frontend.",
+    "Κάθε query ελέγχει ownership — όχι μόνο login.",
+    "Logout ακυρώνει το server-side state ή το refresh token."
+  ]}
+  mistakes={[
+    "Να μπερδεύεις login με permissions.",
+    "Να αποθηκεύεις tokens σε localStorage χωρίς να ξέρεις το XSS ρίσκο.",
+    "Να κρύβεις UI αλλά να αφήνεις API ανοιχτό.",
+    "Να λες ότι το JWT payload είναι 'κρυπτογραφημένο'."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να σχεδιάσεις login/logout και να δείξεις πού γίνεται κάθε security check."
+/>

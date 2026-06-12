@@ -110,9 +110,20 @@ if (!databaseUrl) {
 3. Backfill παλιά δεδομένα.
 4. Κάνε required το column σε επόμενο release.
 
-## Interview answer template
+## Deployment strategies — πώς βγαίνει το release χωρίς downtime
 
-> My deployment checklist is: build passes, environment variables are configured, database migrations are handled, logs are available, and rollback strategy is clear.
+Όταν η συζήτηση πάει σε «πώς κάνετε deploy;», αυτοί οι όροι πρέπει να είναι δικοί σου:
+
+- **Rolling deployment**: τα instances αντικαθίστανται σταδιακά — παλιά και νέα έκδοση συνυπάρχουν για λίγο (γι' αυτό τα schema changes πρέπει να είναι backward-compatible!).
+- **Blue-green**: δύο πλήρη environments· το «green» παίρνει τη νέα έκδοση, δοκιμάζεται, και ο load balancer γυρίζει ακαριαία — rollback = γύρνα πίσω τον διακόπτη.
+- **Canary**: η νέα έκδοση πάει πρώτα στο 1-5% του traffic· αν τα metrics είναι καθαρά, κλιμακώνεις σταδιακά στο 100%.
+- **Feature flags**: το deploy ΔΕΝ είναι το release — ο κώδικας βγαίνει απενεργοποιημένος και ανάβει με flag, ανά χρήστη/ποσοστό, με kill switch χωρίς νέο deploy.
+
+Η τελευταία διάκριση («deploy ≠ release») είναι από τις πιο εντυπωσιακές απαντήσεις σε αυτή τη συζήτηση.
+
+## Πώς απαντάς στη συνέντευξη
+
+> Before any deploy: build and tests pass, environment variables are configured per environment, and migrations are backward-compatible — expand first, backfill, then contract — because during a rolling deploy old and new code run side by side. After deploy: smoke tests on the core flows, logs and error tracking to catch regressions, and a clear rollback path. For riskier changes I'd use canary releases or feature flags, since decoupling deploy from release means you can turn things off without redeploying.
 
 <Exercise
   question="Τι πρέπει να ελέγξεις πριν deploy;"
@@ -125,7 +136,70 @@ if (!databaseUrl) {
   explanation="Σωστά. Deploy χωρίς checks και σωστό configuration είναι ρίσκο."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="deployment" />
-</div>
+<Exercise
+  question="Σε rolling deployment, γιατί ένα migration που ΜΕΤΟΝΟΜΑΖΕΙ column είναι επικίνδυνο;"
+  options={[
+    "Γιατί για όσο διαρκεί το rollout, το παλιό code τρέχει ταυτόχρονα και ψάχνει το παλιό όνομα — και σκάει. Γι' αυτό: expand → backfill → contract σε ξεχωριστά releases.",
+    "Γιατί οι μετονομασίες είναι αργές στην PostgreSQL.",
+    "Δεν είναι επικίνδυνο — το migration τρέχει πρώτα."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Παλιό και νέο code συνυπάρχουν στο rolling deploy. Ασφαλής σειρά: πρόσθεσε νέο column (expand), deploy code που γράφει και στα δύο, backfill, και αφαίρεσε το παλιό (contract) σε επόμενο release."
+/>
+
+<Flashcards
+  title="Deployment — interview drills"
+  cards={[
+    {
+      question: "Blue-green vs canary deployment;",
+      answer: "Blue-green: δύο πλήρη environments, ακαριαίος διακόπτης στον load balancer — απλό rollback, αλλά διπλό κόστος υποδομής. Canary: σταδιακή έκθεση (1% → 10% → 100%) με παρακολούθηση metrics — πιάνει προβλήματα με ελάχιστους επηρεασμένους χρήστες."
+    },
+    {
+      question: "Τι σημαίνει 'deploy is not release';",
+      answer: "Με feature flags, ο κώδικας φτάνει σε production απενεργοποιημένος — το deploy είναι τεχνικό βήμα, το release είναι product απόφαση. Ανάβεις σταδιακά, ανά χρήστη ή ποσοστό, και σβήνεις ακαριαία χωρίς redeploy αν κάτι πάει στραβά."
+    },
+    {
+      question: "Ποια είναι η ασφαλής σειρά για breaking schema change;",
+      answer: "Expand-contract: 1) πρόσθεσε το νέο (column/table) χωρίς να σπάσεις το παλιό, 2) deploy code που γράφει και στα δύο, 3) backfill τα παλιά δεδομένα, 4) γύρισε τα reads στο νέο, 5) αφαίρεσε το παλιό σε επόμενο release. Κάθε βήμα είναι αναστρέψιμο."
+    },
+    {
+      question: "NEXT_PUBLIC_ — τι κάνει και τι κίνδυνο έχει;",
+      answer: "Στο Next.js, env vars με αυτό το prefix γίνονται inline στο client bundle — ορατές σε όλους. Χρήσιμο για δημόσια config (analytics id). Κίνδυνος: secret με NEXT_PUBLIC_ = δημοσιευμένο secret. DATABASE_URL και κάθε key μένουν ΧΩΡΙΣ prefix, server-side only."
+    },
+    {
+      question: "Τι είναι το smoke test μετά το deploy;",
+      answer: "Γρήγορος έλεγχος των 3-5 κρίσιμων flows (homepage φορτώνει, login δουλεύει, core API απαντά) αμέσως μετά το release — αυτοματοποιημένος ή χειροκίνητος. Στόχος: να μάθεις ΕΣΥ ότι το deploy χάλασε κάτι, πριν το μάθουν οι χρήστες."
+    },
+    {
+      question: "Γιατί το app πρέπει να κάνει fail fast σε λείπον env var;",
+      answer: "Validation στο startup (throw αν λείπει DATABASE_URL) σταματά το deploy αμέσως με καθαρό μήνυμα. Χωρίς αυτό, το app σηκώνεται 'υγιές' και αποτυγχάνει αργότερα, στο πρώτο request που το χρειάζεται — πολύ δυσκολότερο debugging σε production."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Κάνε deploy checklist πριν πατήσεις deploy"
+  scenario="Πάρε fullstack app και ετοίμασέ το για production deploy: build, env vars, database, domain, logs και rollback plan."
+  outcomes={[
+    "Να ξεχωρίζεις local config από production config.",
+    "Να ελέγχεις build και runtime requirements.",
+    "Να σχεδιάζεις rollback και smoke tests."
+  ]}
+  steps={[
+    "Τρέξε production build τοπικά.",
+    "Γράψε λίστα required environment variables.",
+    "Ορισμός production database και migration plan.",
+    "Γράψε smoke test για home, login και core API."
+  ]}
+  checkpoints={[
+    "Δεν υπάρχουν secrets committed στο repo.",
+    "Το app ξέρει τι κάνει αν λείπει env var.",
+    "Υπάρχει τρόπος να δεις logs μετά το deploy."
+  ]}
+  mistakes={[
+    "Να θεωρείς ότι αφού δουλεύει local θα δουλέψει production.",
+    "Να κάνεις migrations χωρίς backup/rollback σκέψη.",
+    "Να μην έχεις smoke tests μετά το deploy."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να κάνεις deploy και να αποδείξεις μέσα σε λίγα λεπτά ότι το core flow δουλεύει."
+/>

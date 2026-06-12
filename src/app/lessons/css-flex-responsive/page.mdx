@@ -114,7 +114,51 @@ Responsive layout σημαίνει ότι το UI αντέχει σε διαφο
   explanation="Σωστά. Το flex-wrap: wrap βοηθά το layout να αντέχει σε μικρότερο πλάτος."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="css-flex-responsive" />
-</div>
+<Flashcards
+  title="Flexbox — γρήγορο repaso"
+  cards={[
+    {
+      question: "justify-content vs align-items;",
+      answer: "justify-content: στοίχιση στον MAIN axis (οριζόντια σε row). align-items: στοίχιση στον CROSS axis (κάθετα σε row). Με flex-direction: column αντιστρέφονται! Το κλασικό 'κεντράρισμα παντού': display:flex + justify-content:center + align-items:center."
+    },
+    {
+      question: "Τι κάνουν τα flex-grow, flex-shrink, flex-basis;",
+      answer: "grow: πόσο μερίδιο του ΕΞΤΡΑ χώρου παίρνει το item (0 = καθόλου). shrink: πόσο συρρικνώνεται όταν δεν χωράει (0 = ποτέ). basis: το αρχικό μέγεθος πριν τη μοιρασιά. Συντομογραφία: flex: 1 = grow:1, shrink:1, basis:0 — ίσα μερίδια."
+    },
+    {
+      question: "Γιατί gap αντί για margins στα flex items;",
+      answer: "Το gap βάζει απόσταση ΜΟΝΟ ανάμεσα στα items — όχι στις άκρες, χωρίς first/last-child exceptions, χωρίς margin collapse εκπλήξεις. Μία γραμμή αντί για τρεις κανόνες."
+    },
+    {
+      question: "Flexbox ή Grid — πώς διαλέγεις;",
+      answer: "Flexbox: μία διάσταση (σειρά Ή στήλη) — navbars, toolbars, κουμπιά σε σειρά. Grid: δύο διαστάσεις (γραμμές ΚΑΙ στήλες μαζί) — page layouts, dashboards, card grids. Συνδυάζονται: grid για τη σελίδα, flex μέσα στα κελιά."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Φτιάξε responsive toolbar"
+  scenario="Χτίσε navigation bar που δουλεύει σε mobile και desktop χωρίς να κόβει κείμενο ή να βγαίνει έξω από την οθόνη."
+  outcomes={[
+    "Να χρησιμοποιείς flex direction, gap, wrap και alignment.",
+    "Να σκέφτεσαι τι γίνεται όταν δεν υπάρχει αρκετό πλάτος.",
+    "Να φτιάχνεις controls που παραμένουν usable σε μικρή οθόνη."
+  ]}
+  steps={[
+    "Φτιάξε nav με logo και 4 links.",
+    "Χρησιμοποίησε display flex και gap για desktop.",
+    "Πρόσθεσε flex-wrap ή column layout για mobile.",
+    "Δοκίμασε μεγάλα labels και δες αν σπάνε σωστά."
+  ]}
+  checkpoints={[
+    "Το nav δεν κάνει horizontal overflow.",
+    "Τα links έχουν αρκετό clickable area.",
+    "Το layout παραμένει καθαρό όταν μικραίνει το viewport."
+  ]}
+  mistakes={[
+    "Να χρησιμοποιείς fixed widths παντού.",
+    "Να ξεχνάς το gap και να βάζεις margins σε κάθε child.",
+    "Να δοκιμάζεις μόνο desktop μέγεθος."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να προβλέψεις πώς θα κινηθούν τα flex items πριν ανοίξεις το preview."
+/>

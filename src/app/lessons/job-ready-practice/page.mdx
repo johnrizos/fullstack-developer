@@ -296,7 +296,55 @@ What you chose, why, and what you would improve next.
   explanation="Σωστά. Acceptance criteria πρέπει να περιγράφουν παρατηρήσιμη συμπεριφορά."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="job-ready-practice" />
-</div>
+<Flashcards
+  title="Interview process — τι να περιμένεις"
+  cards={[
+    {
+      question: "Ποια είναι τα τυπικά στάδια ενός fullstack interview process;",
+      answer: "1) Screening call (recruiter, 30'), 2) τεχνικό screen (live coding ή take-home), 3) onsite/virtual loop: coding + system design + behavioral, 4) offer. Κάθε στάδιο έχει διαφορετική προετοιμασία — μάθε ποιο σε περιμένει και ρώτα τον recruiter για το format."
+    },
+    {
+      question: "Πώς απαντάς σε behavioral ερωτήσεις;",
+      answer: "STAR: Situation (context σε 1-2 προτάσεις), Task (η ευθύνη σου), Action (τι ΕΣΥ έκανες — όχι 'εμείς'), Result (μετρήσιμο αποτέλεσμα + τι έμαθες). Ετοίμασε 4-5 ιστορίες από projects: ένα bug, μια σύγκρουση, ένα deadline, μια τεχνική απόφαση."
+    },
+    {
+      question: "Τι κάνεις όταν κολλάς σε live coding;",
+      answer: "Μίλα δυνατά: 'σκέφτομαι Χ, αλλά με προβληματίζει το Υ'. Ξεκίνα με brute force και βελτίωσε. Ρώτα διευκρινίσεις — το επιτρέπουν και μετράει θετικά. Η σιωπή είναι ο χειρότερος εχθρός: ο interviewer βαθμολογεί τη ΣΚΕΨΗ, όχι μόνο τη λύση."
+    },
+    {
+      question: "Τι ερωτήσεις κάνεις ΕΣΥ στο τέλος;",
+      answer: "Δείξε ενδιαφέρον για τη δουλειά: 'Πώς μοιάζει μια τυπική μέρα/sprint;', 'Πώς γίνεται το code review και το deploy;', 'Τι ξεχωρίζει όσους τα πάνε καλά εδώ;'. Το 'δεν έχω ερωτήσεις' διαβάζεται ως αδιαφορία."
+    },
+    {
+      question: "Take-home assignment — τι κοιτάνε πραγματικά;",
+      answer: "Όχι feature count: καθαρή δομή, error handling, λίγα tests, README με αποφάσεις και trade-offs ('θα έκανα Χ με περισσότερο χρόνο'). Σεβάσου το time box — ένα τίμιο, καθαρό 4ωρο παραδοτέο κερδίζει ένα φουσκωμένο 20ωρο."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Κάνε portfolio audit σαν hiring reviewer"
+  scenario="Πάρε ένα project σου και αξιολόγησέ το σαν reviewer που έχει 5 λεπτά. Πρέπει να φαίνεται τι κάνει, πώς τρέχει, τι δυσκολίες έλυσες και τι ποιότητα έχει."
+  outcomes={[
+    "Να παρουσιάζεις project με business context και technical decisions.",
+    "Να δείχνεις evidence: demo, screenshots, tests, README.",
+    "Να εντοπίζεις gaps που θα ρωτούσε interviewer."
+  ]}
+  steps={[
+    "Γράψε project summary σε 3 προτάσεις.",
+    "Πρόσθεσε setup, env vars και test/build commands στο README.",
+    "Κατέγραψε 3 technical decisions και tradeoffs.",
+    "Κάνε self-review σε UX, errors, accessibility και tests."
+  ]}
+  checkpoints={[
+    "Το project τρέχει από καθαρές οδηγίες.",
+    "Το README δεν είναι generic template.",
+    "Υπάρχει απάντηση στο 'τι θα βελτίωνες μετά'."
+  ]}
+  mistakes={[
+    "Να δείχνεις μόνο screenshot χωρίς context.",
+    "Να αφήνεις broken deploy ή missing env instructions.",
+    "Να κρύβεις tradeoffs αντί να τα εξηγείς."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να συζητήσεις το project σε interview με αποφάσεις, bugs, tests και επόμενα βήματα."
+/>

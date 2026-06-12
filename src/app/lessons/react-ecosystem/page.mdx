@@ -95,65 +95,169 @@ export default function TodoApp() {
 
 # React + TypeScript
 
-React interviews δεν είναι μόνο “ξέρω components”. Συνήθως θέλουν να δουν αν καταλαβαίνεις:
+Στα React interviews δεν αρκεί να «ξέρεις components». Εξετάζουν αν καταλαβαίνεις **πώς δουλεύει το rendering**, πώς ρέουν τα δεδομένα, και γιατί υπάρχουν οι κανόνες των hooks. Εδώ θα χτίσουμε αυτό το mental model με TypeScript από την αρχή.
 
-- props και component boundaries,
-- state updates χωρίς mutation,
-- typed event handlers,
-- derived state,
-- rendering lists με keys,
-- πότε να σπάσεις ένα component.
+## Το mental model: UI = f(state)
 
-Με TypeScript, πρέπει να κάνεις αυτά τα patterns type-safe.
+Το React έχει μία κεντρική ιδέα: **το UI είναι συνάρτηση του state**. Δεν «πειράζεις» το DOM — αλλάζεις state, και το React ξανατρέχει το component σου και ενημερώνει το DOM όπου χρειάζεται.
 
-## Typed props
+```tsx
+function Counter() {
+  const [count, setCount] = useState(0);
 
-Τα props είναι το contract ενός component.
+  // Κάθε φορά που αλλάζει το count, αυτή η function ΞΑΝΑΤΡΕΧΕΙ
+  // ολόκληρη — αυτό είναι το "re-render".
+  return <button onClick={() => setCount(count + 1)}>Count: {count}</button>;
+}
+```
+
+Δύο συνέπειες που εξηγούν τα περισσότερα «παράξενα» bugs:
+
+1. **Κάθε render είναι ένα στιγμιότυπο.** Οι μεταβλητές και οι functions ξαναδημιουργούνται. Το `count` μέσα σε ένα παλιό closure είναι η παλιά τιμή.
+2. **Το setState είναι ασύγχρονο και κάνει batching.** Δεν βλέπεις τη νέα τιμή αμέσως μετά το `setCount`.
+
+<PredictOutput
+  title="Το κλασικό setState trap"
+  code={`function App() {
+  const [count, setCount] = useState(0);
+
+  function handleClick() {
+    setCount(count + 1);
+    setCount(count + 1);
+    setCount(count + 1);
+  }
+
+  return <button onClick={handleClick}>{count}</button>;
+}
+
+// Πατάς το κουμπί ΜΙΑ φορά. Τι δείχνει;`}
+  options={["3", "1", "0", "2"]}
+  correctOptionIndex={1}
+  answer="1"
+  explanation="Και οι τρεις κλήσεις διαβάζουν το ΙΔΙΟ count από το τρέχον render (0), άρα όλες λένε setCount(1). Fix: functional updates — setCount(c => c + 1) τρεις φορές δίνει 3, γιατί κάθε updater παίρνει την πιο πρόσφατη τιμή."
+/>
+
+## Typed props — το contract του component
+
+Τα props είναι το δημόσιο API ενός component. Με TypeScript το contract γίνεται ρητό:
 
 ```tsx
 type TodoItemProps = {
   todo: Todo;
   onToggle: (id: string) => void;
+  variant?: "compact" | "detailed"; // optional με union — όχι σκέτο string
 };
+
+function TodoItem({ todo, onToggle, variant = "detailed" }: TodoItemProps) {
+  return (
+    <li>
+      <input type="checkbox" checked={todo.completed} onChange={() => onToggle(todo.id)} />
+      {todo.title}
+    </li>
+  );
+}
 ```
 
-Αυτό λέει καθαρά τι χρειάζεται το `TodoItem`.
+Σημείωση ορολογίας: τα δεδομένα ρέουν **προς τα κάτω** (props), τα events **προς τα πάνω** (callbacks). Αυτό λέγεται one-way data flow και είναι θεμελιώδης interview απάντηση.
 
-## Typed state
+## Typed state & immutable updates
 
 ```tsx
 const [todos, setTodos] = useState<Todo[]>([]);
 ```
 
-Το state είναι array από `Todo`. Αν βάλεις object που δεν έχει `id`, `title`, `completed`, το TypeScript θα σε σταματήσει.
-
-## Immutable updates
-
-Στο React δεν αλλάζουμε το υπάρχον state απευθείας. Δημιουργούμε νέο array/object.
+Στο React **δεν κάνεις ποτέ mutate το state** — δημιουργείς νέες references:
 
 ```tsx
-setTodos((currentTodos) =>
-  currentTodos.map((todo) =>
-    todo.id === id ? { ...todo, completed: !todo.completed } : todo
-  )
-);
+// ❌ Mutation — το React ΔΕΝ θα κάνει re-render
+todos.push(newTodo);
+todo.completed = true;
+
+// ✅ Νέο array / νέο object
+setTodos([...todos, newTodo]);
+setTodos(todos.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)));
+setTodos(todos.filter((t) => t.id !== id));
 ```
 
-Αυτό είναι συχνό interview θέμα.
+Γιατί; Το React συγκρίνει references (`Object.is`) για να αποφασίσει αν άλλαξε κάτι. Αν κάνεις mutate το ίδιο array, η reference είναι ίδια → το React νομίζει ότι τίποτα δεν άλλαξε. Αυτή η εξήγηση — «reference equality, όχι deep comparison» — είναι αυτό που ψάχνει ο interviewer.
 
-## Derived state
+## Derived state: μην αποθηκεύεις ό,τι υπολογίζεται
 
-Αν κάτι μπορεί να υπολογιστεί από υπάρχον state, συνήθως δεν χρειάζεται να το αποθηκεύσεις ως δεύτερο state.
+Συχνότατο λάθος σε code reviews: δεύτερο state που «καθρεφτίζει» το πρώτο.
 
 ```tsx
-const visibleTodos = todos.filter(...);
+// ❌ Δύο sources of truth — θα ξεσυγχρονιστούν κάποια στιγμή
+const [todos, setTodos] = useState<Todo[]>([]);
+const [activeTodos, setActiveTodos] = useState<Todo[]>([]);
+
+// ✅ Ένα state, τα υπόλοιπα υπολογίζονται στο render
+const [todos, setTodos] = useState<Todo[]>([]);
+const [filter, setFilter] = useState<Filter>("all");
+
+const visibleTodos = useMemo(() => {
+  if (filter === "active") return todos.filter((t) => !t.completed);
+  if (filter === "completed") return todos.filter((t) => t.completed);
+  return todos;
+}, [todos, filter]);
 ```
 
-Στο παράδειγμα χρησιμοποιούμε `useMemo` για να δείξουμε ξεκάθαρα ότι είναι derived data.
+Το `useMemo` εδώ αποφεύγει τον επανυπολογισμό όταν δεν άλλαξαν τα inputs — αλλά το ουσιαστικό είναι το pattern: **ένα source of truth, όλα τα άλλα derived**.
+
+## useEffect — λιγότερο απ' όσο νομίζεις
+
+Το `useEffect` είναι για **συγχρονισμό με εξωτερικά συστήματα**: fetch, subscriptions, timers, DOM APIs. ΔΕΝ είναι για να «αντιδράς σε state» — αυτό γίνεται στο render.
+
+```tsx
+useEffect(() => {
+  const controller = new AbortController();
+
+  async function load() {
+    try {
+      const res = await fetch(`/api/todos?filter=${filter}`, {
+        signal: controller.signal,
+      });
+      setTodos(await res.json());
+    } catch (err) {
+      if (!controller.signal.aborted) setError(true);
+    }
+  }
+
+  load();
+  return () => controller.abort(); // cleanup: ακύρωσε το προηγούμενο
+}, [filter]); // ξανατρέχει ΜΟΝΟ όταν αλλάξει το filter
+```
+
+Τα τρία σημεία που εξετάζονται:
+
+- **Dependency array**: `[]` = μία φορά στο mount, `[filter]` = όταν αλλάζει το filter, καθόλου array = κάθε render (σχεδόν πάντα bug).
+- **Cleanup function**: τρέχει πριν το επόμενο effect και στο unmount — εκεί ακυρώνεις timers/subscriptions/requests. Χωρίς αυτήν: memory leaks και race conditions.
+- **Race condition**: αν ο χρήστης αλλάξει filter γρήγορα, ένα αργό παλιό response μπορεί να «πατήσει» το νέο. Το `AbortController` το λύνει.
+
+## Lists & keys
+
+```tsx
+{visibleTodos.map((todo) => (
+  <TodoItem key={todo.id} todo={todo} onToggle={toggleTodo} />
+))}
+```
+
+Το `key` βοηθά το React να ταιριάξει τα στοιχεία μεταξύ renders. Γιατί **όχι** το index ως key; Αν η λίστα αναδιαταχθεί ή διαγραφεί στοιχείο, τα indexes αλλάζουν «ιδιοκτήτη» — το React θα μπερδέψει το state των components (π.χ. checked checkboxes εμφανίζονται σε λάθος row). Με σταθερό `id`, κάθε στοιχείο κρατά την ταυτότητά του.
+
+## Πού ζει το state; (lifting state up)
+
+Κανόνας: το state ζει στον **χαμηλότερο κοινό πρόγονο** όλων των components που το χρειάζονται.
+
+```text
+TodoApp        ← state: todos, filter (το χρειάζονται και τα δύο παιδιά)
+├── TodoForm   ← callback: onAdd
+└── TodoList   ← props: visibleTodos, onToggle
+```
+
+Αν το state το χρειάζεται μόνο ένα component, κράτα το εκεί (τοπικά). Αν το χρειάζεται «όλη η εφαρμογή» (theme, current user), τότε Context — αλλά μην ξεκινάς από εκεί.
 
 ## Mini project: typed todo app
 
-Το challenge ελέγχει React + TypeScript patterns. Δεν εκτελεί React στο iframe, αλλά σου δείχνει αν υπάρχουν τα κρίσιμα κομμάτια που θα περίμενε κάποιος σε typed React code review.
+Το challenge ελέγχει τα patterns που θα κοίταζε ένας reviewer σε typed React code:
 
 <CodeChallenge
   title="React TypeScript todo challenge"
@@ -207,28 +311,98 @@ const visibleTodos = todos.filter(...);
   ]}
 />
 
-## Interview answer template
+## Πώς απαντάς στη συνέντευξη
 
-Αν σε ρωτήσουν “how do you type React components?”, απάντησε:
+«How does React decide to re-render?»
 
-> I define explicit prop types for component contracts, type state with `useState<T>()` when inference is not enough, type callbacks based on what data they receive, and avoid duplicating derived state.
+> A component re-renders when its state changes or its parent re-renders. React compares the new virtual DOM with the previous one and only updates the real DOM where something changed. That's why immutable updates matter — React relies on reference equality to detect changes, so mutating an existing object or array makes the update invisible.
 
-Αν σε ρωτήσουν για state updates:
+«When do you use useEffect?»
 
-> I avoid mutating state directly. For arrays and objects I return new references, for example with `map`, `filter`, and object spread, so React can detect changes correctly.
+> Only for synchronizing with external systems — data fetching, subscriptions, timers. Derived values belong in the render body or useMemo, not in effects. Every effect that subscribes to something returns a cleanup function, and for fetches I use an AbortController to prevent race conditions.
 
 <Exercise
   question="Γιατί δεν κάνουμε mutation απευθείας στο React state;"
   options={[
-    "Επειδή το React βασίζεται σε νέα references για να εντοπίζει αλλαγές αξιόπιστα.",
-    "Επειδή το TypeScript απαγορεύει όλα τα arrays.",
-    "Επειδή τα components δεν μπορούν να έχουν functions."
+    "Επειδή το React συγκρίνει references για να εντοπίσει αλλαγές — mutation αφήνει ίδια reference και δεν γίνεται re-render.",
+    "Επειδή το TypeScript απαγορεύει τα arrays.",
+    "Επειδή το mutation είναι πιο αργό από το spread."
   ]}
   correctOptionIndex={0}
-  explanation="Σωστά. Immutable updates κάνουν το rendering πιο προβλέψιμο και αποφεύγουν bugs."
+  explanation="Σωστά. Το React κάνει shallow/reference comparison. todos.push() κρατά την ίδια reference → καμία ανανέωση. Νέο array με spread/map/filter → νέα reference → re-render."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="react-ecosystem" />
-</div>
+<Exercise
+  question="Πότε το index ως key είναι πραγματικό πρόβλημα;"
+  options={[
+    "Πάντα — ο κώδικας δεν τρέχει καθόλου.",
+    "Όταν η λίστα αναδιατάσσεται, φιλτράρεται ή διαγράφονται στοιχεία — το state μπερδεύεται μεταξύ rows.",
+    "Μόνο σε TypeScript projects."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Σε στατική λίστα που δεν αλλάζει ποτέ, το index δουλεύει. Μόλις όμως αλλάξει η σειρά, το React ταιριάζει components με βάση το key=index και το εσωτερικό state (inputs, checkboxes) καταλήγει σε λάθος στοιχείο."
+/>
+
+<Flashcards
+  title="React — interview drills"
+  cards={[
+    {
+      question: "Τι είναι το virtual DOM και γιατί υπάρχει;",
+      answer: "Ελαφριά in-memory αναπαράσταση του UI. Στο re-render, το React συγκρίνει (diffing/reconciliation) το νέο δέντρο με το παλιό και εφαρμόζει στο πραγματικό DOM μόνο τις διαφορές — γιατί οι άμεσες DOM λειτουργίες είναι ακριβές."
+    },
+    {
+      question: "Controlled vs uncontrolled inputs;",
+      answer: "Controlled: το value έρχεται από state και αλλάζει μέσω onChange — το React είναι το source of truth. Uncontrolled: το DOM κρατά την τιμή και τη διαβάζεις με ref. Default: controlled, για validation και προβλέψιμο state."
+    },
+    {
+      question: "Γιατί υπάρχουν οι κανόνες των hooks (top level, ίδια σειρά);",
+      answer: "Το React αντιστοιχίζει τα hooks με τη ΣΕΙΡΑ κλήσης τους ανά render. Hook μέσα σε if/loop αλλάζει τη σειρά μεταξύ renders → το React δίνει λάθος state σε λάθος hook. Γι' αυτό: πάντα top level, ποτέ conditionally."
+    },
+    {
+      question: "useMemo vs useCallback;",
+      answer: "useMemo(fn, deps): cache-άρει το ΑΠΟΤΕΛΕΣΜΑ της fn. useCallback(fn, deps): cache-άρει την ΙΔΙΑ τη function (ισοδύναμο με useMemo(() => fn)). Χρήσιμα για ακριβές πράξεις και για σταθερές references σε memo-ποιημένα children."
+    },
+    {
+      question: "Τι κάνει το cleanup function του useEffect και πότε τρέχει;",
+      answer: "Καθαρίζει ό,τι έστησε το effect (unsubscribe, clearInterval, abort fetch). Τρέχει πριν από κάθε επανεκτέλεση του effect ΚΑΙ στο unmount. Χωρίς cleanup: memory leaks, διπλά subscriptions, race conditions."
+    },
+    {
+      question: "Γιατί setState(x + 1) δύο φορές δεν προσθέτει 2;",
+      answer: "Κάθε render έχει στιγμιότυπο του state — και οι δύο κλήσεις διαβάζουν την ίδια παλιά τιμή. Λύση: functional update setState(prev => prev + 1), που παίρνει πάντα την πιο πρόσφατη τιμή και κάνει σωστό batching."
+    },
+    {
+      question: "Πότε χρησιμοποιείς Context και πότε όχι;",
+      answer: "Context: για πραγματικά global data (theme, locale, current user) ώστε να αποφύγεις prop drilling. Όχι για ό,τι αλλάζει συχνά (κάθε αλλαγή κάνει re-render όλους τους consumers) ούτε ως πρώτο reflex — τα περισσότερα states πρέπει να μείνουν τοπικά."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Χτίσε typed todo flow"
+  scenario="Φτιάξε React todo app με controlled input, typed state, filtering και empty state. Ο στόχος είναι να καταλάβεις data flow, όχι απλά JSX."
+  outcomes={[
+    "Να περνάς data με props και callbacks.",
+    "Να κρατάς state στο σωστό component.",
+    "Να γράφεις components που χειρίζονται empty και filtered states."
+  ]}
+  steps={[
+    "Ορισμός Todo type και αρχικό state.",
+    "Φτιάξε TodoForm ως controlled input.",
+    "Φτιάξε TodoList που παίρνει todos ως props.",
+    "Πρόσθεσε filter all/active/completed και empty messages.",
+    "Πρόσθεσε fetch σε useEffect με cleanup και loading/error states."
+  ]}
+  checkpoints={[
+    "Το input value έρχεται από state.",
+    "Το child component δεν αλλάζει parent state απευθείας.",
+    "Τα derived lists υπολογίζονται από todos και filter.",
+    "Χρησιμοποιείς functional updates όπου το νέο state εξαρτάται από το παλιό."
+  ]}
+  mistakes={[
+    "Να αντιγράφεις το ίδιο state σε πολλά components.",
+    "Να χρησιμοποιείς index ως key όταν έχεις id.",
+    "Να βάζεις derived τιμές σε useEffect + δεύτερο state αντί για υπολογισμό στο render.",
+    "Να ξεχνάς empty/loading/error UI επειδή το happy path δουλεύει."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να δείξεις με βέλη πώς περνούν props προς τα κάτω και events προς τα πάνω."
+/>

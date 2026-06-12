@@ -147,7 +147,51 @@ Task
   explanation="Σωστά. Το project πρέπει να δείχνει σκέψη, όχι μόνο UI."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="capstone" />
-</div>
+<Flashcards
+  title="Capstone — οι ερωτήσεις που θα δεχτείς γι' αυτό"
+  cards={[
+    {
+      question: "'Γιατί διάλεξες αυτό το stack;' — πώς απαντάς;",
+      answer: "Με trade-offs, όχι με hype: 'Next.js για SSR + routing out of the box, PostgreSQL γιατί τα δεδομένα είναι σχεσιακά, sessions αντί για JWT γιατί θέλω άμεσο revoke'. Η αιτιολόγηση μετράει περισσότερο από την επιλογή — δείχνει ότι αποφασίζεις, δεν αντιγράφεις."
+    },
+    {
+      question: "'Πώς θα το έκανες scale;' — η δομή της απάντησης;",
+      answer: "1) Μέτρα πρώτα (πού είναι το bottleneck;), 2) φθηνές νίκες: indexes, caching, CDN, 3) μετά: read replicas, queue για βαριά δουλειά, horizontal scaling των stateless servers. Το 'δεν θα το κάνω microservices από την αρχή' είναι ώριμη απάντηση."
+    },
+    {
+      question: "'Τι θα έκανες διαφορετικά;' — γιατί τη ρωτάνε;",
+      answer: "Ελέγχουν self-awareness. Καλή απάντηση: συγκεκριμένη τεχνική μετάνοια + τι έμαθες ('θα έγραφα tests από την αρχή — το retrofitting κόστισε διπλάσιο χρόνο'). Κακή: 'τίποτα' ή κάτι γενικόλογο."
+    },
+    {
+      question: "Ποια features αποδεικνύουν 'production-style' σκέψη;",
+      answer: "Auth με σωστά cookies, validation server-side, error/loading/empty states παντού, λίγα tests στα κρίσιμα, structured logs, deploy με env vars, και README με setup + αρχιτεκτονικό διάγραμμα. Όχι feature count — ποιότητα στα βασικά."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Χτίσε capstone σαν production slice"
+  scenario="Το capstone δεν είναι μεγάλο demo. Είναι μικρό product slice με auth, data, API, frontend states, tests και deploy."
+  outcomes={[
+    "Να ορίζεις MVP scope που μπορεί να ολοκληρωθεί.",
+    "Να συνδέεις frontend, backend, database και auth σε ένα flow.",
+    "Να παραδίδεις polished feature με README και verification."
+  ]}
+  steps={[
+    "Διάλεξε ένα core user flow και γράψε acceptance criteria.",
+    "Σχεδίασε schema, API contract και UI states πριν χτίσεις.",
+    "Υλοποίησε happy path και τουλάχιστον δύο failure states.",
+    "Πρόσθεσε tests, deploy και project README."
+  ]}
+  checkpoints={[
+    "Το MVP μπορεί να demo-αριστεί σε 3 λεπτά.",
+    "Δεν υπάρχουν μισοτελειωμένα features που μπερδεύουν τον χρήστη.",
+    "Το deploy και το local setup δουλεύουν."
+  ]}
+  mistakes={[
+    "Να μεγαλώνεις scope κάθε μέρα.",
+    "Να αφήνεις auth/errors/tests για το τέλος.",
+    "Να φτιάχνεις πολλά screens χωρίς ολοκληρωμένο flow."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν το capstone μοιάζει με μικρό πραγματικό product, όχι με συλλογή από ασύνδετα components."
+/>

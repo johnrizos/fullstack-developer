@@ -54,54 +54,160 @@ document.querySelector("#load").addEventListener("click", loadUser);`;
 
 # Fetch, Errors & API Handling
 
-Fullstack developers δουλεύουν συνέχεια με APIs. Σε συνεντεύξεις δεν αρκεί να πεις “χρησιμοποιώ fetch”. Πρέπει να ξέρεις τι γίνεται όταν:
+Το μισό frontend δουλειά είναι «φέρε δεδομένα, δείξε τα, και μην σπάσεις όταν κάτι πάει στραβά». Στις συνεντεύξεις, η ποιότητα ενός υποψηφίου φαίνεται ακριβώς εδώ: όλοι γράφουν το happy path — οι καλοί χειρίζονται **κάθε** πιθανή κατάσταση του request.
 
-- το request αργεί,
-- το API επιστρέφει `404` ή `500`,
-- το JSON parsing αποτυγχάνει,
-- πρέπει να δείξεις loading και error state.
-
-## fetch
-
-Το `fetch` στέλνει HTTP request και επιστρέφει Promise.
+## Η ανατομία ενός fetch
 
 ```js
-const response = await fetch("/api/users");
+const response = await fetch("/api/users/1");
+
+response.status;  // 200, 404, 500...
+response.ok;      // true ΜΟΝΟ για status 200-299
+response.headers; // Headers object
+
+const data = await response.json(); // ΚΙ ΑΥΤΟ είναι async — μπορεί να αποτύχει!
 ```
 
-## response.ok
+Δύο σημεία που οι περισσότεροι δεν προσέχουν:
 
-Σημαντικό: το `fetch` δεν κάνει throw αυτόματα για HTTP errors όπως `404` ή `500`. Πρέπει να ελέγξεις το `response.ok`.
+1. Το `response.json()` είναι **ξεχωριστό await** — διαβάζει και κάνει parse το body. Αν ο server γύρισε HTML error page αντί για JSON, **εδώ** σκάει το exception.
+2. Το body διαβάζεται **μία φορά** — δεύτερο `response.json()` πετάει error.
 
-```js
-if (!response.ok) {
-  throw new Error("Request failed");
-}
-```
+## Το trap που πέφτει σε κάθε συνέντευξη
 
-## try/catch
-
-Το `try/catch` πιάνει network errors, thrown errors και async failures μέσα σε `await`.
+Το `fetch` **ΔΕΝ κάνει reject για HTTP errors**. Ένα 404 ή 500 είναι «επιτυχία» από τη σκοπιά του fetch — το request ολοκληρώθηκε και ήρθε response:
 
 ```js
+// ❌ Αυτό ΔΕΝ πιάνει το 404 — το catch δεν θα τρέξει!
 try {
-  const data = await loadData();
+  const response = await fetch("/api/users/999"); // 404
+  const user = await response.json(); // ίσως σκάσει εδώ, ίσως όχι
 } catch (error) {
-  console.error(error);
+  // φτάνει εδώ ΜΟΝΟ για network errors
+}
+
+// ✅ Έλεγχος response.ok — μετατρέπεις HTTP errors σε exceptions
+const response = await fetch("/api/users/999");
+if (!response.ok) {
+  throw new Error(`HTTP ${response.status}`);
 }
 ```
 
-## Loading και error states
+Το fetch κάνει reject **μόνο** όταν το request δεν ολοκληρώθηκε καθόλου: χαμένο δίκτυο, DNS failure, CORS block, abort. Αυτή η διάκριση — **network error vs HTTP error** — είναι η απάντηση-κλειδί.
 
-Σε UI, σχεδόν πάντα χρειάζεσαι:
+<PredictOutput
+  title="fetch rejection drill"
+  code={`// Ο server επιστρέφει 500 Internal Server Error
+try {
+  const res = await fetch("/api/broken");
+  console.log("A:", res.ok, res.status);
+} catch (err) {
+  console.log("B: caught!");
+}`}
+  options={["A: false 500", "B: caught!", "A: true 500", "Τίποτα — κρασάρει"]}
+  correctOptionIndex={0}
+  answer="A: false 500"
+  explanation="Το 500 είναι ολοκληρωμένο HTTP response — το fetch resolve-άρει κανονικά. Το catch θα έτρεχε μόνο για network failure (offline, DNS, CORS). Γι' αυτό ο έλεγχος response.ok είναι ΔΙΚΗ σου ευθύνη."
+/>
 
-- loading state πριν έρθει απάντηση,
-- success state όταν έρθουν data,
-- error state όταν κάτι πάει λάθος.
+## Το πλήρες, σωστό pattern
+
+```js
+async function fetchJson(url, options = {}) {
+  let response;
+  try {
+    response = await fetch(url, options);
+  } catch (error) {
+    // Εδώ: ΜΟΝΟ network-level αποτυχίες
+    throw new Error("Network error — check your connection");
+  }
+
+  if (!response.ok) {
+    // Προσπάθησε να διαβάσεις το error body του API (αν υπάρχει)
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.error?.message ?? `HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+```
+
+Αυτό το helper κωδικοποιεί όλη τη γνώση: ξεχωριστός χειρισμός network vs HTTP errors, ασφαλές parsing του error body, καθαρό error μήνυμα προς τα πάνω.
+
+## POST, headers και body
+
+```js
+const response = await fetch("/api/tasks", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  },
+  body: JSON.stringify({ title: "Learn fetch" }),
+});
+```
+
+Τα τρία κλασικά λάθη: ξεχνάς το `JSON.stringify` (στέλνεις `[object Object]`), ξεχνάς το `Content-Type` (ο server δεν κάνει parse το body), και ξεχνάς ότι το `body` δεν επιτρέπεται σε GET.
+
+## Timeouts & ακύρωση: AbortController
+
+Το fetch **δεν έχει default timeout** — ένα κολλημένο request μπορεί να περιμένει για πάντα:
+
+```js
+const controller = new AbortController();
+const timeout = setTimeout(() => controller.abort(), 5000);
+
+try {
+  const response = await fetch("/api/slow", { signal: controller.signal });
+  // ...
+} catch (error) {
+  if (error.name === "AbortError") {
+    console.log("Request timed out or was cancelled");
+  }
+} finally {
+  clearTimeout(timeout);
+}
+```
+
+Το ίδιο `AbortController` λύνει και το **race condition του search**: ο χρήστης πληκτρολογεί «re», μετά «react» — αν το πρώτο (αργό) response έρθει μετά το δεύτερο, θα πατήσει τα σωστά αποτελέσματα. Ακυρώνεις το προηγούμενο request πριν στείλεις νέο.
+
+## Retries — με μέτρο και backoff
+
+```js
+async function fetchWithRetry(url, retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(url);
+      // Retry ΜΟΝΟ σε server errors (5xx) — όχι σε 4xx!
+      if (response.status >= 500 && attempt < retries) {
+        await new Promise((r) => setTimeout(r, 2 ** attempt * 300)); // 600ms, 1.2s...
+        continue;
+      }
+      return response;
+    } catch (error) {
+      if (attempt === retries) throw error; // network error: retry μέχρι το όριο
+      await new Promise((r) => setTimeout(r, 2 ** attempt * 300));
+    }
+  }
+}
+```
+
+Οι κανόνες που δείχνουν ωριμότητα: retry μόνο σε **5xx και network errors** (το 404 δεν θα γίνει 200 όσο και να ξαναρωτάς), **exponential backoff** (όχι σφυροκόπημα του ταλαιπωρημένου server), και retry μόνο σε **idempotent requests** — ένα POST πληρωμής θέλει idempotency key πριν τολμήσεις retry.
+
+## Τα UI states: η πλήρης λίστα
+
+Κάθε async οθόνη έχει **τουλάχιστον 4 καταστάσεις** — γράψε τις πριν γράψεις κώδικα:
+
+| State | Τι δείχνεις |
+|---|---|
+| `loading` | Spinner/skeleton — και disable το submit |
+| `success` με δεδομένα | Τα αποτελέσματα |
+| `success` αλλά **κενά** | «Δεν βρέθηκαν αποτελέσματα» — ΟΧΙ κενή οθόνη |
+| `error` | Καθαρό μήνυμα + κουμπί retry |
+
+Το **empty state** είναι αυτό που ξεχνούν όλοι — και αυτό που οι interviewers προσέχουν στα live coding.
 
 ## Mini project: robust API loader
-
-Το challenge φορτώνει user από demo API και χειρίζεται loading, success και error.
 
 <CodeChallenge
   title="API handling challenge"
@@ -149,24 +255,91 @@ try {
   ]}
 />
 
-## Interview answer template
+## Πώς απαντάς στη συνέντευξη
 
-Αν σε ρωτήσουν “how do you handle API errors in JavaScript?”, απάντησε:
+«How do you handle API errors in JavaScript?»
 
-> I use async/await with try/catch, check `response.ok` for non-2xx HTTP responses, parse JSON only after a successful response, and update UI states for loading, success, and error.
+> First, fetch only rejects on network-level failures — HTTP errors like 404 or 500 resolve normally, so I always check response.ok and throw with the status. I parse JSON defensively since an error page might not be valid JSON, I use AbortController for timeouts and to cancel stale requests, and I retry only server errors with exponential backoff — never 4xx. On the UI side, every async view handles four states: loading, success, empty, and error with a retry action.
 
 <Exercise
   question="Γιατί ελέγχουμε response.ok μετά από fetch;"
   options={[
-    "Γιατί το fetch δεν κάνει throw αυτόματα για HTTP errors όπως 404 ή 500.",
-    "Γιατί αλλιώς δεν δουλεύει το CSS.",
-    "Γιατί το response.ok αλλάζει το HTML tag."
+    "Γιατί το fetch δεν κάνει reject αυτόματα για HTTP errors όπως 404 ή 500 — μόνο για network failures.",
+    "Γιατί χωρίς αυτό το JSON parsing είναι αδύνατο.",
+    "Για να ενεργοποιηθεί το caching του browser."
   ]}
   correctOptionIndex={0}
-  explanation="Σωστά. Network failure μπορεί να κάνει reject, αλλά HTTP error response πρέπει συνήθως να το χειριστείς εσύ."
+  explanation="Σωστά. Ένα 500 είναι 'επιτυχημένο' fetch — ήρθε response. Το reject συμβαίνει μόνο όταν το request δεν ολοκληρώθηκε (offline, DNS, CORS, abort)."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="javascript-fetch-errors" />
-</div>
+<Exercise
+  question="Πότε ΔΕΝ πρέπει να κάνεις retry ένα αποτυχημένο request;"
+  options={[
+    "Όταν είναι 4xx (π.χ. 400/404) — το πρόβλημα είναι στο request, δεν θα διορθωθεί με επανάληψη.",
+    "Όταν είναι 503 — ο server είναι προσωρινά κάτω.",
+    "Ποτέ — πάντα κάνεις retry για σιγουριά."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Τα 4xx σημαίνουν λάθος στο request σου (validation, auth, ανύπαρκτο resource) — το retry απλά επαναλαμβάνει το λάθος. Retry έχει νόημα σε 5xx/network errors, με backoff, και σε idempotent requests."
+/>
+
+<Flashcards
+  title="Fetch & errors — interview drills"
+  cards={[
+    {
+      question: "Πότε κάνει reject το fetch;",
+      answer: "Μόνο όταν το request δεν ολοκληρώθηκε: χαμένη σύνδεση, DNS failure, CORS block, AbortError. Τα HTTP errors (404, 500) resolve-άρουν κανονικά με response.ok === false — ο έλεγχος είναι δική σου δουλειά."
+    },
+    {
+      question: "Τι είναι το CORS σε μία παράγραφο;",
+      answer: "Browser security μηχανισμός: ένα site δεν μπορεί να διαβάσει responses από άλλο origin εκτός αν ο ΣΕΡΒΕΡ το επιτρέψει με Access-Control-Allow-Origin headers. Είναι περιορισμός του browser (το curl δεν έχει CORS), τον διορθώνεις στο backend — όχι με 'hacks' στο frontend."
+    },
+    {
+      question: "Πώς βάζεις timeout σε fetch;",
+      answer: "Δεν έχει built-in. AbortController: φτιάχνεις controller, δίνεις signal στο fetch, και setTimeout που καλεί controller.abort(). Το fetch κάνει reject με AbortError. (Νεότερο shortcut: AbortSignal.timeout(ms).)"
+    },
+    {
+      question: "Πώς αποφεύγεις stale results σε live search;",
+      answer: "Race condition: αργό παλιό response φτάνει μετά το νέο. Λύσεις: AbortController που ακυρώνει το προηγούμενο request σε κάθε νέο input, ή σύγκριση sequence/query πριν εφαρμόσεις τα αποτελέσματα. Συν debounce για λιγότερα requests."
+    },
+    {
+      question: "Ποιοι είναι οι κανόνες σωστών retries;",
+      answer: "1) Μόνο 5xx και network errors — ποτέ 4xx. 2) Exponential backoff (+jitter) αντί για άμεσο επαναχτύπημα. 3) Πεπερασμένος αριθμός προσπαθειών. 4) Μόνο idempotent requests — POST πληρωμής θέλει idempotency key."
+    },
+    {
+      question: "Ποια τα 4 υποχρεωτικά UI states μιας async οθόνης;",
+      answer: "Loading (spinner/skeleton, disabled submit), success με δεδομένα, success με ΚΕΝΑ δεδομένα (empty state με μήνυμα), error (καθαρό μήνυμα + retry). Το empty state είναι αυτό που ξεχνιέται συχνότερα."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Χτίσε robust API search"
+  scenario="Φτιάξε search widget που καλεί API και χειρίζεται loading, empty results, failed response, network error και γρήγορη πληκτρολόγηση."
+  outcomes={[
+    "Να ξεχωρίζεις network error από HTTP error.",
+    "Να μη δείχνεις stale results όταν αλλάζει query.",
+    "Να γράφεις predictable loading/error UI."
+  ]}
+  steps={[
+    "Πρόσθεσε state για query, loading, error και results.",
+    "Κάνε fetch μόνο όταν υπάρχει query με νόημα (debounce).",
+    "Αν response.ok είναι false, δείξε error με το status.",
+    "Πρόσθεσε empty state όταν το API επιστρέφει άδεια λίστα.",
+    "Πρόσθεσε AbortController: νέο input ακυρώνει το προηγούμενο request.",
+    "Δοκίμασε offline mode στα DevTools και δες τι βλέπει ο χρήστης."
+  ]}
+  checkpoints={[
+    "Το loading εμφανίζεται και κρύβεται σωστά.",
+    "Το error καθαρίζει όταν ξεκινά νέο request.",
+    "Γρήγορη πληκτρολόγηση δεν αφήνει stale results.",
+    "Το UI δεν σπάει αν το API γυρίσει απρόσμενο shape."
+  ]}
+  mistakes={[
+    "Να πιστεύεις ότι fetch κάνει throw σε 404.",
+    "Να μη βάζεις try/catch γύρω από await fetch.",
+    "Να κάνεις retry σε 400 Bad Request.",
+    "Να αφήνεις παλιά results κάτω από νέο error."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να περιγράψεις κάθε πιθανή κατάσταση του request πριν γράψεις το component."
+/>

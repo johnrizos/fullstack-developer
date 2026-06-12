@@ -97,6 +97,34 @@ localStorage.removeItem("note");
 
 Μην βάζεις secrets, passwords ή sensitive tokens στο localStorage. Είναι αποθήκευση στον browser, όχι secure vault.
 
+### Αποθήκευση objects: JSON.stringify / JSON.parse
+
+Το localStorage δέχεται **μόνο strings**. Για arrays/objects, τα μετατρέπεις:
+
+```js
+const notes = [{ text: "Hello", createdAt: Date.now() }];
+
+localStorage.setItem("notes", JSON.stringify(notes)); // object → string
+
+const saved = JSON.parse(localStorage.getItem("notes") ?? "[]"); // string → object
+```
+
+Δύο λεπτομέρειες που γλιτώνουν bugs: το `getItem` επιστρέφει `null` αν δεν υπάρχει το key (γι' αυτό το `?? "[]"`), και το `JSON.parse` πετάει exception σε χαλασμένα δεδομένα — σε πραγματικό app το τυλίγεις σε try/catch.
+
+## Event delegation: ένας listener για πολλά στοιχεία
+
+Όταν έχεις λίστα με κουμπιά (π.χ. delete ανά note), μη βάζεις listener σε καθένα — βάλε **έναν στον γονέα** και δες ποιος πατήθηκε:
+
+```js
+list.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-delete-id]");
+  if (!button) return;
+  deleteNote(button.dataset.deleteId);
+});
+```
+
+Δουλεύει επειδή τα events κάνουν **bubbling** προς τα πάνω — και λειτουργεί αυτόματα και για στοιχεία που θα προστεθούν αργότερα. Κλασική ερώτηση συνέντευξης για DOM.
+
 ## Mini checklist
 
 - Το form έχει submit listener.
@@ -135,7 +163,51 @@ localStorage.removeItem("note");
   explanation="Σωστά. Έτσι ελέγχουμε εμείς τι θα συμβεί όταν γίνει submit."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="javascript-dom-forms" />
-</div>
+<Flashcards
+  title="DOM & Storage — γρήγορο repaso"
+  cards={[
+    {
+      question: "textContent vs innerHTML;",
+      answer: "textContent: βάζει σκέτο κείμενο — ό,τι κι αν περιέχει, ΔΕΝ εκτελείται ως HTML (ασφαλές για user input). innerHTML: κάνει parse ως HTML — χρήσιμο για δικό σου markup, επικίνδυνο (XSS) για κείμενο χρηστών."
+    },
+    {
+      question: "Τι είναι το event bubbling;",
+      answer: "Ένα event (π.χ. click) ξεκινά από το στοιχείο-στόχο και 'ανεβαίνει' στους γονείς του μέχρι το document. Πάνω σε αυτό βασίζεται το event delegation: ένας listener στον γονέα πιάνει clicks από όλα τα παιδιά — και τα μελλοντικά."
+    },
+    {
+      question: "localStorage vs sessionStorage vs cookies;",
+      answer: "localStorage: επιβιώνει από refresh/κλείσιμο, ~5-10MB, μόνο client. sessionStorage: ίδιο API αλλά χάνεται όταν κλείσει το tab. Cookies: μικρά (4KB), στέλνονται ΑΥΤΟΜΑΤΑ στον server με κάθε request — γι' αυτό εκεί ζουν τα sessions."
+    },
+    {
+      question: "Γιατί preventDefault στο form submit;",
+      answer: "Το default συμπεριφορά του submit είναι full page reload (παραδοσιακή υποβολή στο action URL). Με preventDefault αναλαμβάνει το JavaScript: validation, fetch, ενημέρωση DOM — χωρίς να χαθεί το state της σελίδας."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Φτιάξε notes form με persistence"
+  scenario="Χτίσε φόρμα σημειώσεων που διαβάζει input, κάνει validation, αποθηκεύει σε localStorage και ξαναφορτώνει τα notes στο refresh."
+  outcomes={[
+    "Να πιάνεις submit event χωρίς page reload.",
+    "Να διαβάζεις και να καθαρίζεις input values.",
+    "Να συγχρονίζεις state, DOM και localStorage."
+  ]}
+  steps={[
+    "Πιάσε το submit και κάνε preventDefault.",
+    "Αν το input είναι άδειο, δείξε error.",
+    "Αποθήκευσε note σε array και κάνε render τη λίστα.",
+    "Γράψε save/load functions για localStorage."
+  ]}
+  checkpoints={[
+    "Το refresh δεν χάνει τα notes.",
+    "Το empty submit δεν προσθέτει άδειο item.",
+    "Η render function μπορεί να ξανατρέξει χωρίς duplicated DOM."
+  ]}
+  mistakes={[
+    "Να γράφεις στο DOM αλλά όχι στο state.",
+    "Να ξεχνάς JSON.stringify/JSON.parse.",
+    "Να αφήνεις το form να κάνει full page reload."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να περιγράψεις τη διαδρομή data: input -> state -> localStorage -> render."
+/>

@@ -95,6 +95,38 @@ async function fetchWithRetry(url: string, attempts = 3) {
 }
 ```
 
+## Webhooks: όταν το API καλεί ΕΣΕΝΑ
+
+Στα σοβαρά integrations (Stripe, GitHub, Twilio), δεν ρωτάς εσύ συνέχεια «έγινε η πληρωμή;» — ο provider σου στέλνει **webhook**: ένα POST στο δικό σου endpoint όταν συμβεί το event.
+
+```ts
+// app/api/webhooks/stripe/route.ts
+export async function POST(request: Request) {
+  const payload = await request.text();
+  const signature = request.headers.get("stripe-signature");
+
+  // 1. ΕΠΑΛΗΘΕΥΣΗ ΥΠΟΓΡΑΦΗΣ — αλλιώς οποιοσδήποτε POST-άρει "πληρωμές"
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(payload, signature, process.env.WEBHOOK_SECRET);
+  } catch {
+    return Response.json({ error: "Invalid signature" }, { status: 400 });
+  }
+
+  // 2. ΙΔΕΜΠΟΤΕΝΤΟ ΧΕΙΡΙΣΜΟ — τα webhooks ξανάρχονται (retries)!
+  const alreadyProcessed = await db.webhookEvent.findUnique({ where: { id: event.id } });
+  if (alreadyProcessed) return Response.json({ received: true });
+
+  // 3. Γρήγορο ACK — βαριά δουλειά σε queue, όχι στο handler
+  await db.webhookEvent.create({ data: { id: event.id } });
+  await queue.add("process-payment", event);
+
+  return Response.json({ received: true }); // 200 γρήγορα, αλλιώς ο provider κάνει retry
+}
+```
+
+Τα τρία σημεία που εξετάζονται: **signature verification** (το endpoint είναι δημόσιο — χωρίς επαλήθευση, ο καθένας «πληρώνει»), **idempotency** (οι providers κάνουν retry — το ίδιο event θα έρθει ξανά), και **γρήγορο acknowledgment** (αργό handler → timeout → περισσότερα retries → χιονοστιβάδα).
+
 ## Mini project: external API dashboard
 
 Χτίσε ένα μικρό dashboard που καλεί τρίτο API μέσω server endpoint:
@@ -105,9 +137,39 @@ async function fetchWithRetry(url: string, attempts = 3) {
 4. Υπάρχει retry για προσωρινά failures.
 5. Τα logs δείχνουν status code και provider name, όχι secrets.
 
-## Interview answer template
+## Πώς απαντάς στη συνέντευξη
 
-> For third-party API integrations, I keep secrets server-side, use typed response handling, check status codes, handle rate limits and retries carefully, and add logging so failures can be diagnosed.
+> For third-party integrations, the secret never reaches the browser — my frontend calls my own server endpoint, which holds the API key and talks to the provider. I add timeouts, retry only transient failures like 429 and 5xx with backoff, and respect rate limits with caching and debouncing. For incoming webhooks I verify signatures, handle events idempotently because providers retry, and acknowledge fast by pushing heavy work to a queue. And I log status codes and provider names — never payloads with secrets.
+
+<Flashcards
+  title="Integrations — interview drills"
+  cards={[
+    {
+      question: "Γιατί το frontend δεν καλεί το third-party API απευθείας;",
+      answer: "Το secret θα έμπαινε στο bundle — ορατό σε οποιονδήποτε ανοίξει DevTools. Pattern: frontend → δικό σου server endpoint → provider. Bonus: κρύβεις τον provider, κάνεις caching, ενιαίο error handling, και αλλάζεις provider χωρίς να αγγίξεις το frontend."
+    },
+    {
+      question: "Σε ποια status codes κάνεις retry;",
+      answer: "429 (με σεβασμό στο Retry-After header), 500/502/503/504 — προσωρινά προβλήματα. ΟΧΙ σε 400/401/403/404/422 — το πρόβλημα είναι στο request και η επανάληψη απλά το ξαναστέλνει. Πάντα με exponential backoff και όριο προσπαθειών."
+    },
+    {
+      question: "Webhook vs polling;",
+      answer: "Polling: ρωτάς εσύ περιοδικά — απλό αλλά αργό και σπάταλο. Webhook: ο provider κάνει POST σε δικό σου endpoint όταν συμβεί το event — άμεσο και αποδοτικό, αλλά θέλει δημόσιο endpoint, signature verification και idempotent χειρισμό."
+    },
+    {
+      question: "Γιατί τα webhook handlers πρέπει να είναι idempotent;",
+      answer: "Οι providers κάνουν retry αν δεν πάρουν 2xx γρήγορα — το ίδιο event ΘΑ έρθει πολλές φορές. Λύση: αποθηκεύεις τα processed event ids και αγνοείς τα διπλά. Αλλιώς: διπλές χρεώσεις, διπλά emails."
+    },
+    {
+      question: "Τι κάνεις όταν ο provider πέσει εντελώς;",
+      answer: "Σχεδιασμένο degradation: timeout ώστε να μην κρεμάνε τα δικά σου requests, cached/stale δεδομένα όπου γίνεται, καθαρό fallback UI, και circuit breaker ώστε να μη σφυροκοπάς τον πεσμένο provider. Το δικό σου app πρέπει να αποτυγχάνει ελεγχόμενα — όχι μαζί του."
+    },
+    {
+      question: "Τι είναι το debouncing και πού βοηθά σε integrations;",
+      answer: "Καθυστερείς την κλήση μέχρι ο χρήστης να σταματήσει (π.χ. 400ms μετά το τελευταίο keystroke) — από 10 requests ανά λέξη σε 1. Βασικό για search inputs που χτυπούν rate-limited APIs. (Throttle: το αδελφάκι του — max μία κλήση ανά διάστημα.)"
+    }
+  ]}
+/>
 
 <Exercise
   question="Πού πρέπει να κρατάμε API secrets;"
@@ -131,7 +193,29 @@ async function fetchWithRetry(url: string, attempts = 3) {
   explanation="Σωστά. Τα APIs συχνά περιορίζουν πόσο συχνά μπορείς να τα καλέσεις."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="api-integrations" />
-</div>
+<TrainingLab
+  title="Κάνε integration που αντέχει αποτυχίες"
+  scenario="Σύνδεσε external weather/payment-like API και σχεδίασε τι γίνεται με auth headers, rate limits, retries, timeouts και fallback UI."
+  outcomes={[
+    "Να κρατάς secrets server-side.",
+    "Να χειρίζεσαι failed third-party responses.",
+    "Να σχεδιάζεις retry strategy χωρίς να κάνεις spam το API."
+  ]}
+  steps={[
+    "Γράψε server-side wrapper function για το third-party API.",
+    "Πρόσθεσε timeout και error mapping.",
+    "Χώρισε user-facing message από internal log.",
+    "Πρόσθεσε simple cache ή backoff για rate limit."
+  ]}
+  checkpoints={[
+    "Το API key δεν εμφανίζεται στο browser.",
+    "429 και 500 έχουν διαφορετική συμπεριφορά.",
+    "Το UI έχει loading, error και stale/fallback state."
+  ]}
+  mistakes={[
+    "Να καλείς third-party API απευθείας από frontend με secret.",
+    "Να κάνεις retry σε κάθε error χωρίς όριο.",
+    "Να δείχνεις raw provider error στον χρήστη."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να σβήσεις το third-party API προσωρινά και το app να αποτυγχάνει ελεγχόμενα."
+/>

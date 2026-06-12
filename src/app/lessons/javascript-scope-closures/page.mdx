@@ -53,52 +53,124 @@ document.querySelector("#decrease").addEventListener("click", function () {
 
 # Scope, Hoisting & Closures
 
-Αν θέλεις να απαντάς καλά σε JavaScript συνέντευξη, πρέπει να καταλαβαίνεις πώς η γλώσσα “βλέπει” μεταβλητές.
+Αυτό είναι ίσως το πιο συχνό θέμα σε JavaScript συνέντευξη. Δεν αρκεί να ξέρεις τον ορισμό του closure — πρέπει να μπορείς να **προβλέψεις τι θα τυπώσει ένα snippet** χωρίς να το τρέξεις. Σε αυτό το μάθημα θα χτίσουμε ακριβώς αυτή την ικανότητα.
 
-## Scope
+## Τα τρία είδη scope
 
-**Scope** είναι το σημείο του κώδικα όπου μια μεταβλητή είναι διαθέσιμη.
+**Scope** είναι η περιοχή του κώδικα όπου μια μεταβλητή είναι ορατή. Η JavaScript έχει τρία βασικά είδη:
 
 ```js
-function greet() {
-  const message = "Hello";
-  console.log(message);
+const planet = "Earth"; // 1. Global scope: ορατό παντού
+
+function describe() {
+  const continent = "Europe"; // 2. Function scope: ορατό μόνο μέσα στη function
+
+  if (true) {
+    const city = "Athens"; // 3. Block scope: ορατό μόνο μέσα στο { } block
+    console.log(planet, continent, city); // ✅ όλα ορατά εδώ
+  }
+
+  console.log(city); // ❌ ReferenceError: city is not defined
 }
 ```
 
-Το `message` υπάρχει μέσα στη function. Έξω από τη function δεν είναι διαθέσιμο.
+Ο κανόνας: **ο κώδικας βλέπει προς τα έξω, ποτέ προς τα μέσα**. Ένα inner block βλέπει τις μεταβλητές των outer scopes, αλλά το outer scope δεν βλέπει μέσα στο block.
 
-## Lexical scope
+## var vs let vs const — γιατί έχει σημασία
 
-Η JavaScript αποφασίζει από πού μπορείς να διαβάσεις μια μεταβλητή με βάση το πού γράφτηκε ο κώδικας, όχι από το πού καλείται η function.
+Αυτό δεν είναι θέμα στυλ. Έχουν **διαφορετικό scope**:
+
+| | Scope | Re-assign | Hoisting συμπεριφορά |
+|---|---|---|---|
+| `var` | Function | ✅ | Initialized ως `undefined` |
+| `let` | Block | ✅ | Hoisted αλλά σε TDZ |
+| `const` | Block | ❌ | Hoisted αλλά σε TDZ |
+
+```js
+if (true) {
+  var a = 1;
+  let b = 2;
+}
+
+console.log(a); // 1 — το var "δραπέτευσε" από το block!
+console.log(b); // ReferenceError — το let έμεινε μέσα
+```
+
+Το `var` αγνοεί τα blocks (`if`, `for`, `while`) και κάνει scope μόνο σε functions. Αυτό προκαλεί τα περισσότερα legacy bugs — γι' αυτό σε σύγχρονο κώδικα χρησιμοποιούμε `const` πρώτα, `let` όταν χρειάζεται re-assignment, και `var` ποτέ.
+
+> Σημείωση για το `const`: σημαίνει ότι το **binding** δεν αλλάζει, όχι ότι η τιμή είναι αμετάβλητη. Ένα `const user = { name: "Ada" }` επιτρέπει `user.name = "Grace"`, αλλά όχι `user = otherObject`.
+
+## Hoisting — τι συμβαίνει πραγματικά
+
+Πριν εκτελεστεί ο κώδικας, η JavaScript κάνει ένα «πρώτο πέρασμα» και καταγράφει όλα τα declarations. Αυτό λέγεται **hoisting**, αλλά κάθε τύπος declaration συμπεριφέρεται διαφορετικά:
+
+```js
+sayHi(); // ✅ "Hi!" — function declarations hoist-άρονται ολόκληρες
+
+console.log(x); // undefined — το var hoist-άρεται, αλλά ΧΩΡΙΣ την τιμή του
+console.log(y); // ❌ ReferenceError — το let είναι σε TDZ
+
+function sayHi() {
+  console.log("Hi!");
+}
+
+var x = 5;
+let y = 10;
+```
+
+**TDZ (Temporal Dead Zone)**: η περιοχή από την αρχή του scope μέχρι τη γραμμή του `let`/`const` declaration. Η μεταβλητή «υπάρχει» αλλά κάθε πρόσβαση πετάει `ReferenceError`. Αυτή η λέξη εντυπωσιάζει σε συνέντευξη — χρησιμοποίησέ τη.
+
+Προσοχή και στα **function expressions** — δεν hoist-άρονται όπως τα declarations:
+
+```js
+greet(); // ❌ TypeError: greet is not a function
+
+var greet = function () {
+  console.log("hello");
+};
+// Το var greet hoist-άρεται ως undefined,
+// οπότε καλείς undefined() → TypeError
+```
+
+<PredictOutput
+  title="Hoisting drill"
+  code={`console.log(score);
+var score = 100;
+console.log(score);`}
+  options={["100 και 100", "undefined και 100", "ReferenceError", "undefined και undefined"]}
+  correctOptionIndex={1}
+  answer="undefined, μετά 100"
+  explanation="Το var score hoist-άρεται στην κορυφή με τιμή undefined. Η ανάθεση =100 γίνεται στη θέση που γράφτηκε. Αν ήταν let score, η πρώτη γραμμή θα πετούσε ReferenceError λόγω TDZ."
+/>
+
+## Lexical scope — το θεμέλιο των closures
+
+Η JavaScript αποφασίζει τι βλέπει μια function από το **πού γράφτηκε**, όχι από το πού καλείται:
 
 ```js
 const name = "Ada";
 
-function sayName() {
-  console.log(name);
+function whoAmI() {
+  console.log(name); // κοιτάει στο scope όπου ΓΡΑΦΤΗΚΕ
 }
+
+function caller() {
+  const name = "Grace";
+  whoAmI(); // "Ada" — όχι "Grace"!
+}
+
+caller();
 ```
 
-Η `sayName` μπορεί να δει το `name`, επειδή γράφτηκε σε scope που έχει πρόσβαση στο outer scope.
-
-## Hoisting
-
-**Hoisting** σημαίνει ότι declarations επεξεργάζονται πριν τρέξει ο κώδικας. Όμως δεν συμπεριφέρονται όλα ίδια.
-
-- Function declarations μπορούν συνήθως να κληθούν πριν τη γραμμή που γράφτηκαν.
-- `let` και `const` δεν μπορείς να τα χρησιμοποιήσεις πριν την αρχικοποίησή τους.
-- `var` hoist-άρεται, αλλά αυτό συχνά οδηγεί σε μπερδέματα.
-
-Για σύγχρονο κώδικα, προτίμησε `const` και `let`.
+Η `whoAmI` γράφτηκε στο global scope, άρα βλέπει το global `name`. Το ότι κλήθηκε μέσα από την `caller` δεν αλλάζει τίποτα. Αυτό λέγεται **lexical (static) scoping**.
 
 ## Closures
 
-**Closure** είναι όταν μια inner function θυμάται μεταβλητές από το outer scope, ακόμα και αφού το outer function έχει τελειώσει.
+**Closure** είναι όταν μια function κρατάει πρόσβαση στις μεταβλητές του lexical scope της, ακόμα κι αφού το outer function έχει ολοκληρωθεί:
 
 ```js
 function createCounter() {
-  let count = 0;
+  let count = 0; // "private" μεταβλητή
 
   return function increase() {
     count = count + 1;
@@ -106,16 +178,130 @@ function createCounter() {
   };
 }
 
-const increase = createCounter();
-increase(); // 1
+const increase = createCounter(); // η createCounter ΤΕΛΕΙΩΣΕ εδώ
+increase(); // 1 — κι όμως το count ζει ακόμα
 increase(); // 2
 ```
 
-Η inner function θυμάται το `count`. Αυτό είναι closure.
+Όταν η `createCounter` επιστρέφει, το `count` **δεν** καταστρέφεται — η `increase` το «κουβαλάει» μαζί της. Κάθε κλήση της `createCounter` φτιάχνει **νέο, ανεξάρτητο** closure:
+
+```js
+const counterA = createCounter();
+const counterB = createCounter();
+
+counterA(); // 1
+counterA(); // 2
+counterB(); // 1 — δικό του count, δεν επηρεάζεται από το A
+```
+
+### Πού χρησιμοποιούνται closures στην πράξη
+
+Δεν είναι ακαδημαϊκό θέμα — τα χρησιμοποιείς καθημερινά:
+
+**1. Data privacy** — μεταβλητές που δεν μπορεί να πειράξει κανείς απ' έξω:
+
+```js
+function createWallet(initialBalance) {
+  let balance = initialBalance;
+
+  return {
+    deposit(amount) {
+      if (amount > 0) balance += amount;
+      return balance;
+    },
+    getBalance() {
+      return balance;
+    },
+  };
+}
+
+const wallet = createWallet(100);
+wallet.balance; // undefined — δεν υπάρχει τρόπος άμεσης πρόσβασης
+wallet.deposit(50); // 150 — μόνο μέσα από το API που όρισες
+```
+
+**2. Memoization** — cache ακριβών υπολογισμών:
+
+```js
+function memoize(fn) {
+  const cache = new Map(); // ζει μέσα στο closure
+
+  return function (arg) {
+    if (cache.has(arg)) return cache.get(arg);
+    const result = fn(arg);
+    cache.set(arg, result);
+    return result;
+  };
+}
+
+const slowSquare = (n) => {
+  console.log("computing...");
+  return n * n;
+};
+
+const fastSquare = memoize(slowSquare);
+fastSquare(4); // "computing..." → 16
+fastSquare(4); // 16 (από το cache, χωρίς log)
+```
+
+**3. Event handlers & callbacks** — κάθε handler θυμάται τα δικά του δεδομένα:
+
+```js
+function setupButton(label) {
+  document.querySelector(`#${label}`).addEventListener("click", () => {
+    console.log(`Clicked: ${label}`); // closure πάνω στο label
+  });
+}
+```
+
+## Το διασημότερο interview trap: var μέσα σε loop
+
+Αυτό το snippet έχει πέσει σε αμέτρητες συνεντεύξεις:
+
+<PredictOutput
+  title="Το κλασικό loop trap"
+  code={`for (var i = 0; i < 3; i++) {
+  setTimeout(() => console.log(i), 100);
+}`}
+  options={["0 1 2", "3 3 3", "0 0 0", "undefined undefined undefined"]}
+  correctOptionIndex={1}
+  answer="3 3 3"
+  explanation="Το var είναι function-scoped, άρα υπάρχει ΕΝΑ κοινό i για όλο το loop. Όταν τρέξουν τα callbacks (μετά από 100ms), το loop έχει τελειώσει και το i είναι 3. Και τα τρία closures δείχνουν στην ΙΔΙΑ μεταβλητή."
+/>
+
+Η λύση; Άλλαξε το `var` σε `let`:
+
+```js
+for (let i = 0; i < 3; i++) {
+  setTimeout(() => console.log(i), 100); // 0 1 2 ✅
+}
+```
+
+Με `let`, κάθε iteration του loop παίρνει **δικό του φρέσκο `i`**. Κάθε closure κλείνει πάνω σε διαφορετική μεταβλητή. Αυτή η εξήγηση — «το var μοιράζεται, το let δημιουργεί νέο binding ανά iteration» — είναι ακριβώς αυτό που θέλει να ακούσει ο interviewer.
+
+<PredictOutput
+  title="Closure state drill"
+  code={`function makeAdder(x) {
+  return function (y) {
+    return x + y;
+  };
+}
+
+const add5 = makeAdder(5);
+const add10 = makeAdder(10);
+
+console.log(add5(2));
+console.log(add10(2));
+console.log(add5(add10(0)));`}
+  options={["7, 12, 15", "7, 12, 10", "7, 12, 17", "12, 7, 15"]}
+  correctOptionIndex={0}
+  answer="7, 12, 15"
+  explanation="Η add5 κλείνει πάνω στο x=5, η add10 πάνω στο x=10 — δύο ανεξάρτητα closures. add5(2)=7, add10(2)=12, και add5(add10(0)) = add5(10) = 15."
+/>
 
 ## Mini project: counter factory
 
-Το challenge δείχνει closure σε πραγματική χρήση. Η `createCounter` κρατά το `count` private. Ο υπόλοιπος κώδικας μπορεί να το αλλάξει μόνο μέσα από `increase` και `decrease`.
+Ώρα να το δεις live. Η `createCounter` κρατά το `count` private — ο υπόλοιπος κώδικας το αλλάζει μόνο μέσα από `increase` και `decrease`:
 
 <CodeChallenge
   title="Closure counter challenge"
@@ -163,26 +349,90 @@ increase(); // 2
   ]}
 />
 
-## Interview answer template
+## Πώς απαντάς στη συνέντευξη
 
-Αν σε ρωτήσουν “what is a closure?”, απάντησε κάπως έτσι:
+Αν σε ρωτήσουν «what is a closure?», η πλήρης απάντηση έχει τρία μέρη — ορισμό, μηχανισμό, παράδειγμα χρήσης:
 
-> A closure is when a function keeps access to variables from its lexical scope, even after the outer function has finished executing.
-
-Στα ελληνικά: μια function “θυμάται” μεταβλητές από το scope όπου δημιουργήθηκε.
+> A closure is a function that retains access to variables from its lexical scope, even after the outer function has finished executing. JavaScript uses lexical scoping, so what a function can see is determined by where it was defined. Closures are useful for data privacy, memoization, and callbacks — for example, a counter factory where the count variable is only accessible through the returned methods.
 
 <Exercise
   question="Τι είναι closure;"
   options={[
     "Όταν μια function θυμάται μεταβλητές από το outer lexical scope της.",
-    "Όταν ένα CSS selector αλλάζει χρώμα.",
-    "Όταν ένα API επιστρέφει JSON."
+    "Όταν μια function καλείται μέσα σε άλλη function.",
+    "Όταν μια μεταβλητή δηλώνεται με const και δεν αλλάζει."
   ]}
   correctOptionIndex={0}
-  explanation="Σωστά. Closure σημαίνει πρόσβαση σε outer scope μεταβλητές ακόμα και μετά την ολοκλήρωση της outer function."
+  explanation="Σωστά. Το κλειδί είναι η διατήρηση πρόσβασης στο lexical scope ακόμα και μετά την ολοκλήρωση της outer function. Μια απλή nested function ΔΕΝ είναι από μόνη της closure-flex — το ενδιαφέρον είναι ότι το state επιβιώνει."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="javascript-scope-closures" />
-</div>
+<Exercise
+  question="Γιατί το `for (var i...)` με setTimeout τυπώνει 3 3 3 αντί για 0 1 2;"
+  options={[
+    "Επειδή το setTimeout τρέχει συγχρονισμένα.",
+    "Επειδή το var είναι function-scoped και όλα τα callbacks μοιράζονται το ίδιο i.",
+    "Επειδή τα arrow functions δεν έχουν πρόσβαση στο i."
+  ]}
+  correctOptionIndex={1}
+  explanation="Ακριβώς. Με var υπάρχει ένα κοινό i. Όταν εκτελεστούν τα callbacks, το loop έχει ήδη τελειώσει με i=3. Το let λύνει το πρόβλημα δημιουργώντας νέο binding ανά iteration."
+/>
+
+<Flashcards
+  title="Scope & Closures — interview drills"
+  cards={[
+    {
+      question: "What is the Temporal Dead Zone (TDZ)?",
+      answer: "Η περιοχή από την αρχή του scope μέχρι το let/const declaration, όπου η μεταβλητή υπάρχει αλλά κάθε πρόσβαση πετάει ReferenceError. Αντίθετα, το var διαβάζεται ως undefined."
+    },
+    {
+      question: "Ποια η διαφορά lexical και dynamic scoping;",
+      answer: "Lexical: το τι βλέπει μια function καθορίζεται από το πού ΓΡΑΦΤΗΚΕ. Dynamic: από το πού ΚΑΛΕΙΤΑΙ. Η JavaScript είναι lexical — με μόνη 'δυναμική' εξαίρεση τη συμπεριφορά του this."
+    },
+    {
+      question: "Μπορεί ένα closure να προκαλέσει memory leak;",
+      answer: "Ναι. Όσο ζει το closure, ζουν και οι μεταβλητές που κρατάει. Π.χ. event listener που κλείνει πάνω σε μεγάλο object και δεν γίνεται ποτέ removeEventListener — το object δεν θα γίνει garbage collected."
+    },
+    {
+      question: "var vs let σε ένα for loop με async callbacks;",
+      answer: "var: ένα κοινό binding για όλο το loop — όλα τα callbacks βλέπουν την τελική τιμή. let: νέο binding ανά iteration — κάθε callback βλέπει τη δική του τιμή."
+    },
+    {
+      question: "Δώσε δύο πρακτικές χρήσεις των closures.",
+      answer: "1) Data privacy / module pattern: private state προσβάσιμο μόνο από συγκεκριμένα methods. 2) Memoization: cache αποτελεσμάτων μέσα στο closure. Επίσης: event handlers, currying, debounce/throttle."
+    },
+    {
+      question: "Τι τυπώνει: console.log(x); let x = 1;",
+      answer: "ReferenceError: Cannot access 'x' before initialization — το x είναι hoisted αλλά βρίσκεται στο TDZ μέχρι τη γραμμή του declaration."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Φτιάξε counter factory με closure"
+  scenario="Γράψε function που δημιουργεί ανεξάρτητους counters. Ο στόχος είναι να δεις πώς μια inner function θυμάται μεταβλητές από το outer scope."
+  outcomes={[
+    "Να εξηγείς lexical scope με δικά σου λόγια.",
+    "Να προβλέπεις τι κρατάει ένα closure στη μνήμη.",
+    "Να αποφεύγεις scope bugs σε loops και callbacks."
+  ]}
+  steps={[
+    "Γράψε createCounter(initialValue).",
+    "Επίστρεψε object με increment, decrement και getValue.",
+    "Φτιάξε δύο counters και απόδειξε ότι δεν μοιράζονται state.",
+    "Γράψε με σχόλια ποια variables είναι accessible σε κάθε function.",
+    "Bonus: γράψε δικό σου memoize(fn) και δοκίμασέ το σε μια αργή function."
+  ]}
+  checkpoints={[
+    "Δύο counters έχουν ανεξάρτητες τιμές.",
+    "Δεν υπάρχει global variable για το count.",
+    "Μπορείς να εξηγήσεις γιατί το inner function βλέπει το outer count.",
+    "Μπορείς να εξηγήσεις το var/let loop trap σε 30 δευτερόλεπτα."
+  ]}
+  mistakes={[
+    "Να λες ότι closure είναι απλά nested function.",
+    "Να χρησιμοποιείς global state επειδή φαίνεται ευκολότερο.",
+    "Να μη δοκιμάζεις δύο instances του ίδιου factory.",
+    "Να μπερδεύεις το hoisting του var (undefined) με του let (TDZ error)."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να προβλέψεις output από closure snippets χωρίς να τα τρέξεις — και να εξηγήσεις ΓΙΑΤΙ σε 2-3 προτάσεις."
+/>

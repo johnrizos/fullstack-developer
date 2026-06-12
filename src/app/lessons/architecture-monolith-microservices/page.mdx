@@ -1,0 +1,386 @@
+# Monolith, Microservices & Hybrid Architecture
+
+Architecture δεν σημαίνει να διαλέγεις τη πιο complicated λύση. Σημαίνει να ξέρεις πώς χωρίζεται ένα σύστημα ώστε να χτίζεται, να αλλάζει και να γίνεται deploy χωρίς χάος.
+
+## Τι πρέπει να μπορείς να κάνεις στο τέλος
+
+Στο τέλος πρέπει να μπορείς να:
+
+- εξηγήσεις τη διαφορά monolith, modular monolith και microservices,
+- σχεδιάσεις domain boundaries,
+- αποφασίσεις τι πρέπει να μείνει στο main app και τι μπορεί να γίνει service,
+- αναγνωρίσεις το κόστος των microservices,
+- σχεδιάσεις hybrid architecture για πραγματικό product.
+
+Το μάθημα δεν είναι για buzzwords. Είναι για αποφάσεις.
+
+## Monolith
+
+Monolith είναι μια εφαρμογή όπου το frontend/backend flow, τα modules και η βασική business logic ζουν στο ίδιο deployable app.
+
+Καλό monolith δεν σημαίνει μπερδεμένος κώδικας. Ένα σωστό monolith μπορεί να είναι καθαρά οργανωμένο:
+
+- `auth`,
+- `users`,
+- `billing`,
+- `dashboard`,
+- `admin`,
+- `reports`.
+
+Το πλεονέκτημα είναι η απλότητα. Έχεις λιγότερα repos, λιγότερα deployments, πιο απλό debugging και πιο εύκολη αρχή.
+
+### Άσκηση 1: βρες τα domains
+
+Έχεις training platform με:
+
+```txt
+users
+courses
+lessons
+progress
+payments
+notifications
+AI feedback
+admin reports
+```
+
+Χώρισέ τα σε domains. Μην σκέφτεσαι ακόμα services.
+
+Καλή πρώτη ομαδοποίηση:
+
+```txt
+Identity: users, auth, roles
+Learning: courses, lessons, progress
+Billing: payments, invoices
+Communication: notifications
+Intelligence: AI feedback
+Operations: admin reports
+```
+
+Αυτό είναι το πιο σημαντικό βήμα πριν μιλήσεις για microservices.
+
+## Modular monolith
+
+Modular monolith είναι monolith με καθαρά boundaries. Κάθε domain έχει δικά του files, services και contracts.
+
+```txt
+src/
+  modules/
+    auth/
+    users/
+    billing/
+    notifications/
+```
+
+Αυτό είναι συχνά το καλύτερο πρώτο βήμα. Δεν χρειάζεται να κάνεις microservices από την αρχή, αλλά γράφεις κώδικα που μπορεί αργότερα να χωριστεί πιο εύκολα.
+
+### Boundary rule
+
+Κάθε module πρέπει να έχει καθαρό public API.
+
+Καλύτερο:
+
+```txt
+learning module calls billingService.canAccessCourse(userId, courseId)
+```
+
+Χειρότερο:
+
+```txt
+learning module reads billing tables directly from random files
+```
+
+Αν τα modules είναι μπλεγμένα μέσα στο ίδιο codebase, δεν έχεις modular monolith. Έχεις απλά monolith με φακέλους.
+
+## Microservices
+
+Microservices είναι ανεξάρτητα services που κάνουν deploy ξεχωριστά και επικοινωνούν μέσω HTTP, events ή queues.
+
+Παράδειγμα:
+
+```txt
+main-app
+payment-service
+notification-service
+search-service
+python-ai-service
+```
+
+Το κέρδος είναι isolation και ανεξάρτητο scaling. Το κόστος είναι περισσότερη πολυπλοκότητα: network failures, observability, deployment coordination, authentication between services και data consistency.
+
+## Το πραγματικό κόστος των microservices
+
+Κάθε microservice προσθέτει:
+
+- network calls που μπορεί να αποτύχουν,
+- distributed logs,
+- tracing ανάγκες,
+- versioned contracts,
+- deployment coordination,
+- service-to-service auth,
+- data consistency προβλήματα,
+- local development δυσκολία.
+
+Άρα η ερώτηση δεν είναι "μπορώ να το κάνω microservice;". Η σωστή ερώτηση είναι:
+
+```txt
+Το όφελος είναι μεγαλύτερο από το operational κόστος;
+```
+
+## Πώς επικοινωνούν τα services
+
+Όταν πια έχεις services, η επικοινωνία τους είναι η επόμενη μεγάλη απόφαση — και σταθερό interview θέμα:
+
+**Synchronous (HTTP/gRPC)** — το service Α καλεί το Β και **περιμένει**:
+
+```txt
+checkout-service ──HTTP──> payment-service (περιμένει απάντηση)
+```
+
+Απλό και άμεσο, αλλά: αν πέσει το Β, κολλάει και το Α (**cascading failure**). Κάθε sync κλήση θέλει timeout, retry με backoff, και ιδανικά circuit breaker.
+
+**Asynchronous (events/queues)** — το Α δημοσιεύει event και **συνεχίζει**:
+
+```txt
+order-service ──"order.created"──> queue ──> notification-service
+                                        └──> analytics-service
+```
+
+Το Α δεν ξέρει καν ποιοι ακούν — **loose coupling**. Αν το notification-service είναι κάτω, τα events περιμένουν στην ουρά. Κόστος: **eventual consistency** — υπάρχει χρονικό παράθυρο όπου τα συστήματα διαφωνούν, και το προϊόν πρέπει να το αντέχει.
+
+Πρακτικός κανόνας: sync όταν χρειάζεσαι την απάντηση **τώρα** για να συνεχίσεις (έλεγχος πληρωμής στο checkout), async για ό,τι μπορεί να γίνει «λίγο μετά» (email, analytics, search indexing).
+
+### Data ownership: κάθε service τη δική του βάση
+
+Ο χρυσός κανόνας των microservices: **κάθε service κατέχει τα δεδομένα του** και κανείς άλλος δεν διαβάζει/γράφει τα tables του απευθείας. Η πρόσβαση γίνεται μόνο μέσω του API ή των events του.
+
+Shared database ανάμεσα σε services = **distributed monolith**: πληρώνεις όλο το κόστος των microservices (network, deploys, observability) χωρίς το βασικό όφελος (ανεξαρτησία) — κάθε schema αλλαγή σπάει όλους μαζί.
+
+## Hybrid architecture
+
+Πολλά πραγματικά products είναι hybrid:
+
+- core product ως modular monolith,
+- payments ως ξεχωριστό service,
+- notifications ως worker/service,
+- Python AI/data service,
+- WebSocket gateway για real-time features.
+
+Αυτό είναι πρακτικό γιατί κρατάει το core απλό, αλλά επιτρέπει σε βαριά ή ανεξάρτητα κομμάτια να ζουν μόνα τους.
+
+### Άσκηση 2: κράτα ή βγάλε σε service
+
+Για κάθε domain, αποφάσισε:
+
+```txt
+Auth
+Lessons/progress
+Payments
+Email notifications
+AI feedback
+Search
+WebSocket live progress
+```
+
+Πιθανή απάντηση:
+
+```txt
+Auth -> core app, εκτός αν χρησιμοποιείς external provider
+Lessons/progress -> core modular monolith
+Payments -> μπορεί να είναι billing module ή service, ανάλογα complexity
+Email notifications -> worker/service
+AI feedback -> Python service
+Search -> service αν χρειάζεται Elasticsearch/Meilisearch
+WebSocket live progress -> realtime gateway όταν μεγαλώσει
+```
+
+Δεν υπάρχει μία απάντηση. Υπάρχει αιτιολόγηση.
+
+## Πότε διαλέγεις τι
+
+Διάλεξε monolith όταν:
+
+- ξεκινάς νέο product,
+- η ομάδα είναι μικρή,
+- τα domains αλλάζουν συχνά,
+- θες γρήγορο iteration.
+
+Διάλεξε microservice όταν:
+
+- ένα κομμάτι χρειάζεται ανεξάρτητο scale,
+- έχει διαφορετικό runtime ή stack,
+- πρέπει να γίνεται deploy ανεξάρτητα,
+- έχει καθαρό ownership και contract.
+
+## Guided project: architecture map
+
+Σχεδίασε architecture map για ένα training SaaS. Κάν' το σε τρία στάδια.
+
+### Stage 1: modular monolith
+
+1. Core app ως modular monolith.
+2. Modules: identity, learning, billing, admin.
+3. Μία database, αλλά καθαρά module boundaries.
+4. Internal service functions αντί για cross-module table access.
+
+### Stage 2: first extraction
+
+Βγάλε μόνο ένα κομμάτι:
+
+```txt
+notification-worker
+```
+
+Γιατί είναι καλή πρώτη εξαγωγή;
+
+- είναι asynchronous,
+- failure δεν πρέπει να ρίχνει το core flow,
+- μπορεί να retry,
+- έχει ξεκάθαρο input: "send this notification".
+
+### Stage 3: specialized services
+
+Πρόσθεσε:
+
+```txt
+python-ai-service
+realtime-gateway
+search-service
+```
+
+Μόνο όταν υπάρχει πραγματική ανάγκη.
+
+Γράψε για κάθε service:
+
+- τι responsibility έχει,
+- πώς επικοινωνεί με τα άλλα,
+- ποια δεδομένα κατέχει,
+- γιατί αξίζει να είναι ξεχωριστό ή να μείνει στο monolith.
+
+## Decision record template
+
+Για κάθε architecture απόφαση γράψε:
+
+```txt
+Decision:
+Context:
+Options:
+Chosen option:
+Why:
+Risks:
+What would make us revisit this:
+```
+
+Παράδειγμα:
+
+```txt
+Decision: Keep learning/progress inside the modular monolith.
+Context: The product is early and progress rules change often.
+Options: monolith module, separate learning service.
+Chosen option: monolith module.
+Why: Faster iteration, simpler transactions, less operational overhead.
+Risks: Module can become too coupled with billing/admin.
+Revisit when: independent scaling or separate team ownership becomes necessary.
+```
+
+## Common mistakes
+
+- Microservices χωρίς clear domain boundaries.
+- Shared database όπου κάθε service γράφει παντού.
+- Network calls για πράγματα που πρέπει να είναι απλή function call.
+- Να σπάσεις το app πριν καταλάβεις το domain.
+- Να μην έχεις logs/tracing πριν μοιράσεις το σύστημα.
+
+## Debugging prompts
+
+- Ποιο service κατέχει αυτά τα δεδομένα;
+- Ποιο contract έσπασε;
+- Μπορεί το caller να αντέξει failure;
+- Υπάρχει retry ή fallback;
+- Μήπως αυτό έπρεπε να είναι module και όχι service;
+
+## Πώς απαντάς στη συνέντευξη
+
+> I'd start with a modular monolith: one deployable, but clear domain modules with explicit public APIs between them. That gives fast iteration and simple transactions while keeping future extraction possible. I extract a service only when a domain needs independent scaling, deployment, team ownership, or a different stack — and the first extraction is usually something asynchronous like a notification worker, where failure doesn't block the core flow. Each service owns its data; a shared database across services is just a distributed monolith.
+
+<Flashcards
+  title="Architecture — interview drills"
+  cards={[
+    {
+      question: "Monolith vs modular monolith vs microservices σε μία πρόταση το καθένα;",
+      answer: "Monolith: ένα deployable, όλα μαζί. Modular monolith: ένα deployable αλλά με αυστηρά domain modules και public APIs μεταξύ τους. Microservices: ανεξάρτητα deployables που επικοινωνούν μέσω δικτύου — μέγιστη αυτονομία, μέγιστο operational κόστος."
+    },
+    {
+      question: "Τι είναι ο distributed monolith;",
+      answer: "Microservices που μοιράζονται database ή είναι τόσο coupled που κάνουν deploy μαζί. Το χειρότερο και των δύο κόσμων: network failures και operational κόστος των microservices, χωρίς την ανεξαρτησία. Συνηθέστερη αιτία: split πριν καταλάβεις τα domain boundaries."
+    },
+    {
+      question: "Sync vs async επικοινωνία μεταξύ services;",
+      answer: "Sync (HTTP/gRPC): άμεση απάντηση, αλλά coupling διαθεσιμότητας — θέλει timeouts, retries, circuit breakers. Async (events/queues): loose coupling, αντοχή σε πτώσεις του consumer, αλλά eventual consistency. Sync όταν χρειάζεσαι την απάντηση για να προχωρήσεις, async για ό,τι γίνεται 'λίγο μετά'."
+    },
+    {
+      question: "Τι είναι το circuit breaker pattern;",
+      answer: "Προστασία από cascading failures: όταν οι κλήσεις προς ένα service αποτυγχάνουν επανειλημμένα, ο breaker 'ανοίγει' και οι επόμενες κλήσεις αποτυγχάνουν αμέσως (ή πάνε σε fallback) αντί να περιμένουν timeouts — δίνοντας στο service χρόνο να συνέλθει. Μετά από λίγο δοκιμάζει ξανά (half-open)."
+    },
+    {
+      question: "Ποιο κομμάτι βγάζεις πρώτο σε service και γιατί;",
+      answer: "Κάτι ασύγχρονο με καθαρό contract — κλασικά το notification/email worker: το failure του δεν μπλοκάρει το core flow, έχει retry semantics, και ξεκάθαρο input ('στείλε αυτό'). Κακή πρώτη εξαγωγή: κάτι στο critical path με πολλά κοινά δεδομένα (π.χ. auth)."
+    },
+    {
+      question: "Τι σημαίνει eventual consistency και πότε είναι αποδεκτή;",
+      answer: "Μετά από ένα write, τα διαφορετικά μέρη του συστήματος συγκλίνουν στη νέα κατάσταση με καθυστέρηση — υπάρχει παράθυρο ασυνέπειας. Αποδεκτή για feeds, analytics, search indexes, notifications. Όχι αποδεκτή χωρίς extra μηχανισμούς για υπόλοιπα λογαριασμών ή αποθέματα."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Σχεδίασε την εξέλιξη ενός SaaS σε 3 στάδια"
+  scenario="Πάρε ένα training SaaS και σχεδίασε την αρχιτεκτονική του από modular monolith μέχρι hybrid με services — με αιτιολόγηση και decision records για κάθε βήμα."
+  outcomes={[
+    "Να χωρίζεις ένα προϊόν σε domains πριν μιλήσεις για services.",
+    "Να αιτιολογείς κάθε extraction με όφελος vs operational κόστος.",
+    "Να σχεδιάζεις την επικοινωνία (sync/async) και το data ownership."
+  ]}
+  steps={[
+    "Stage 1: modular monolith — modules, boundaries, ένα DB με καθαρά όρια.",
+    "Stage 2: πρώτη εξαγωγή (notification worker) — γράψε το decision record.",
+    "Stage 3: python-ai-service και realtime-gateway — μόνο με πραγματική ανάγκη.",
+    "Για κάθε service: responsibility, επικοινωνία, ποια δεδομένα κατέχει.",
+    "Σημείωσε πού έχεις sync κλήσεις και τι γίνεται όταν αποτύχουν."
+  ]}
+  checkpoints={[
+    "Κάθε module/service έχει ξεκάθαρο public API.",
+    "Καμία cross-service απευθείας πρόσβαση σε ξένα tables.",
+    "Κάθε sync κλήση έχει σχέδιο για timeout/retry/fallback.",
+    "Κάθε απόφαση έχει decision record με 'πότε θα το ξανασκεφτούμε'."
+  ]}
+  mistakes={[
+    "Microservices χωρίς clear domain boundaries.",
+    "Shared database όπου κάθε service γράφει παντού.",
+    "Network calls για ό,τι έπρεπε να είναι function call.",
+    "Να σπάσεις το app πριν έχεις logs/tracing."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να υπερασπιστείς και το monolith ΚΑΙ το extraction — ανάλογα με το context — με επιχειρήματα κόστους/οφέλους."
+/>
+
+<Exercise
+  question="Ποια είναι συνήθως η πιο πρακτική αρχή για νέο fullstack product;"
+  options={[
+    "Modular monolith με καθαρά domain boundaries.",
+    "Δέκα microservices από την πρώτη μέρα.",
+    "Ένα frontend χωρίς backend."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Ο modular monolith κρατάει την αρχή απλή και αφήνει περιθώριο για μελλοντικό extraction."
+/>
+
+<Exercise
+  question="Πότε έχει νόημα να βγάλεις ένα κομμάτι σε microservice;"
+  options={[
+    "Όταν χρειάζεται ανεξάρτητο scale, deploy ή διαφορετικό technology stack.",
+    "Όταν θες απλά περισσότερους φακέλους.",
+    "Όταν δεν έχεις ξεκάθαρο contract."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Τα microservices πρέπει να λύνουν πραγματική ανάγκη, όχι να προσθέτουν πολυπλοκότητα χωρίς λόγο."
+/>

@@ -100,6 +100,40 @@ Conflict συμβαίνει όταν δύο αλλαγές ακουμπάνε τ
 3. Τρέχω tests/build.
 4. Κάνω commit το resolved conflict.
 
+## Merge vs rebase — η κλασική ερώτηση
+
+Δύο τρόποι να φέρεις τις αλλαγές του main στο branch σου (ή το αντίστροφο):
+
+```bash
+git merge main    # δημιουργεί merge commit — το ιστορικό δείχνει τη συγχώνευση
+git rebase main   # "ξαναπαίζει" τα commits σου ΠΑΝΩ στο νέο main — ευθεία γραμμή
+```
+
+- **Merge**: ασφαλές, διατηρεί την πραγματική ιστορία, αλλά γεμίζει το log με merge commits.
+- **Rebase**: καθαρό γραμμικό ιστορικό, αλλά **ξαναγράφει commits** — γι' αυτό ο χρυσός κανόνας: *ποτέ rebase σε branch που έχουν τραβήξει άλλοι* (shared/main).
+
+Συνηθισμένη ομαδική πρακτική: rebase το δικό σου feature branch πάνω στο main όσο δουλεύεις, και squash merge στο PR — μικρά βρώμικα commits γίνονται ένα καθαρό commit στο main.
+
+## Undo: τα τρία επίπεδα διορθώσεων
+
+Αυτό ξεχωρίζει όσους «ξέρουν Git» από όσους κάνουν panic:
+
+```bash
+# 1. Αλλαγές ΠΟΥ ΔΕΝ έγιναν commit:
+git restore file.ts            # πέτα τις αλλαγές του αρχείου
+git restore --staged file.ts   # βγάλε το από το staging (κρατά τις αλλαγές)
+
+# 2. Λάθος commit ΠΟΥ ΔΕΝ έχει γίνει push:
+git commit --amend             # διόρθωσε το τελευταίο commit (μήνυμα ή περιεχόμενο)
+git reset --soft HEAD~1        # αναίρεσε το commit, κράτα τις αλλαγές staged
+git reset --hard HEAD~1        # ⚠️ αναίρεσε commit ΚΑΙ αλλαγές — χάνονται!
+
+# 3. Λάθος commit ΠΟΥ ΕΧΕΙ γίνει push:
+git revert <hash>              # ΝΕΟ commit που αναιρεί το παλιό — ασφαλές σε shared history
+```
+
+Ο κανόνας για συνέντευξη: **reset για τοπικά, revert για ό,τι έχει δημοσιευτεί** — το reset ξαναγράφει ιστορία και σε pushed branches δημιουργεί χάος στην ομάδα. Και το `git stash` για το «θέλω να αλλάξω branch αλλά έχω μισοτελειωμένα»: κρύβει τις αλλαγές, `git stash pop` τις επαναφέρει.
+
 ## .gitignore
 
 Δεν πρέπει όλα τα αρχεία να μπαίνουν στο Git. Συνήθως αγνοείς:
@@ -130,11 +164,41 @@ jobs:
       - run: npm run build
 ```
 
-## Interview answer template
+## Πώς απαντάς στη συνέντευξη
 
-Αν σε ρωτήσουν “how do you work with Git in a team?”, απάντησε:
+«How do you work with Git in a team?»
 
-> I create focused branches, make small meaningful commits, open pull requests for review, rely on CI checks, and keep main stable. If conflicts happen, I resolve them by understanding both changes and rerunning tests.
+> I create focused branches, make small meaningful commits, open pull requests for review, rely on CI checks, and keep main stable. I rebase my own feature branches to stay current but never rebase shared history — for anything already pushed, I use revert instead of reset. If conflicts happen, I read both changes, keep the correct final version, and rerun tests before committing the resolution.
+
+<Flashcards
+  title="Git — interview drills"
+  cards={[
+    {
+      question: "merge vs rebase;",
+      answer: "Merge: ενώνει branches με merge commit — διατηρεί την πραγματική ιστορία. Rebase: ξαναπαίζει τα commits σου πάνω στο target — γραμμικό ιστορικό αλλά ΞΑΝΑΓΡΑΦΕΙ τα commits. Κανόνας: rebase μόνο δικά σου τοπικά branches, ποτέ shared."
+    },
+    {
+      question: "reset vs revert;",
+      answer: "reset: μετακινεί το branch pointer πίσω — σβήνει commits από την ιστορία (soft κρατά αλλαγές, hard τα χάνει όλα). revert: ΝΕΟ commit που αναιρεί τις αλλαγές ενός παλιού. Pushed/shared ιστορία → πάντα revert."
+    },
+    {
+      question: "Τι κάνει το git stash;",
+      answer: "Κρύβει τις uncommitted αλλαγές σε προσωρινή στοίβα ώστε να αλλάξεις branch με καθαρό working tree. git stash pop τις επαναφέρει. Χρήσιμο για 'γρήγορα στο main για hotfix' χωρίς πρόχειρο commit."
+    },
+    {
+      question: "Πώς βρίσκεις ποιο commit έσπασε κάτι;",
+      answer: "git bisect: δίνεις ένα good και ένα bad commit, το Git κάνει binary search — σε κάθε βήμα δοκιμάζεις και λες good/bad, και σε log2(N) βήματα έχεις το ένοχο commit. Σε 1000 commits: ~10 δοκιμές."
+    },
+    {
+      question: "Τι είναι το squash merge και γιατί χρησιμοποιείται σε PRs;",
+      answer: "Όλα τα commits του branch γίνονται ΕΝΑ commit στο main. Όφελος: το main έχει καθαρό, ανά-feature ιστορικό, ενώ εσύ δουλεύεις με όσα πρόχειρα commits θες στο branch. Σύνηθες default σε GitHub teams."
+    },
+    {
+      question: "fetch vs pull;",
+      answer: "fetch: κατεβάζει τα remote refs χωρίς να αγγίξει τη δουλειά σου — βλέπεις τι άλλαξε. pull = fetch + merge (ή rebase με --rebase) στο τρέχον branch. Το fetch είναι το 'ασφαλές κοίταγμα' πριν αποφασίσεις."
+    }
+  ]}
+/>
 
 <Exercise
   question="Τι είναι pull request;"
@@ -158,7 +222,29 @@ jobs:
   explanation="Σωστά. Μικρά focused commits κάνουν το ιστορικό πιο χρήσιμο."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="git-github" />
-</div>
+<TrainingLab
+  title="Δούλεψε feature branch σαν ομάδα"
+  scenario="Υλοποίησε μικρό feature σε branch, κάνε καθαρά commits και άνοιξε PR description που άλλος developer μπορεί να review-άρει."
+  outcomes={[
+    "Να χρησιμοποιείς branch, commit και pull request με σκοπό.",
+    "Να γράφεις commit messages που εξηγούν αλλαγή.",
+    "Να κάνεις reviewable diff χωρίς άσχετο θόρυβο."
+  ]}
+  steps={[
+    "Φτιάξε branch με όνομα feature/add-task-filter.",
+    "Κάνε μικρά commits ανά λογική αλλαγή.",
+    "Γράψε PR description με summary, tests και screenshots αν χρειάζονται.",
+    "Κάνε self-review στο diff πριν ζητήσεις review."
+  ]}
+  checkpoints={[
+    "Το branch δεν περιέχει unrelated changes.",
+    "Κάθε commit μπορεί να διαβαστεί μόνο του.",
+    "Το PR λέει πώς ελέγχθηκε η αλλαγή."
+  ]}
+  mistakes={[
+    "Να κάνεις ένα τεράστιο commit με όλα.",
+    "Να βάζεις formatting churn μαζί με feature logic.",
+    "Να ανοίγεις PR χωρίς context για reviewer."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν ο reviewer μπορεί να καταλάβει τι άλλαξε και γιατί μέσα σε λίγα λεπτά."
+/>

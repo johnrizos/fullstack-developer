@@ -163,7 +163,55 @@ Definition of done είναι team agreement. Για ένα ticket μπορεί 
   explanation="Σωστά. Το Kanban κάνει τη ροή ορατή και βοηθά την ομάδα να τελειώνει δουλειά."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="agile-scrum-kanban" />
-</div>
+<Flashcards
+  title="Agile — interview drills"
+  cards={[
+    {
+      question: "Scrum vs Kanban σε δύο προτάσεις;",
+      answer: "Scrum: δουλειά σε σταθερά sprints (1-2 εβδομάδες) με δέσμευση, planning, review και retro — ρυθμός και προβλεψιμότητα. Kanban: συνεχής ροή χωρίς sprints, με WIP limits — ευελιξία για ομάδες με συνεχείς εισροές (support, ops)."
+    },
+    {
+      question: "Τι είναι τα acceptance criteria και γιατί σε νοιάζουν ως developer;",
+      answer: "Η λίστα 'πότε το ticket θεωρείται τελειωμένο' — συγκεκριμένα, ελέγξιμα σενάρια. Σε προστατεύουν από scope creep και ασάφεια: αν δεν υπάρχουν, τα ζητάς ΠΡΙΝ ξεκινήσεις, όχι στο review."
+    },
+    {
+      question: "Σε τι χρησιμεύει το standup — και σε τι ΔΕΝ;",
+      answer: "Σύντομος συγχρονισμός: τι έγινε, τι ακολουθεί, ΤΙ ΣΕ ΜΠΛΟΚΑΡΕΙ — το τελευταίο είναι το πιο σημαντικό. ΔΕΝ είναι status report στον manager ούτε χώρος για technical deep dives — αυτά πάνε offline με τους εμπλεκόμενους."
+    },
+    {
+      question: "Τι είναι το WIP limit στο Kanban;",
+      answer: "Μέγιστος αριθμός tickets σε εξέλιξη ταυτόχρονα ανά στήλη. Αναγκάζει την ομάδα να ΤΕΛΕΙΩΝΕΙ πριν ξεκινήσει νέα — λιγότερο context switching, εμφανή bottlenecks: αν το 'In Review' γεμίζει, η ομάδα κάνει reviews αντί να ανοίγει νέα."
+    },
+    {
+      question: "Τι είναι το retrospective;",
+      answer: "Συνάντηση στο τέλος του sprint: τι πήγε καλά, τι όχι, τι αλλάζουμε — με ΣΥΓΚΕΚΡΙΜΕΝΑ action items, όχι γενικές διαπιστώσεις. Είναι ο μηχανισμός αυτοβελτίωσης της ομάδας· χωρίς action items είναι απλώς παράπονα."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Μετέτρεψε ιδέα σε ticket"
+  scenario="Πάρε feature 'ο χρήστης φιλτράρει tasks' και κάν' το μικρό, υλοποιήσιμο ticket με acceptance criteria και definition of done."
+  outcomes={[
+    "Να σπας vague feature σε μικρά tickets.",
+    "Να γράφεις acceptance criteria που ελέγχονται.",
+    "Να ξεχωρίζεις scope από nice-to-have."
+  ]}
+  steps={[
+    "Γράψε user story με ρόλο, ανάγκη και αποτέλεσμα.",
+    "Γράψε 3-5 acceptance criteria.",
+    "Ορισμός out-of-scope για πράγματα που δεν θα γίνουν τώρα.",
+    "Πρόσθεσε testing notes και edge cases."
+  ]}
+  checkpoints={[
+    "Το ticket μπορεί να ολοκληρωθεί σε μικρό PR.",
+    "Τα criteria μπορούν να γίνουν manual ή automated checks.",
+    "Δεν υπάρχουν ασαφείς λέξεις όπως 'καλό' χωρίς μέτρο."
+  ]}
+  mistakes={[
+    "Να γράφεις ticket σαν γενική ιδέα.",
+    "Να βάζεις πολλά features σε ένα ticket.",
+    "Να μην ορίζεις πώς θα ξέρουμε ότι τελείωσε."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να πάρεις ένα μεγάλο feature και να το χωρίσεις σε tickets που μπορούν να υλοποιηθούν ανεξάρτητα."
+/>

@@ -191,7 +191,55 @@ Target:
   explanation="Σωστά. Portfolio-ready σημαίνει ολοκληρωμένο, τρέξιμο, εξήγηση και ποιότητα."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="final-assessment" />
-</div>
+<Flashcards
+  title="Τελικό self-check — είσαι interview-ready;"
+  cards={[
+    {
+      question: "JavaScript core: μπορείς να εξηγήσεις closures, event loop και this χωρίς προετοιμασία;",
+      answer: "Τεστ: εξήγησε σε 2 λεπτά το καθένα, με ένα παράδειγμα κώδικα από μνήμης. Αν κομπιάζεις, ξαναπέρνα τα: Scope & Closures, Async & Event Loop, this & Prototypes — και τα PredictOutput drills τους."
+    },
+    {
+      question: "Backend: μπορείς να σχεδιάσεις ένα REST API στον πίνακα;",
+      answer: "Τεστ: 'σχεδίασε API για bookings'. Πρέπει να βγάλεις: resources, endpoints με σωστά methods/status codes, auth strategy, ownership checks, pagination. Αν κάτι λείπει: REST APIs + Authentication μαθήματα."
+    },
+    {
+      question: "System design: αντέχεις το 'πώς θα το έκανες scale;'",
+      answer: "Τεστ: περιέγραψε τη διαδρομή ενός request στο capstone σου και τι θα άλλαζες στα 10x. Λέξεις-κλειδιά που πρέπει να βγουν φυσικά: index, cache, queue, stateless, replica. Αλλιώς: Databases, Redis, Architecture."
+    },
+    {
+      question: "Το capstone σου: μπορείς να κάνεις 5λεπτο demo χωρίς να σκάσει;",
+      answer: "Τεστ: live link, signup → core flow → ένα error case που χειρίζεται όμορφα. Συν: εξήγησε μια τεχνική απόφαση με trade-offs. Αν το demo θέλει 'συγγνώμη, αυτό είναι σπασμένο' — δεν είναι έτοιμο."
+    },
+    {
+      question: "Behavioral: έχεις 5 έτοιμες STAR ιστορίες;",
+      answer: "Χρειάζεσαι: ένα δύσκολο bug, μια τεχνική διαφωνία, ένα deadline, κάτι που έμαθες από αποτυχία, κάτι που οδήγησες εσύ. Από τα projects του roadmap βγαίνουν όλες — γράψ' τες, μην τις αυτοσχεδιάζεις live."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Κάνε τελική αξιολόγηση με evidence"
+  scenario="Αξιολόγησε το capstone σου σαν τεχνικός reviewer. Για κάθε score πρέπει να έχεις evidence: link, file, test, screenshot ή συγκεκριμένο behavior."
+  outcomes={[
+    "Να αξιολογείς ποιότητα με κριτήρια, όχι με αίσθηση.",
+    "Να βρίσκεις τα πιο σημαντικά gaps πριν το interview.",
+    "Να φτιάχνεις action plan με προτεραιότητες."
+  ]}
+  steps={[
+    "Βαθμολόγησε frontend, backend, data, auth, testing, deploy και README.",
+    "Για κάθε χαμηλό score γράψε ένα συγκεκριμένο fix.",
+    "Διάλεξε top 3 improvements με βάση impact.",
+    "Γράψε interview narrative: τι έχτισες, τι tradeoffs πήρες, τι θα έκανες μετά."
+  ]}
+  checkpoints={[
+    "Κάθε βαθμός έχει evidence.",
+    "Τα gaps είναι συγκεκριμένα και διορθώσιμα.",
+    "Το action plan χωρίζεται σε must-fix και nice-to-have."
+  ]}
+  mistakes={[
+    "Να βαθμολογείς γενικά χωρίς αποδείξεις.",
+    "Να διορθώνεις polish πριν critical bugs.",
+    "Να μη μπορείς να εξηγήσεις technical decisions."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν ξέρεις ακριβώς τι είναι portfolio-ready, τι όχι, και ποια τρία πράγματα θα βελτιώσεις πρώτα."
+/>

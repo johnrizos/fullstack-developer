@@ -1,0 +1,252 @@
+# WebSockets & Real-Time Apps
+
+Το HTTP είναι request/response: ο client ρωτάει, ο server απαντάει, η σύνδεση κλείνει. Όμως το chat, τα live notifications και τα dashboards χρειάζονται το αντίστροφο: **ο server να σπρώχνει updates όταν συμβαίνουν**. Το WebSocket είναι persistent, αμφίδρομη σύνδεση που το επιτρέπει — και στις συνεντεύξεις η ερώτηση δεν είναι «τι είναι», αλλά «πότε το διαλέγεις και πώς το κάνεις scale».
+
+## Πώς δουλεύει: το upgrade handshake
+
+Το WebSocket **ξεκινά ως HTTP request** και «αναβαθμίζεται»:
+
+```http
+GET /chat HTTP/1.1
+Host: example.com
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
+
+HTTP/1.1 101 Switching Protocols
+Upgrade: websocket
+Connection: Upgrade
+```
+
+Μετά το `101`, η TCP σύνδεση μένει ανοιχτή και **οι δύο πλευρές στέλνουν μηνύματα όποτε θέλουν** — χωρίς headers ανά μήνυμα, χωρίς νέο handshake. Αυτή η λεπτομέρεια («ξεκινά ως HTTP, γίνεται upgrade») είναι κλασική interview ερώτηση.
+
+Ο βασικός client κώδικας είναι μικρός:
+
+```js
+const socket = new WebSocket("wss://example.com/chat"); // wss = TLS, όπως https
+
+socket.addEventListener("open", () => {
+  socket.send(JSON.stringify({ type: "chat:message", text: "Hello!" }));
+});
+
+socket.addEventListener("message", (event) => {
+  const msg = JSON.parse(event.data);
+  // ενημέρωσε το UI
+});
+
+socket.addEventListener("close", () => {
+  // σχεδόν πάντα: reconnect με exponential backoff
+});
+```
+
+## Οι 4 επιλογές: REST, polling, SSE, WebSocket
+
+| Τεχνική | Πώς δουλεύει | Πότε |
+|---|---|---|
+| **REST** | Request → response | CRUD, forms, ό,τι δεν χρειάζεται push |
+| **Polling** | Ο client ρωτάει κάθε Χ δευτερόλεπτα | Σπάνιες αλλαγές, απλότητα πάνω από αμεσότητα |
+| **SSE** (Server-Sent Events) | Μονόδρομο stream server → client πάνω από HTTP | Progress logs, AI token streaming, live feeds |
+| **WebSocket** | Αμφίδρομη persistent σύνδεση | Chat, presence, collaboration, multiplayer |
+
+Το **SSE** αξίζει ειδική μνεία γιατί συχνά είναι η σωστή απάντηση και οι υποψήφιοι το ξεχνούν: απλό HTTP (περνάει από proxies/CDN εύκολα), αυτόματο reconnect από τον browser, ιδανικό όταν η ροή είναι **μόνο προς τον client** — έτσι κάνουν streaming τα ChatGPT-style UIs.
+
+Η ερώτηση-φίλτρο πριν διαλέξεις: **«Χρειάζεται ο server να σπρώξει update στον client αμέσως; Και χρειάζεται ο client να στέλνει συχνά προς τα πίσω;»**
+
+```txt
+Submit login form            → REST
+Build/AI progress logs       → SSE (μονόδρομο stream)
+Chat μεταξύ χρηστών          → WebSocket (αμφίδρομο)
+Analytics κάθε 5 λεπτά       → polling / scheduled refetch
+Online presence              → WebSocket
+Invoice PDF download         → REST
+```
+
+<Exercise
+  question="Φτιάχνεις UI που δείχνει live τα logs ενός CI build (μόνο ανάγνωση). Ποια είναι η απλούστερη σωστή επιλογή;"
+  options={[
+    "WebSocket — μόνο αυτό κάνει real-time.",
+    "SSE — μονόδρομο server→client stream πάνω από απλό HTTP, με δωρεάν auto-reconnect.",
+    "Polling ανά 100ms.",
+    "GraphQL query."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Η ροή είναι μονόδρομη — δεν χρειάζεσαι την αμφίδρομη πολυπλοκότητα του WebSocket. Το SSE είναι απλό HTTP, φιλικό σε proxies, και ο browser κάνει reconnect μόνος του. WebSocket θα ήταν justified αν ο client έστελνε και αυτός συχνά δεδομένα."
+/>
+
+## Event design — κάθε event είναι contract
+
+Μην στέλνεις τυχαία objects. Κάθε event έχει σταθερό όνομα και typed payload:
+
+```ts
+type JobProgressEvent = {
+  type: "job:progress";
+  jobId: string;
+  progress: number;   // 0-100
+  message: string;
+};
+
+type ChatMessageEvent = {
+  type: "chat:message";
+  roomId: string;
+  senderId: string;
+  text: string;
+  sentAt: string;     // ISO timestamp
+};
+```
+
+Κανόνες καλού event:
+
+- **Σταθερό όνομα** με namespace: `chat:message`, `job:progress`, `user:online`.
+- Περιέχει **IDs**, όχι ολόκληρα nested objects — ο client κάνει fetch ό,τι έξτρα χρειάζεται.
+- **Idempotent στο UI**: αν φτάσει δύο φορές ή χαθεί ένα, το UI δεν χαλάει (γι' αυτό τα progress events κουβαλούν απόλυτη τιμή `progress: 80`, όχι «+10»).
+- **Ποτέ secrets/PII** σε broadcast events.
+
+## Rooms & authentication
+
+Με Socket.IO (η πιο διαδεδομένη βιβλιοθήκη στο Node ecosystem), η λογική οργανώνεται σε **rooms**:
+
+```ts
+io.use((socket, next) => {
+  // Auth ΣΤΟ handshake — πριν επιτρέψεις οτιδήποτε
+  const token = socket.handshake.auth.token;
+  const user = verifyToken(token);
+  if (!user) return next(new Error("unauthorized"));
+  socket.data.userId = user.id;
+  next();
+});
+
+io.on("connection", (socket) => {
+  // Private room ανά χρήστη — για targeted notifications
+  socket.join(`user:${socket.data.userId}`);
+
+  socket.on("chat:join", async (roomId) => {
+    // Authorization ΠΡΙΝ το join — είναι μέλος του room;
+    const allowed = await isMember(socket.data.userId, roomId);
+    if (allowed) socket.join(`room:${roomId}`);
+  });
+});
+
+// Από οπουδήποτε στο backend:
+io.to(`user:${userId}`).emit("notification:new", payload);
+```
+
+Τα δύο security σημεία που εξετάζονται: **authenticate στο handshake** (όχι «ανοιχτό socket για όλους») και **authorize κάθε room join** (αλλιώς οποιοσδήποτε ακούει οποιοδήποτε chat).
+
+## Scaling: το πρόβλημα των πολλών instances
+
+Σε **έναν** server όλα είναι απλά. Με load balancer και πολλά instances, εμφανίζεται το κλασικό πρόβλημα:
+
+```txt
+Ο χρήστης Α έχει socket στο instance 1.
+Το job του ολοκληρώνεται στο instance 2.
+Το instance 2 ΔΕΝ έχει το socket του χρήστη Α. Πώς θα τον ειδοποιήσει;
+```
+
+Η λύση: **Redis Pub/Sub** (ή message broker) ως κοινό κανάλι μεταξύ των instances:
+
+```txt
+instance 2  →  PUBLISH job:completed {userId, jobId}  →  Redis
+Redis       →  όλα τα instances λαμβάνουν το μήνυμα
+instance 1  →  βρίσκει το socket του χρήστη Α  →  emit στο UI
+```
+
+Με Socket.IO αυτό είναι μία γραμμή setup (`@socket.io/redis-adapter`) — αλλά στη συνέντευξη πρέπει να εξηγήσεις **γιατί** χρειάζεται, όχι ποιο package το κάνει. Συμπληρωματικά αναφέρεις: **sticky sessions** στο load balancer (ώστε το reconnect να βρίσκει το ίδιο instance) και ότι το presence («ποιοι είναι online») θέλει κι αυτό κοινό store, όχι μνήμη instance.
+
+## Reconnect: τα events χάνονται — σχεδίασε γι' αυτό
+
+Ο browser ΘΑ χάσει τη σύνδεση (κινητό, tunnel, deploy). Η αξιόπιστη στρατηγική συνδυάζει WebSocket με REST:
+
+```txt
+1. Disconnect → ο client κάνει reconnect με exponential backoff (1s, 2s, 4s...)
+2. Στο reconnect → GET /jobs/:id (ή /chat/:room/messages?after=lastSeenId)
+3. Το UI συγχρονίζεται από το REST snapshot (source of truth)
+4. Το WebSocket συνεχίζει για ΝΕΑ updates
+```
+
+Ο κανόνας που εντυπωσιάζει σε system design: **το WebSocket είναι ο μηχανισμός ειδοποίησης, η database είναι το source of truth**. Τα events επιταχύνουν το UI — δεν το ορίζουν.
+
+## Guided project: live job progress
+
+Χτίσε το flow για AI exercise analysis με live progress — ξεκίνα από το behavior, όχι από τη library:
+
+1. **User story**: «Όταν υποβάλλω άσκηση, βλέπω progress και αποτέλεσμα χωρίς refresh.»
+2. **Sequence**: ο χρήστης ξεκινά → backend δημιουργεί job → worker το επεξεργάζεται → κάθε status update γίνεται publish → ο client βλέπει progress live.
+3. **Events**: `job:queued`, `job:running`, `job:progress`, `job:completed`, `job:failed` — για το καθένα γράψε: ποιος το στέλνει, ποιος το λαμβάνει, payload, τι κάνει το UI.
+4. **Rooms**: `user:{userId}` (απλό) ή `job:{jobId}` (στενότερο, θέλει authorization στο join).
+5. **Reconnect test**: κλείσε το WiFi στη μέση — το UI πρέπει να συνέλθει μέσω `GET /jobs/:id`.
+
+<Exercise
+  question="Τι χρειάζεται όταν κάνεις scale WebSockets σε πολλά server instances;"
+  options={[
+    "Κοινό Pub/Sub κανάλι (π.χ. Redis) ώστε events από ένα instance να φτάνουν σε sockets συνδεδεμένα σε άλλα.",
+    "Μεγαλύτερο instance ώστε να χωρούν όλα τα sockets σε ένα.",
+    "Να στέλνεις κάθε event σε όλα τα instances μέσω HTTP requests μεταξύ τους."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Τα sockets ζουν στη μνήμη συγκεκριμένου instance. Το Redis Pub/Sub δίνει κοινό κανάλι: όποιο instance παράγει το event το κάνει publish, και το instance που κρατά το socket το προωθεί στον client."
+/>
+
+<Flashcards
+  title="Real-time — interview drills"
+  cards={[
+    {
+      question: "Πώς δημιουργείται μια WebSocket σύνδεση;",
+      answer: "Ξεκινά ως HTTP GET με headers Upgrade: websocket + Connection: Upgrade. Ο server απαντά 101 Switching Protocols και η TCP σύνδεση μένει ανοιχτή για αμφίδρομα frames — χωρίς νέο handshake ή headers ανά μήνυμα. wss:// = πάνω από TLS."
+    },
+    {
+      question: "WebSocket vs SSE;",
+      answer: "WebSocket: αμφίδρομο, δικό του protocol μετά το upgrade — για chat/collaboration. SSE: μονόδρομο server→client, σκέτο HTTP — απλούστερο, auto-reconnect από τον browser, ιδανικό για progress/feeds/AI streaming. Αν η ροή είναι μονόδρομη, το SSE συνήθως αρκεί."
+    },
+    {
+      question: "Long polling — τι είναι και πού στέκεται;",
+      answer: "Ο client κάνει request που ο server κρατά ανοιχτό μέχρι να υπάρξει update (ή timeout), και ο client ξανα-ρωτά αμέσως. Προ-WebSocket τεχνική και fallback των libraries (Socket.IO) — λειτουργεί παντού αλλά με περισσότερο overhead ανά μήνυμα."
+    },
+    {
+      question: "Γιατί τα WebSockets δυσκολεύουν το horizontal scaling;",
+      answer: "Είναι stateful: κάθε socket ζει στη μνήμη ενός instance, ενώ το HTTP load balancing υποθέτει stateless requests. Λύσεις: Redis Pub/Sub adapter για cross-instance events, sticky sessions για reconnects, κοινό store για presence."
+    },
+    {
+      question: "Πώς χειρίζεσαι χαμένα events μετά από disconnect;",
+      answer: "Δεν βασίζεσαι στα events ως source of truth. Στο reconnect, ο client συγχρονίζεται με REST (GET /resource ή ?after=lastSeenId) και το WebSocket συνεχίζει για νέα updates. Events = ειδοποίηση/επιτάχυνση, database = αλήθεια."
+    },
+    {
+      question: "Πώς κάνεις authenticate ένα WebSocket;",
+      answer: "Στο handshake: token στο auth payload ή session cookie (το upgrade request κουβαλά cookies). Απόρριψη πριν δημιουργηθεί το socket. Μετά: authorization ανά ενέργεια — ειδικά σε κάθε room join, αλλιώς οποιοσδήποτε ακούει οποιοδήποτε κανάλι."
+    }
+  ]}
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> I reach for WebSockets when the server must push updates immediately and the client also sends data back — chat, presence, collaboration. For one-way streams like progress logs or AI token streaming, SSE is simpler and proxy-friendly; for rarely-changing data, polling is fine. The hard part is scale: sockets are stateful, so with multiple instances I use Redis Pub/Sub to fan out events, and I always treat the database as the source of truth — on reconnect the client resyncs via REST and the socket only carries new updates.
+
+<TrainingLab
+  title="Σχεδίασε live progress flow"
+  scenario="Φτιάξε real-time flow για job progress: από το submit μέχρι το completed, με reconnect που δεν χαλάει το UI."
+  outcomes={[
+    "Να διαλέγεις transport (REST/polling/SSE/WebSocket) με κριτήρια.",
+    "Να σχεδιάζεις typed events με σταθερά contracts.",
+    "Να εξηγείς το multi-instance πρόβλημα και τη λύση με Pub/Sub."
+  ]}
+  steps={[
+    "Γράψε το user story και το sequence diagram με λόγια.",
+    "Όρισε τα 5 job events με typed payloads.",
+    "Σχεδίασε τα rooms και το authorization του join.",
+    "Γράψε το reconnect flow: backoff + REST resync.",
+    "Σχεδίασε το scaling: πού μπαίνει το Redis Pub/Sub και γιατί."
+  ]}
+  checkpoints={[
+    "Κάθε event έχει όνομα, payload και συμπεριφορά UI.",
+    "Το auth γίνεται στο handshake και στο room join.",
+    "Το UI επιβιώνει από διπλά ή χαμένα events.",
+    "Μπορείς να εξηγήσεις το flow όταν user και job είναι σε διαφορετικά instances."
+  ]}
+  mistakes={[
+    "Χρήση WebSocket για απλό CRUD.",
+    "Events χωρίς contract — τυχαία objects.",
+    "Room join χωρίς authorization.",
+    "Να υποθέτεις ότι όλα τα sockets ζουν στο ίδιο instance.",
+    "Να βασίζεσαι στα events ως source of truth χωρίς REST resync."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να σχεδιάσεις το πλήρες flow στον πίνακα — με reconnect και multi-instance scenario — χωρίς να αναφέρεις ούτε μία library."
+/>

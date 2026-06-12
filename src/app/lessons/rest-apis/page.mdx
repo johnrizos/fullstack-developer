@@ -1,92 +1,104 @@
 # REST APIs
 
-REST API είναι ένας κοινός τρόπος να οργανώνεις επικοινωνία frontend-backend.
+Το REST είναι η lingua franca της επικοινωνίας frontend-backend, και στις συνεντεύξεις backend/fullstack είναι σχεδόν εγγυημένη ερώτηση — είτε ως θεωρία («τι σημαίνει idempotent;») είτε ως design task («σχεδίασε API για ένα todo app»). Εδώ θα μάθεις και τα δύο.
 
-## Resources
+## Η βασική ιδέα: resources + methods
 
-Σκέψου resources:
+Στο REST μοντελοποιείς τον κόσμο σου ως **resources** (ουσιαστικά) και χρησιμοποιείς τα **HTTP methods** ως ρήματα:
 
-- `/tasks`
-- `/users`
-- `/orders`
+```http
+GET    /tasks        ← λίστα tasks
+GET    /tasks/42     ← ένα συγκεκριμένο task
+POST   /tasks        ← δημιουργία νέου task
+PATCH  /tasks/42     ← μερική ενημέρωση
+PUT    /tasks/42     ← πλήρης αντικατάσταση
+DELETE /tasks/42     ← διαγραφή
+```
 
-Τα URLs πρέπει να μοιάζουν με ουσιαστικά, όχι με functions. Προτίμησε:
+Αντιπαράδειγμα που δείχνει αμέσως άπειρο σχεδιασμό:
 
-- `GET /tasks`
-- `POST /tasks`
-- `PATCH /tasks/123`
+```http
+GET  /getTasks          ❌ το ρήμα ανήκει στο method, όχι στο URL
+POST /createTaskNow     ❌
+POST /tasks/42/delete   ❌ υπάρχει DELETE method γι' αυτό
+```
 
-Απέφυγε:
+Σχέσεις μεταξύ resources εκφράζονται με nesting — αλλά όχι υπερβολικό:
 
-- `GET /getTasks`
-- `POST /createTaskNow`
+```http
+GET /users/7/orders        ✅ οι παραγγελίες του user 7
+GET /users/7/orders/3/items/2/reviews   ❌ πολύ βαθύ — σπάσε το
+GET /orders/3/items        ✅ καλύτερα: ξεκίνα από το πιο συγκεκριμένο resource
+```
 
-## HTTP methods
+## Status codes — η γλώσσα των αποτελεσμάτων
 
-- `GET /tasks`: διάβασε tasks.
-- `POST /tasks`: δημιούργησε task.
-- `PATCH /tasks/:id`: άλλαξε task.
-- `DELETE /tasks/:id`: διέγραψε task.
+Πρέπει να ξέρεις αυτά απέξω, ομαδοποιημένα ανά κατηγορία:
 
-Το method δείχνει intent. Αυτό βοηθά caching, tooling, logs και άλλους developers να καταλάβουν το API χωρίς έξτρα εξήγηση.
+| Κατηγορία | Code | Σημασία |
+|---|---|---|
+| **2xx Success** | 200 OK | Επιτυχία (read, update) |
+| | 201 Created | Δημιουργήθηκε resource (μετά από POST) |
+| | 204 No Content | Επιτυχία χωρίς response body (συχνά σε DELETE) |
+| **3xx Redirect** | 301 / 302 | Μόνιμη / προσωρινή ανακατεύθυνση |
+| | 304 Not Modified | Caching: χρησιμοποίησε την cached εκδοχή |
+| **4xx Client error** | 400 Bad Request | Λάθος input / malformed request |
+| | 401 Unauthorized | Λείπει ή είναι άκυρο το authentication |
+| | 403 Forbidden | Authenticated, αλλά ΧΩΡΙΣ δικαίωμα |
+| | 404 Not Found | Δεν υπάρχει το resource |
+| | 409 Conflict | Σύγκρουση (π.χ. duplicate email) |
+| | 422 Unprocessable | Σωστή μορφή, άκυρα δεδομένα (validation) |
+| | 429 Too Many Requests | Rate limiting |
+| **5xx Server error** | 500 Internal Server Error | Bug ή failure στον server |
+| | 502 / 503 | Κακό upstream response / υπηρεσία μη διαθέσιμη |
 
-## Status codes
+Το πιο συχνό interview δίδυμο: **401 vs 403**. Το 401 σημαίνει «δεν ξέρω ποιος είσαι» (λείπει/έληξε το token). Το 403 σημαίνει «ξέρω ποιος είσαι, αλλά δεν επιτρέπεται» (user προσπαθεί να μπει σε admin panel).
 
-- `200 OK`: επιτυχής ανάγνωση/ενημέρωση.
-- `201 Created`: δημιουργήθηκε resource.
-- `400 Bad Request`: λάθος input.
-- `401 Unauthorized`: δεν έχεις login/token.
-- `403 Forbidden`: έχεις login αλλά όχι δικαίωμα.
-- `404 Not Found`: δεν βρέθηκε.
-- `500 Internal Server Error`: server bug/failure.
+> Κλασικό anti-pattern: να επιστρέφεις πάντα `200` με `{ "success": false }` στο body. Σπάει το caching, τα monitoring tools, τα retries των clients — και δείχνει άσχημα σε code review.
 
-Μη γυρνάς πάντα `200` με `{ success: false }`. Αν το input είναι λάθος, χρησιμοποίησε `400`. Αν λείπει login, `401`. Αν ο χρήστης δεν έχει δικαίωμα, `403`.
+<Exercise
+  question="Χρήστης με έγκυρο login προσπαθεί να διαγράψει project άλλου χρήστη. Τι επιστρέφεις;"
+  options={["401 Unauthorized", "403 Forbidden", "404 Not Found", "400 Bad Request"]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Είναι authenticated (άρα όχι 401) αλλά δεν έχει authorization για ΑΥΤΗ την ενέργεια → 403. Σημείωση: κάποια APIs επιστρέφουν σκόπιμα 404 αντί για 403 για να μην αποκαλύπτουν ότι το resource υπάρχει — πες το αυτό σε συνέντευξη και κερδίζεις πόντους."
+/>
 
-## API contract
+## Σταθερό API contract
 
-Καλό API έχει προβλέψιμο response shape.
+Καλό API σημαίνει **προβλέψιμο response shape** — ο client δεν μαντεύει ποτέ:
 
 ```json
 {
-  "data": [],
+  "data": [{ "id": 1, "title": "Learn REST" }],
   "error": null
 }
 ```
 
-Για errors:
+Για errors, ίδιο σκελετός με χρήσιμη πληροφορία ανά πεδίο:
 
 ```json
 {
   "data": null,
   "error": {
-    "message": "Title is required"
-  }
-}
-```
-
-Για validation errors μπορείς να δώσεις και field-level errors:
-
-```json
-{
-  "data": null,
-  "error": {
+    "code": "VALIDATION_ERROR",
     "message": "Validation failed",
     "fields": {
-      "title": "Title is required"
+      "title": "Title is required",
+      "dueDate": "Must be a future date"
     }
   }
 }
 ```
 
-## Pagination και filtering
+Το `code` (machine-readable) επιτρέπει στο frontend να κάνει switch χωρίς να κάνει parsing ελληνικά/αγγλικά μηνύματα. Το `fields` επιτρέπει inline validation errors στη φόρμα.
 
-Μην επιστρέφεις “όλα τα rows” αν τα δεδομένα μεγαλώνουν.
+## Pagination, filtering, sorting
+
+Ποτέ μην επιστρέφεις «όλα τα rows» — τα δεδομένα μεγαλώνουν:
 
 ```http
-GET /tasks?completed=false&page=2&pageSize=20
+GET /tasks?status=open&sort=-createdAt&page=2&pageSize=20
 ```
-
-Ένα predictable response μπορεί να έχει metadata:
 
 ```json
 {
@@ -94,69 +106,141 @@ GET /tasks?completed=false&page=2&pageSize=20
   "meta": {
     "page": 2,
     "pageSize": 20,
-    "total": 135
+    "total": 135,
+    "totalPages": 7
   }
 }
 ```
 
-## Idempotency
+Σε συνέντευξη αξίζει να αναφέρεις και τη διάκριση **offset vs cursor pagination**:
 
-Idempotent σημαίνει ότι αν κάνεις το ίδιο request πολλές φορές, το τελικό αποτέλεσμα παραμένει ίδιο.
+- **Offset** (`page=2`): απλό, αλλά αργό σε μεγάλα offsets και ασταθές αν προστίθενται rows ενώ ο χρήστης σελιδοποιεί.
+- **Cursor** (`after=eyJpZCI6NDJ9`): ο client ζητά «τα επόμενα 20 μετά από αυτό το σημείο» — σταθερό και γρήγορο, το χρησιμοποιούν τα infinite feeds (Twitter, Instagram).
 
-- `GET` πρέπει να είναι safe/read-only.
-- `PUT` συνήθως είναι idempotent.
-- `DELETE` συχνά μπορεί να είναι idempotent.
-- `POST` για create δεν είναι πάντα idempotent.
+## Idempotency — η αγαπημένη ερώτηση των senior interviewers
 
-Για payments ή orders μπορεί να χρειαστεί idempotency key, ώστε retry να μη δημιουργήσει διπλή χρέωση.
+**Idempotent** = όσες φορές κι αν επαναλάβεις το ίδιο request, το αποτέλεσμα στον server είναι το ίδιο.
 
-## Versioning
+| Method | Safe (read-only) | Idempotent |
+|---|---|---|
+| GET | ✅ | ✅ |
+| PUT | ❌ | ✅ — ίδιο body → ίδια τελική κατάσταση |
+| DELETE | ❌ | ✅ — το δεύτερο delete απλά βρίσκει 404 |
+| POST | ❌ | ❌ — δύο POST = δύο νέα resources! |
+| PATCH | ❌ | Συνήθως ναι, αλλά όχι εγγυημένα |
 
-Αν αλλάξεις API contract, σκέψου compatibility.
+Γιατί έχει σημασία; **Retries.** Αν ένα network timeout συμβεί μετά από POST πληρωμής, ο client δεν ξέρει αν πέρασε. Αν κάνει retry, κινδυνεύει διπλή χρέωση. Η λύση: **idempotency key**:
 
-Συχνές επιλογές:
+```http
+POST /payments
+Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000
+```
 
-- `/api/v1/tasks`,
-- header-based versioning,
-- additive changes χωρίς breaking response changes.
+Ο server αποθηκεύει το αποτέλεσμα ανά key. Στο retry με το ίδιο key, επιστρέφει το αποθηκευμένο αποτέλεσμα αντί να ξαναχρεώσει. Έτσι δουλεύει το Stripe API.
 
-Μην αφαιρείς fields που χρησιμοποιεί frontend χωρίς migration plan.
+<Exercise
+  question="Γιατί το PUT θεωρείται idempotent ενώ το POST όχι;"
+  options={[
+    "Γιατί το PUT είναι πιο γρήγορο από το POST.",
+    "Γιατί το PUT αντικαθιστά το resource με συγκεκριμένη κατάσταση — επανάληψη δίνει το ίδιο αποτέλεσμα. Το POST δημιουργεί νέο resource κάθε φορά.",
+    "Γιατί το PUT δεν στέλνει body."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. PUT /tasks/42 με ίδιο body 10 φορές → το task 42 έχει την ίδια τελική κατάσταση. POST /tasks 10 φορές → 10 νέα tasks. Γι' αυτό τα payment APIs απαιτούν idempotency keys στα POST."
+/>
+
+## Versioning & backward compatibility
+
+Όταν το API έχει consumers, κάθε αλλαγή θέλει σκέψη:
+
+- **URL versioning**: `/api/v1/tasks` — απλό και ξεκάθαρο, το πιο συνηθισμένο.
+- **Header versioning**: `Accept: application/vnd.api+json;version=2` — «καθαρότερα» URLs, πιο σύνθετο.
+- **Additive changes**: πρόσθεσε νέα fields χωρίς να αφαιρείς/μετονομάζεις παλιά — συχνά αρκεί χωρίς νέο version.
+
+Χρυσός κανόνας: **πρόσθεση field = ασφαλής, αφαίρεση/μετονομασία = breaking change** που θέλει version bump ή migration plan με deprecation period.
+
+## Πώς σχεδιάζεις API σε interview — βήμα-βήμα
+
+Όταν σου πουν «design a REST API for X», ακολούθησε αυτή τη δομή φωναχτά:
+
+1. **Resources**: «Τα κύρια resources είναι users, tasks, projects...»
+2. **Endpoints + methods**: γράψε τον πίνακα CRUD για κάθε resource.
+3. **Request/response shapes**: δείξε ένα create body και ένα success/error response.
+4. **Status codes**: 201 για create, 422 για validation, 401/403 για auth.
+5. **Μη-λειτουργικά**: pagination, rate limiting, versioning, auth (token στο `Authorization: Bearer` header).
+
+Αυτή η σειρά δείχνει δομημένη σκέψη — αυτό βαθμολογείται, όχι η απομνημόνευση.
 
 ## Mini project: CRUD API contract
 
-Σχεδίασε contract για tasks API:
+Σχεδίασε πλήρες contract για tasks API — γράψε το σε ένα markdown αρχείο σαν να το παραδίδεις σε frontend developer:
 
-1. `GET /tasks` με pagination.
-2. `POST /tasks` με validation για `title`.
-3. `PATCH /tasks/:id` για `completed`.
-4. `DELETE /tasks/:id`.
-5. Error response για `401`, `403`, `404`, `422`.
+1. `GET /tasks` με pagination, filtering (`?status=`) και sorting.
+2. `POST /tasks` με validation για `title` (response: 201 + Location header).
+3. `PATCH /tasks/:id` για `completed` (responses: 200, 404, 422).
+4. `DELETE /tasks/:id` (responses: 204, 404).
+5. Error responses για 401, 403, 404, 422 — όλα με το ίδιο shape.
 
-Γράψε για κάθε endpoint: method, path, request body, success response και error response.
-
-## Interview answer template
-
-> I design REST APIs around resources, use HTTP methods for actions, return appropriate status codes, validate input, and keep response shapes consistent so frontend and backend have a clear contract.
-
-<Exercise
-  question="Ποιο method χρησιμοποιούμε συνήθως για δημιουργία resource;"
-  options={["GET", "POST", "DELETE"]}
-  correctOptionIndex={1}
-  explanation="Σωστά. Το POST χρησιμοποιείται συνήθως για δημιουργία."
-/>
-
-<Exercise
-  question="Τι σημαίνει 401;"
-  options={[
-    "Unauthorized: λείπει ή δεν ισχύει authentication.",
-    "Το resource δημιουργήθηκε.",
-    "Το CSS δεν φορτώθηκε."
+<Flashcards
+  title="REST — interview drills"
+  cards={[
+    {
+      question: "Τι σημαίνει REST;",
+      answer: "Representational State Transfer — αρχιτεκτονικό στυλ όπου clients χειρίζονται resources μέσω uniform interface (HTTP methods + URLs), με stateless επικοινωνία: κάθε request περιέχει ό,τι χρειάζεται, ο server δεν κρατά session state μεταξύ requests."
+    },
+    {
+      question: "401 vs 403;",
+      answer: "401 Unauthorized: λείπει ή είναι άκυρο το authentication ('δεν ξέρω ποιος είσαι'). 403 Forbidden: authenticated αλλά χωρίς δικαίωμα ('ξέρω ποιος είσαι, δεν επιτρέπεται'). Μερικά APIs επιστρέφουν 404 αντί για 403 για να μην αποκαλύπτουν ύπαρξη resource."
+    },
+    {
+      question: "PUT vs PATCH;",
+      answer: "PUT: πλήρης αντικατάσταση του resource — στέλνεις ΟΛΟ το object, idempotent εξ ορισμού. PATCH: μερική ενημέρωση — στέλνεις μόνο τα πεδία που αλλάζουν."
+    },
+    {
+      question: "Τι είναι idempotency key και πού χρησιμεύει;",
+      answer: "Unique key (συνήθως UUID) που στέλνει ο client σε non-idempotent requests (POST πληρωμής). Ο server αποθηκεύει το αποτέλεσμα ανά key — retry με ίδιο key επιστρέφει το ίδιο αποτέλεσμα χωρίς να επαναλάβει την ενέργεια. Απαραίτητο για ασφαλή retries σε payments/orders."
+    },
+    {
+      question: "Offset vs cursor pagination;",
+      answer: "Offset (page=5): απλό αλλά αργό σε βάθος (η DB μετράει και πετάει rows) και ασταθές με ταυτόχρονα inserts. Cursor (after=X): 'δώσε τα επόμενα Ν μετά το X' — σταθερό, γρήγορο, ιδανικό για infinite scroll."
+    },
+    {
+      question: "Τι σημαίνει 'stateless' στο REST;",
+      answer: "Ο server δεν θυμάται τίποτα για τον client μεταξύ requests. Κάθε request κουβαλά πλήρες context (token, params). Όφελος: οποιοσδήποτε server μπορεί να εξυπηρετήσει οποιοδήποτε request → εύκολο horizontal scaling πίσω από load balancer."
+    }
   ]}
-  correctOptionIndex={0}
-  explanation="Σωστά. 401 αφορά authentication."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="rest-apis" />
-</div>
+## Πώς απαντάς στη συνέντευξη
+
+> I design REST APIs around resources with nouns in URLs and HTTP methods as verbs. I return proper status codes — 201 for creation, 422 for validation errors, 401 versus 403 for authentication versus authorization. I keep a consistent response envelope, paginate lists, and for non-idempotent operations like payments I support idempotency keys so retries are safe.
+
+<TrainingLab
+  title="Σχεδίασε API contract πριν γράψεις κώδικα"
+  scenario="Σχεδίασε CRUD API για tasks με endpoints, payloads, status codes και error shapes. Ο στόχος είναι να υπάρχει contract που μπορεί να υλοποιήσει backend και να καταναλώσει frontend."
+  outcomes={[
+    "Να διαλέγεις σωστά HTTP methods.",
+    "Να ορίζεις request/response examples.",
+    "Να σκέφτεσαι validation, pagination και errors."
+  ]}
+  steps={[
+    "Γράψε endpoints για list, create, update και delete.",
+    "Για κάθε endpoint γράψε success response και error response.",
+    "Πρόσθεσε pagination για list — δικαιολόγησε offset ή cursor.",
+    "Πρόσθεσε validation rules για create/update.",
+    "Πρόσθεσε auth: ποια endpoints θέλουν token; Τι επιστρέφουν χωρίς;"
+  ]}
+  checkpoints={[
+    "POST create επιστρέφει 201.",
+    "Validation error έχει σταθερό shape με field-level μηνύματα.",
+    "Ξεχωρίζεις σωστά 400 vs 422 και 401 vs 403.",
+    "Το frontend μπορεί να υλοποιηθεί χωρίς να μαντεύει fields."
+  ]}
+  mistakes={[
+    "Να χρησιμοποιείς POST για όλα.",
+    "Να μη διαχωρίζεις 400, 401, 403, 404 και 500.",
+    "Να αλλάζεις response shape από endpoint σε endpoint.",
+    "Να επιστρέφεις 200 με success:false στο body."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να δώσεις το contract σε άλλον developer και να χτίσει client χωρίς διευκρινίσεις."
+/>

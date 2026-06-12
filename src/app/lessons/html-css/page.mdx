@@ -142,7 +142,51 @@ h1 {
   explanation="Σωστά. Το p προέρχεται από τη λέξη paragraph και δημιουργεί παράγραφο."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="html-css" />
-</div>
+<Flashcards
+  title="HTML & CSS — γρήγορο repaso"
+  cards={[
+    {
+      question: "Τι κάνει το HTML, τι η CSS, τι η JavaScript;",
+      answer: "HTML: δομή και περιεχόμενο (τι υπάρχει στη σελίδα). CSS: εμφάνιση (πώς φαίνεται). JavaScript: συμπεριφορά (τι κάνει στην αλληλεπίδραση). Ο διαχωρισμός αυτών των τριών είναι το θεμέλιο του web."
+    },
+    {
+      question: "Τι είναι ένας CSS selector;",
+      answer: "Ο κανόνας που λέει ΣΕ ΠΟΙΑ στοιχεία εφαρμόζεται το style: p (όλα τα p), .card (class), #header (id), nav a (a μέσα σε nav). Σε συγκρούσεις νικά ο πιο συγκεκριμένος (specificity)."
+    },
+    {
+      question: "class vs id;",
+      answer: "class: επαναχρησιμοποιήσιμη — πολλά στοιχεία με ίδια class, ένα στοιχείο με πολλές classes· το κύριο εργαλείο για styling. id: μοναδικό ανά σελίδα — για anchors, label/for και JS hooks. Styling με classes."
+    },
+    {
+      question: "Πώς συνδέεις CSS με HTML;",
+      answer: "Εξωτερικό αρχείο με link rel='stylesheet' (το σωστό για πραγματικά projects), style block στο head (μικρά demos), ή inline style attribute (αποφεύγεται — δεν επαναχρησιμοποιείται)."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Χτίσε profile card με κριτήρια"
+  scenario="Μην αντιγράψεις απλά HTML/CSS. Φτιάξε profile card που θα μπορούσε να μπει σε πραγματικό portfolio και έλεγξε αν η δομή και το styling έχουν λόγο."
+  outcomes={[
+    "Να διαχωρίζεις content structure από visual styling.",
+    "Να χρησιμοποιείς semantic tags όπου βοηθούν.",
+    "Να κάνεις μικρές CSS αλλαγές και να προβλέπεις το αποτέλεσμα."
+  ]}
+  steps={[
+    "Γράψε πρώτα μόνο HTML: όνομα, ρόλος, μικρό bio, links.",
+    "Έλεγξε αν το περιεχόμενο διαβάζεται σωστά χωρίς CSS.",
+    "Πρόσθεσε CSS για spacing, border, typography και hover state.",
+    "Άλλαξε ένα property κάθε φορά και σημείωσε τι άλλαξε στην οθόνη."
+  ]}
+  checkpoints={[
+    "Η HTML έχει καθαρή ιεραρχία heading και paragraph.",
+    "Το CSS δεν χρησιμοποιεί τυχαίες τιμές χωρίς σκοπό.",
+    "Η κάρτα παραμένει αναγνώσιμη σε στενή οθόνη."
+  ]}
+  mistakes={[
+    "Να βάζεις όλα τα styles inline.",
+    "Να χρησιμοποιείς div για τα πάντα χωρίς νόημα.",
+    "Να αλλάζεις πολλά CSS properties μαζί και να μην ξέρεις ποιο έκανε τι."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να ξαναφτιάξεις την κάρτα από λευκή σελίδα και να εξηγήσεις κάθε tag και κάθε βασικό CSS property."
+/>

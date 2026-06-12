@@ -157,7 +157,51 @@ Acceptance criteria:
   explanation="Σωστά. Τα milestones δείχνουν progression και πρακτική ικανότητα."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="milestone-projects" />
-</div>
+<Flashcards
+  title="Portfolio projects — πώς να τα παρουσιάζεις"
+  cards={[
+    {
+      question: "Τι κάνει ένα project 'portfolio-ready';",
+      answer: "Deployed live link, καθαρό README (τι κάνει, πώς τρέχει, screenshots), λίγα αλλά πραγματικά features που ΔΟΥΛΕΥΟΥΝ, error/loading states, και ιστορία στο Git με λογικά commits. Ένα τελειωμένο μικρό project αξίζει 10 μισοτελειωμένα μεγάλα."
+    },
+    {
+      question: "Πώς παρουσιάζεις ένα project σε συνέντευξη;",
+      answer: "Δομή: 1) τι πρόβλημα λύνει (μία πρόταση), 2) stack και ΓΙΑΤΙ το διάλεξες, 3) η πιο δύσκολη τεχνική απόφαση/πρόβλημα και πώς το έλυσες, 4) τι θα έκανες διαφορετικά. Το βήμα 3 είναι αυτό που ξεχωρίζει — ετοίμασέ το."
+    },
+    {
+      question: "Γιατί progression projects αντί για ένα τεράστιο;",
+      answer: "Δείχνουν εξέλιξη: static page → interactive app → API integration → fullstack. Ο recruiter βλέπει την καμπύλη μάθησης και εσύ έχεις πάντα κάτι ΤΕΛΕΙΩΜΕΝΟ να δείξεις, αντί για ένα ατελείωτο 'magnum opus'."
+    },
+    {
+      question: "Τι ΔΕΝ βάζεις στο portfolio;",
+      answer: "Untouched tutorial clones (όλοι αναγνωρίζουν το ίδιο todo από το ίδιο tutorial), projects που δεν τρέχουν, και repos χωρίς README. Αν έκανες tutorial, ΕΠΕΚΤΕΙΝΕ το με δικά σου features — αυτό είναι το ενδιαφέρον μέρος."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Οργάνωσε progression με πραγματικά milestones"
+  scenario="Μην φτιάξεις απλά πολλά μικρά demos. Σχεδίασε milestones που δείχνουν αύξηση δυσκολίας από static page μέχρι fullstack app."
+  outcomes={[
+    "Να διαλέγεις projects που αποδεικνύουν skills.",
+    "Να γράφεις acceptance criteria για κάθε milestone.",
+    "Να αποφεύγεις portfolio γεμάτο παρόμοια beginner apps."
+  ]}
+  steps={[
+    "Ορισμός 4 milestones: static, interactive, API, fullstack.",
+    "Για κάθε milestone γράψε skills που αποδεικνύει.",
+    "Πρόσθεσε acceptance criteria και stretch goals.",
+    "Γράψε τι θα μπει στο README και τι screenshot/demo χρειάζεται."
+  ]}
+  checkpoints={[
+    "Κάθε project έχει διαφορετικό learning goal.",
+    "Υπάρχει visible demo ή clear setup instructions.",
+    "Τα criteria είναι ελέγξιμα."
+  ]}
+  mistakes={[
+    "Να φτιάχνεις 5 todo apps χωρίς νέα δυσκολία.",
+    "Να μην ολοκληρώνεις polish, README και deploy.",
+    "Να διαλέγεις project χωρίς user flow."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν το portfolio δείχνει καθαρή εξέλιξη και όχι απλή λίστα ασκήσεων."
+/>

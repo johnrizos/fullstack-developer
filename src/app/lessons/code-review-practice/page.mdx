@@ -138,7 +138,55 @@ function SaveButton({ isSaving }: { isSaving: boolean }) {
   explanation="Σωστά. Behavior και risk προηγούνται από μικρά style σχόλια."
 />
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="code-review-practice" />
-</div>
+<Flashcards
+  title="Code review — interview drills"
+  cards={[
+    {
+      question: "Με ποια σειρά ελέγχεις ένα PR;",
+      answer: "1) Καταλαβαίνω το ΓΙΑΤΙ (description, ticket). 2) Correctness: λογική, edge cases, error handling. 3) Security: validation, authorization, secrets. 4) Tests: καλύπτουν τη νέα συμπεριφορά; 5) Τελευταία τα μικρά (ονόματα, style) — αυτά τα πιάνει και ο linter."
+    },
+    {
+      question: "Πώς γράφεις χρήσιμο review comment;",
+      answer: "Συγκεκριμένο, με αιτιολόγηση και πρόταση: 'Αυτό θα σκάσει με κενό array — ίσως ένα early return;' αντί για 'λάθος'. Ξεχώρισε τα blocking από τα nit (πρόθεμα 'nit:'). Σχολιάζεις τον ΚΩΔΙΚΑ, ποτέ τον άνθρωπο."
+    },
+    {
+      question: "Τι κάνεις όταν το PR είναι τεράστιο;",
+      answer: "Ζητάς να σπάσει — ευγενικά αλλά σταθερά. Τα μεγάλα PRs παίρνουν επιφανειακά reviews (το 'LGTM effect'): όσο περισσότερες γραμμές, τόσο λιγότερα bugs βρίσκονται ανά γραμμή. Μικρά, εστιασμένα PRs = πραγματικός έλεγχος."
+    },
+    {
+      question: "Ως author, πώς βοηθάς τον reviewer σου;",
+      answer: "Μικρό scope, καθαρό description (τι/γιατί/πώς δοκιμάστηκε), screenshots για UI, και SELF-REVIEW πριν ζητήσεις review — τα μισά σχόλια τα προλαβαίνεις μόνος. Απαντάς σε κάθε σχόλιο, και διαφωνείς με επιχειρήματα, όχι σιωπή."
+    },
+    {
+      question: "Τι ψάχνεις πρώτα από security σκοπιά σε ένα PR;",
+      answer: "User input χωρίς validation, queries με string concatenation, λείπον authorization/ownership check σε νέα endpoints, secrets στο code, και dangerouslySetInnerHTML/raw HTML. Ένα από αυτά είναι αυτόματα blocking — δεν είναι 'nit'."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Κάνε review σαν να θα το συντηρήσεις"
+  scenario="Πάρε PR για νέο endpoint και ψάξε bugs, missing validation, security risks, unclear contracts και missing tests."
+  outcomes={[
+    "Να βρίσκεις behavioral bugs, όχι μόνο style issues.",
+    "Να γράφεις review comments με συγκεκριμένο risk.",
+    "Να ξεχωρίζεις blocker από suggestion."
+  ]}
+  steps={[
+    "Διάβασε πρώτα το user story και τα acceptance criteria.",
+    "Έλεγξε input validation, auth, errors και edge cases.",
+    "Σύγκρινε tests με risks.",
+    "Γράψε 3 comments: blocker, question, improvement."
+  ]}
+  checkpoints={[
+    "Κάθε finding έχει file/line ή συγκεκριμένο behavior.",
+    "Δεν γεμίζεις review με προσωπικό style.",
+    "Αναφέρεις missing tests όταν υπάρχει πραγματικό risk."
+  ]}
+  mistakes={[
+    "Να κάνεις review μόνο formatting.",
+    "Να μη δοκιμάζεις το unhappy path.",
+    "Να γράφεις ασαφή σχόλια όπως 'fix this'."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν τα review comments σου βοηθούν τον author να διορθώσει συγκεκριμένο πρόβλημα χωρίς μαντεψιά."
+/>

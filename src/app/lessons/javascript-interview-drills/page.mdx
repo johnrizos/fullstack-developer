@@ -1,73 +1,156 @@
 # JavaScript Interview Drills
 
-Αυτό το μάθημα είναι διαφορετικό: δεν είναι μόνο για να χτίσεις UI. Είναι για να απαντάς καθαρά σε συνέντευξη.
+Αυτό το μάθημα είναι διαφορετικό: είναι καθαρή προπόνηση για συνέντευξη. Κάθε drill είναι ένα πραγματικό pattern που πέφτει συνέχεια. Η μέθοδος: **πρόβλεψε → εξήγησε → επαλήθευσε**. Μην προχωράς σε επόμενο drill αν δεν μπορείς να εξηγήσεις το προηγούμενο σε 2-3 προτάσεις.
 
-Θα δεις κλασικά patterns που ρωτάνε συχνά:
+## Drill 1: == vs === και coercion
 
-- equality και coercion,
-- truthy/falsy,
-- array methods,
-- closure output,
-- async output order.
-
-## Drill 1: == vs ===
-
-Το `===` συγκρίνει χωρίς type coercion. Το `==` μπορεί να μετατρέψει τύπους πριν συγκρίνει.
+Το `===` συγκρίνει τιμή ΚΑΙ τύπο. Το `==` κάνει **type coercion** — μετατρέπει τους τύπους πριν συγκρίνει, με κανόνες που είναι γεμάτοι εκπλήξεις:
 
 ```js
-0 == false   // true
-0 === false  // false
+0 == false        // true  — το false γίνεται 0
+"" == false       // true  — και τα δύο γίνονται 0
+"5" == 5          // true  — το string γίνεται number
+null == undefined // true  — ειδικός κανόνας, ισούνται ΜΟΝΟ μεταξύ τους
+null == 0         // false — το null ΔΕΝ γίνεται 0 εδώ!
+NaN == NaN        // false — το NaN δεν ισούται με τίποτα, ούτε με τον εαυτό του
+
+0 === false       // false — διαφορετικοί τύποι, τέλος
 ```
 
-Σε production κώδικα, προτίμησε σχεδόν πάντα `===`.
+Κανόνας production: σχεδόν πάντα `===`. Η μόνη συχνή αποδεκτή χρήση του `==` είναι το `value == null`, που πιάνει `null` και `undefined` μαζί.
 
-<Exercise
-  question="Τι επιστρέφει το 0 === false;"
-  options={["true", "false", "undefined"]}
-  correctOptionIndex={1}
-  explanation="Σωστά. Με === δεν γίνεται type coercion, και number δεν είναι boolean."
+<PredictOutput
+  title="Coercion drill"
+  code={`console.log([] + []);
+console.log([] + {});
+console.log(1 + "2");
+console.log(1 - "2");`}
+  options={['"", "[object Object]", "12", -1', '[], {}, "12", -1', '"", "{}", 3, -1', 'TypeError']}
+  correctOptionIndex={0}
+  answer='"" , "[object Object]" , "12" , -1'
+  explanation="Ο τελεστής + με μη-numbers κάνει string conversion: τα arrays γίνονται '' και το {} γίνεται '[object Object]'. Το 1+'2' κάνει concatenation ('12'), αλλά το - δεν έχει string εκδοχή, οπότε κάνει numeric coercion: 1-2 = -1."
 />
 
 ## Drill 2: truthy και falsy
 
-Falsy values:
+Υπάρχουν **ακριβώς 6 falsy τιμές** (συν το BigInt `0n`) — μάθε τη λίστα απέξω:
 
-- `false`
-- `0`
-- `""`
-- `null`
-- `undefined`
-- `NaN`
+`false`, `0`, `""`, `null`, `undefined`, `NaN`
 
-Όλα τα υπόλοιπα είναι truthy, ακόμα και `[]` και `{}`.
+**Όλα** τα υπόλοιπα είναι truthy — και εδώ είναι οι παγίδες:
+
+```js
+Boolean([])        // true  — empty array είναι object!
+Boolean({})        // true  — empty object επίσης
+Boolean("0")       // true  — non-empty string, έστω "0"
+Boolean("false")   // true  — non-empty string!
+Boolean(-1)        // true  — μόνο το 0 είναι falsy από τα numbers
+Boolean(new Boolean(false)) // true — wrapper object, όχι primitive!
+```
 
 <Exercise
   question="Ποιο από τα παρακάτω είναι truthy;"
-  options={["''", "0", "[]"]}
+  options={["''", "0", "[]", "NaN"]}
   correctOptionIndex={2}
-  explanation="Σωστά. Το empty array είναι object, άρα είναι truthy."
+  explanation="Σωστά. Το empty array είναι object, και ΟΛΑ τα objects είναι truthy. Παρόλα αυτά [] == false είναι true λόγω coercion — γι' αυτό truthiness και == είναι διαφορετικά πράγματα!"
 />
 
-## Drill 3: array map/filter/reduce
+## Drill 3: array methods — το καθημερινό εργαλείο
+
+Σε live coding σχεδόν πάντα θα χρειαστείς `map`, `filter`, `reduce`. Η διαφορά τους σε μία γραμμή ο καθένας:
+
+- `map`: μετασχηματίζει **κάθε** στοιχείο → νέο array ίδιου μήκους.
+- `filter`: κρατάει όσα περνούν το τεστ → νέο array μικρότερου ή ίσου μήκους.
+- `reduce`: συμπυκνώνει το array σε **μία τιμή** (number, object, ό,τι θες).
 
 ```js
-const numbers = [1, 2, 3, 4];
+const orders = [
+  { id: 1, total: 50, status: "paid" },
+  { id: 2, total: 30, status: "pending" },
+  { id: 3, total: 70, status: "paid" },
+];
 
-const result = numbers
-  .filter((n) => n % 2 === 0)
-  .map((n) => n * 10);
+// Συνολικά έσοδα από πληρωμένες παραγγελίες:
+const revenue = orders
+  .filter((order) => order.status === "paid")
+  .reduce((sum, order) => sum + order.total, 0); // 120
+
+// Group by status — κλασικό interview task:
+const byStatus = orders.reduce((groups, order) => {
+  (groups[order.status] ??= []).push(order);
+  return groups;
+}, {});
+// { paid: [...], pending: [...] }
 ```
 
-Πρώτα κρατάμε τα ζυγά: `[2, 4]`. Μετά τα πολλαπλασιάζουμε: `[20, 40]`.
+Παγίδες που ρωτάνε:
 
-<Exercise
-  question="Τι επιστρέφει το [1, 2, 3].map((n) => n * 2);"
-  options={["[2, 4, 6]", "[1, 2, 3]", "6"]}
+```js
+[1, 2, 3].map((n) => {
+  n * 2;
+}); // [undefined, undefined, undefined] — ξέχασες το return!
+
+["1", "2", "3"].map(parseInt); // [1, NaN, NaN] — το map περνάει
+// (value, index) και το parseInt διαβάζει το index ως radix!
+```
+
+<PredictOutput
+  title="Array methods drill"
+  code={`const result = [1, 2, 3, 4, 5]
+  .filter((n) => n % 2 === 1)
+  .map((n) => n * n)
+  .reduce((a, b) => a + b, 0);
+
+console.log(result);`}
+  options={["35", "9", "25", "55"]}
   correctOptionIndex={0}
-  explanation="Σωστά. Το map επιστρέφει νέο array με μετασχηματισμένα items."
+  answer="35"
+  explanation="filter κρατά τα μονά: [1, 3, 5]. map τα υψώνει στο τετράγωνο: [1, 9, 25]. reduce τα αθροίζει: 35."
 />
 
-## Drill 4: closure output
+## Drill 4: references vs copies
+
+Τεράστιο θέμα σε interviews — τα objects και arrays περνιούνται **by reference**:
+
+```js
+const a = { count: 1 };
+const b = a;          // ΔΕΝ είναι αντίγραφο — ίδιο object!
+b.count = 99;
+console.log(a.count); // 99
+
+const original = [1, 2, 3];
+const copy = [...original];     // shallow copy — ΟΚ για flat arrays
+const deep = structuredClone(original); // deep copy — για nested δομές
+```
+
+Το spread (`...`) κάνει **shallow** copy — τα nested objects παραμένουν κοινά:
+
+```js
+const user = { name: "Ada", address: { city: "Athens" } };
+const clone = { ...user };
+
+clone.name = "Grace";          // ✅ δεν επηρεάζει το user
+clone.address.city = "Patras"; // ❌ άλλαξε ΚΑΙ το user.address.city!
+```
+
+<PredictOutput
+  title="Reference drill"
+  code={`function update(obj) {
+  obj.value = 10;
+  obj = { value: 20 };
+  obj.value = 30;
+}
+
+const item = { value: 1 };
+update(item);
+console.log(item.value);`}
+  options={["10", "1", "30", "20"]}
+  correctOptionIndex={0}
+  answer="10"
+  explanation="Το obj.value = 10 μεταλλάσσει το ΙΔΙΟ object που δείχνει και το item. Μετά το obj = {...} κάνει την ΤΟΠΙΚΗ μεταβλητή να δείχνει σε νέο object — το item συνεχίζει να δείχνει στο παλιό. Το 30 πάει στο νέο object που χάνεται."
+/>
+
+## Drill 5: closure σε loop — το αξεπέραστο κλασικό
 
 ```js
 function outer() {
@@ -80,24 +163,31 @@ function outer() {
 }
 
 const next = outer();
-next(); // ?
-next(); // ?
+next(); // 1
+next(); // 2 — το count ζει μέσα στο closure
+
+const fresh = outer();
+fresh(); // 1 — ΝΕΟ closure, νέο count
 ```
 
-Η `inner` θυμάται το `count`, άρα οι απαντήσεις είναι `1` και `2`.
+<PredictOutput
+  title="Closure + loop drill"
+  code={`const fns = [];
 
-<Exercise
-  question="Γιατί το δεύτερο next() επιστρέφει 2;"
-  options={[
-    "Επειδή η inner function κρατά closure πάνω στο count.",
-    "Επειδή το CSS άλλαξε το count.",
-    "Επειδή κάθε function επιστρέφει πάντα 2."
-  ]}
+for (var i = 0; i < 3; i++) {
+  fns.push(() => i);
+}
+
+console.log(fns.map((fn) => fn()));`}
+  options={["[3, 3, 3]", "[0, 1, 2]", "[undefined, undefined, undefined]", "[2, 2, 2]"]}
   correctOptionIndex={0}
-  explanation="Σωστά. Το count δεν χάνεται, επειδή η returned function κρατά πρόσβαση στο lexical scope."
+  answer="[3, 3, 3]"
+  explanation="Με var υπάρχει ΕΝΑ κοινό i. Όταν καλούνται οι functions, το loop έχει τελειώσει και i = 3. Με let θα ήταν [0, 1, 2] γιατί κάθε iteration θα είχε δικό της binding."
 />
 
-## Drill 5: async output order
+## Drill 6: async output order
+
+Η συνταγή: 1) όλος ο synchronous κώδικας, 2) ΟΛΗ η microtask queue (promises), 3) ένα-ένα τα macrotasks (timers).
 
 ```js
 console.log("A");
@@ -107,38 +197,120 @@ setTimeout(() => console.log("B"), 0);
 Promise.resolve().then(() => console.log("C"));
 
 console.log("D");
+
+// A, D, C, B
 ```
 
-Σειρά:
+<PredictOutput
+  title="Async + await drill"
+  code={`async function go() {
+  console.log("1");
+  await Promise.resolve();
+  console.log("2");
+}
 
-1. `A`
-2. `D`
-3. `C`
-4. `B`
-
-Ο synchronous κώδικας τρέχει πρώτα. Τα Promise callbacks είναι microtasks και τρέχουν πριν από timer tasks όπως `setTimeout`.
-
-<Exercise
-  question="Ποια είναι η σωστή σειρά για A, setTimeout B, Promise C, D;"
-  options={["A, B, C, D", "A, D, C, B", "C, A, D, B"]}
-  correctOptionIndex={1}
-  explanation="Σωστά. Πρώτα synchronous A/D, μετά promise microtask C, μετά setTimeout B."
+go();
+console.log("3");
+setTimeout(() => console.log("4"), 0);
+Promise.resolve().then(() => console.log("5"));`}
+  options={["1 3 2 5 4", "1 2 3 5 4", "3 1 2 5 4", "1 3 5 2 4"]}
+  correctOptionIndex={0}
+  answer="1, 3, 2, 5, 4"
+  explanation="Η go() τρέχει synchronously μέχρι το await → '1'. Το await δίνει τον έλεγχο πίσω → '3'. Microtasks με σειρά εγγραφής: η συνέχεια της go ('2') γράφτηκε ΠΡΙΝ το .then ('5'). Τέλος το macrotask '4'."
 />
 
-## Interview answer checklist
+## Drill 7: var, let και τα index traps
 
-Όταν απαντάς σε JavaScript interview:
+<PredictOutput
+  title="Hoisting + typeof drill"
+  code={`console.log(typeof x);
+console.log(typeof y);
 
-- Πες πρώτα τον κανόνα.
-- Μετά δώσε μικρό παράδειγμα.
-- Μετά εξήγησε το output βήμα-βήμα.
-- Αν υπάρχει edge case, πες ποια είναι η ασφαλής πρακτική.
+var x = 1;
+// δεν υπάρχει πουθενά δήλωση y`}
+  options={['"undefined" και "undefined"', '"undefined" και ReferenceError', '"number" και "undefined"', "ReferenceError και ReferenceError"]}
+  correctOptionIndex={0}
+  answer='"undefined" και "undefined"'
+  explanation="Το var x είναι hoisted ως undefined → typeof undefined = 'undefined'. Το typeof είναι ο ΜΟΝΟΣ τελεστής που δεν πετάει error για εντελώς αδήλωτες μεταβλητές — επιστρέφει 'undefined'. (Με let x αντί για var, το typeof x θα πετούσε ReferenceError λόγω TDZ!)"
+/>
+
+## Πώς δομείς κάθε απάντηση στη συνέντευξη
+
+Η δομή που ξεχωρίζει τους καλούς υποψηφίους:
+
+1. **Πες τον κανόνα** — μία πρόταση, με το σωστό όρο (microtask, TDZ, coercion, reference).
+2. **Δώσε μικρό παράδειγμα** — 2-3 γραμμές κώδικα.
+3. **Εξήγησε το output βήμα-βήμα** — δείξε ότι έχεις mental model, όχι αποστήθιση.
+4. **Κλείσε με την ασφαλή πρακτική** — «γι' αυτό σε production χρησιμοποιώ Χ».
 
 Παράδειγμα για equality:
 
-> I prefer `===` because it avoids implicit type coercion. `==` can convert values before comparing, which can create surprising results like `0 == false` being true.
+> I prefer `===` because it avoids implicit type coercion. `==` converts types before comparing, which leads to surprising results — `0 == false` is true, but `null == 0` is false. The one idiomatic exception is `value == null`, which conveniently matches both null and undefined.
 
-<div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200 pt-6">
-  <a href="../../" className="text-gray-500 hover:text-gray-900 font-medium">← Πίσω στο Roadmap</a>
-  <CompleteLessonButton lessonId="javascript-interview-drills" />
-</div>
+<Flashcards
+  title="Γρήγορο repaso — όλα τα drills"
+  cards={[
+    {
+      question: "Ποιες είναι οι 6 falsy τιμές;",
+      answer: "false, 0, '' (empty string), null, undefined, NaN. Όλα τα άλλα truthy — συμπεριλαμβανομένων των [] και {}."
+    },
+    {
+      question: "map vs forEach;",
+      answer: "map επιστρέφει ΝΕΟ array με τα αποτελέσματα — χρήση όταν θες μετασχηματισμό. forEach επιστρέφει undefined — μόνο για side effects. Αν δεν χρησιμοποιείς το αποτέλεσμα του map, έπρεπε να είναι forEach."
+    },
+    {
+      question: "Τι κάνει το spread operator σε nested object;",
+      answer: "Shallow copy: το πρώτο επίπεδο αντιγράφεται, αλλά nested objects/arrays μένουν ΚΟΙΝΕΣ αναφορές. Για deep copy: structuredClone() ή προσεκτικό χειροκίνητο copy."
+    },
+    {
+      question: "Γιατί NaN === NaN είναι false και πώς ελέγχεις για NaN;",
+      answer: "Από το IEEE 754 spec, το NaN δεν ισούται με τίποτα. Έλεγχος: Number.isNaN(x) (αυστηρό) ή Object.is(x, NaN). Το παλιό global isNaN() κάνει coercion και δίνει λάθος θετικά."
+    },
+    {
+      question: "Τι επιστρέφει το ['1','2','3'].map(parseInt) και γιατί;",
+      answer: "[1, NaN, NaN]. Το map καλεί parseInt(value, index): parseInt('1',0)=1, parseInt('2',1)=NaN (radix 1 άκυρο), parseInt('3',2)=NaN (το 3 δεν υπάρχει στο δυαδικό). Fix: .map(Number) ή .map((s) => parseInt(s, 10))."
+    },
+    {
+      question: "Ποια η διαφορά slice και splice;",
+      answer: "slice(start, end): επιστρέφει ΝΕΟ κομμάτι, ΔΕΝ αλλάζει το αρχικό (immutable). splice(start, deleteCount, ...items): ΑΛΛΑΖΕΙ το αρχικό array επιτόπου — αφαιρεί/προσθέτει στοιχεία."
+    },
+    {
+      question: "Πώς εξηγείς το output order: sync, promise, setTimeout;",
+      answer: "Event loop: τρέχει όλος ο synchronous κώδικας (call stack), μετά αδειάζει ΟΛΗ η microtask queue (promise callbacks), μετά παίρνεται ΕΝΑ macrotask (setTimeout) και ο κύκλος επαναλαμβάνεται."
+    },
+    {
+      question: "Τι είναι το optional chaining και το nullish coalescing;",
+      answer: "?. σταματά με undefined αν κάτι στην αλυσίδα είναι null/undefined (user?.address?.city). ?? δίνει default ΜΟΝΟ για null/undefined — σε αντίθεση με το || που 'πατάει' και πάνω σε 0, '' και false."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Μετέτρεψε interview drills σε reasoning"
+  scenario="Μην αποστηθίζεις απαντήσεις. Για κάθε snippet γράψε πρώτα το output, μετά τον λόγο, μετά μια παραλλαγή που θα άλλαζε το αποτέλεσμα."
+  outcomes={[
+    "Να εξηγείς equality, coercion, closures και async order.",
+    "Να αναγνωρίζεις παγίδες πριν τρέξεις κώδικα.",
+    "Να απαντάς με reasoning και όχι με μαντεψιά."
+  ]}
+  steps={[
+    "Πάρε τα 7 drills του μαθήματος και ξαναγράψε τα από μνήμης.",
+    "Για κάθε output γράψε 2-3 προτάσεις εξήγησης.",
+    "Άλλαξε μία γραμμή (var→let, ==→===, .then σειρά) και πρόβλεψε το νέο αποτέλεσμα.",
+    "Σημείωσε ποια έννοια εξετάζει κάθε snippet.",
+    "Φτιάξε 3 δικά σου drills και δοκίμασέ τα σε φίλο ή στο console."
+  ]}
+  checkpoints={[
+    "Η απάντηση περιέχει reasoning, όχι μόνο output.",
+    "Ξέρεις ποια concepts μπερδεύτηκαν όταν κάνεις λάθος.",
+    "Μπορείς να φτιάξεις δικό σου μικρό drill.",
+    "Απαντάς στη δομή: κανόνας → παράδειγμα → εξήγηση → ασφαλής πρακτική."
+  ]}
+  mistakes={[
+    "Να αποστηθίζεις περίεργα snippets χωρίς mental model.",
+    "Να μπερδεύεις == με === χωρίς να εξηγείς coercion.",
+    "Να αγνοείς async queues στο output order.",
+    "Να μπερδεύεις mutation (obj.x = 1) με reassignment (obj = {})."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να διδάξεις την απάντηση σε άλλον με βήματα."
+/>
