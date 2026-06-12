@@ -1,46 +1,29 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useProgress } from "../hooks/useProgress";
 
 export function CompleteLessonButton({ lessonId }: { lessonId: string }) {
   const { markCompleted, isCompleted, isLoaded } = useProgress();
-  const router = useRouter();
 
   if (!isLoaded) return null;
 
-  const completed = isCompleted(lessonId);
-
-  const handleComplete = () => {
-    markCompleted(lessonId);
-    router.push("/");
-  };
-
-  if (completed) {
+  if (isCompleted(lessonId)) {
     return (
-      <div className="flex flex-col sm:flex-row items-center gap-4">
-        <span className="text-green-600 font-medium flex items-center gap-2">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-          </svg>
-          Ολοκληρωμένο
-        </span>
-        <button
-          onClick={() => router.push("/")}
-          className="bg-gray-100 text-gray-700 px-6 py-2.5 rounded-lg font-medium hover:bg-gray-200 transition-colors"
-        >
-          Επιστροφή στο Roadmap
-        </button>
-      </div>
+      <span className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-6 py-2.5 font-medium text-green-700 dark:border-green-900 dark:bg-green-950/40 dark:text-green-400">
+        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+        </svg>
+        Ολοκληρωμένο μάθημα
+      </span>
     );
   }
 
   return (
     <button
-      onClick={handleComplete}
-      className="bg-green-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-green-700 transition-colors shadow-sm hover:shadow"
+      onClick={() => markCompleted(lessonId)}
+      className="rounded-lg bg-green-600 px-6 py-2.5 font-medium text-white shadow-sm transition-colors hover:bg-green-700 hover:shadow"
     >
-      Ολοκλήρωση μαθήματος
+      Ολοκλήρωση μαθήματος ✓
     </button>
   );
 }

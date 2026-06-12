@@ -15,7 +15,19 @@ const nextConfig: NextConfig = {
 };
 
 const withMDX = createMDX({
-  // Add markdown plugins here, as desired
+  options: {
+    rehypePlugins: [
+      // Turbopack requires plugin names as strings with serializable options.
+      [
+        "rehype-pretty-code",
+        {
+          theme: { light: "github-light", dark: "github-dark" },
+          keepBackground: false,
+          defaultLang: "txt",
+        },
+      ],
+    ],
+  },
 });
 
 export default withMDX(nextConfig);

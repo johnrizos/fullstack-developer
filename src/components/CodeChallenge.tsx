@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState } from "react";
 
@@ -139,16 +139,16 @@ export function CodeChallenge({
 </html>`;
 
   return (
-    <section className="my-8 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-      <div className="border-b border-gray-200 p-5">
+    <section className="my-8 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+      <div className="border-b border-gray-200 p-5 dark:border-gray-800">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h3 className="text-xl font-bold text-gray-900">{title}</h3>
-            <p className="mt-1 text-sm text-gray-600">{description}</p>
+            <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">{title}</h3>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{description}</p>
           </div>
           <span
             className={`w-fit rounded-full px-3 py-1 text-sm font-semibold ${
-              isComplete ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"
+              isComplete ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300" : "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
             }`}
           >
             {passedCount}/{checks.length} κριτήρια
@@ -157,8 +157,8 @@ export function CodeChallenge({
       </div>
 
       <div className="grid gap-0 lg:grid-cols-2">
-        <div className="border-b border-gray-200 lg:border-b-0 lg:border-r">
-          <div className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700">
+        <div className="border-b border-gray-200 lg:border-b-0 lg:border-r dark:border-gray-800">
+          <div className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700 dark:border-gray-800 dark:bg-gray-950/60 dark:text-gray-300">
             HTML
           </div>
           <textarea
@@ -168,7 +168,7 @@ export function CodeChallenge({
             className="min-h-56 w-full resize-y bg-gray-950 p-4 font-mono text-sm leading-6 text-gray-50 outline-none"
           />
 
-          <div className="border-y border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700">
+          <div className="border-y border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700 dark:border-gray-800 dark:bg-gray-950/60 dark:text-gray-300">
             CSS
           </div>
           <textarea
@@ -180,7 +180,7 @@ export function CodeChallenge({
 
           {initialJs !== "" && (
             <>
-              <div className="border-y border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700">
+              <div className="border-y border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700 dark:border-gray-800 dark:bg-gray-950/60 dark:text-gray-300">
                 JavaScript
               </div>
               <textarea
@@ -194,7 +194,7 @@ export function CodeChallenge({
 
           {initialTs !== "" && (
             <>
-              <div className="border-y border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700">
+              <div className="border-y border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700 dark:border-gray-800 dark:bg-gray-950/60 dark:text-gray-300">
                 TypeScript
               </div>
               <textarea
@@ -208,7 +208,7 @@ export function CodeChallenge({
         </div>
 
         <div className="flex flex-col">
-          <div className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700">
+          <div className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700 dark:border-gray-800 dark:bg-gray-950/60 dark:text-gray-300">
             Live preview
           </div>
           <iframe
@@ -218,15 +218,15 @@ export function CodeChallenge({
             className="min-h-80 w-full flex-1 bg-white"
           />
 
-          <div className="border-t border-gray-200 p-4">
-            <h4 className="font-semibold text-gray-900">Checklist</h4>
+          <div className="border-t border-gray-200 p-4 dark:border-gray-800">
+            <h4 className="font-semibold text-gray-900 dark:text-gray-100">Checklist</h4>
             <ul className="mt-3 space-y-2">
               {results.map((result) => (
                 <li key={result.id} className="flex items-start gap-2 text-sm">
-                  <span className={result.passed ? "text-green-600" : "text-gray-400"}>
+                  <span className={result.passed ? "text-green-600 dark:text-green-400" : "text-gray-400 dark:text-gray-500"}>
                     {result.passed ? "✓" : "○"}
                   </span>
-                  <span className={result.passed ? "text-green-800" : "text-gray-700"}>{result.label}</span>
+                  <span className={result.passed ? "text-green-800 dark:text-green-300" : "text-gray-700 dark:text-gray-300"}>{result.label}</span>
                 </li>
               ))}
             </ul>
