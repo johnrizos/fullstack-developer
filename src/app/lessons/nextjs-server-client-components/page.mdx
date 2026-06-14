@@ -1,0 +1,215 @@
+# Server & Client Components
+
+Η μεγαλύτερη εννοιολογική αλλαγή του App Router: **τα components είναι Server Components by default**. Στα interviews εξετάζουν αν ξέρεις πότε χρειάζεσαι `'use client'`, τι σημαίνει το boundary, και πώς συνδυάζονται τα δύο είδη χωρίς να φουσκώνεις το client bundle.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς τι κάνει το καθένα και πού τρέχει,
+- να διαλέγεις Server ή Client Component ανά περίπτωση,
+- να καταλαβαίνεις το `'use client'` ως boundary (όχι per-file flag),
+- να κάνεις interleave (Server μέσα σε Client μέσω children),
+- να αποφεύγεις διαρροή secrets στον client.
+
+## By default: Server Components
+
+Layouts και pages είναι **Server Components**: τρέχουν στον server, μπορούν να κάνουν async data fetching κοντά στην πηγή, κρατούν secrets εκτός client, και στέλνουν λιγότερη JavaScript.
+
+```tsx
+// Server Component (default) — async, χωρίς 'use client'
+import { getPost } from "@/lib/data";
+import LikeButton from "@/app/ui/like-button";
+
+export default async function Page({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const post = await getPost(id); // τρέχει στον server
+  return (
+    <main>
+      <h1>{post.title}</h1>
+      <LikeButton likes={post.likes} /> {/* client island */}
+    </main>
+  );
+}
+```
+
+## Πότε Client Component
+
+Βάζεις `'use client'` όταν χρειάζεσαι:
+
+```txt
+- state & event handlers   (useState, onClick, onChange)
+- lifecycle / effects      (useEffect)
+- browser-only APIs        (window, localStorage, geolocation)
+- custom hooks που τα χρησιμοποιούν
+```
+
+```tsx
+// app/ui/like-button.tsx
+"use client";
+import { useState } from "react";
+
+export default function LikeButton({ likes }: { likes: number }) {
+  const [count, setCount] = useState(likes);
+  return <button onClick={() => setCount(count + 1)}>{count}</button>;
+}
+```
+
+## 'use client' είναι boundary, όχι ετικέτα ανά αρχείο
+
+Μόλις ένα αρχείο έχει `'use client'`, **όλα τα imports του και τα components που renderάρει απευθείας** μπαίνουν στο client bundle. Δεν χρειάζεται να βάλεις τη directive σε κάθε child component — η directive ορίζει το σύνορο Server/Client module graph.
+
+<PredictOutput
+  title="Πού χρειάζεται 'use client';"
+  code={`// app/layout.tsx (Server Component)
+import Logo from "./logo";       // static, server
+import Search from "./search";   // χρησιμοποιεί useState
+
+export default function Layout({ children }) {
+  return (
+    <nav>
+      <Logo />
+      <Search />
+    </nav>
+  );
+}
+// Πού πρέπει να μπει το 'use client';`}
+  options={[
+    "Μόνο στο search.tsx — το interactive component",
+    "Στο layout.tsx",
+    "Και στα τρία αρχεία",
+    "Πουθενά"
+  ]}
+  correctOptionIndex={0}
+  answer="Μόνο στο search.tsx"
+  explanation="Βάζεις 'use client' ΜΟΝΟ στο interactive component (Search). Το layout και το Logo μένουν Server Components, οπότε στέλνεις λιγότερη JS. Κανόνας: σπρώξε το 'use client' όσο πιο κάτω/στενά γίνεται, στα φύλλα που χρειάζονται interactivity."
+/>
+
+## Interleaving: Server μέσα σε Client
+
+Δεν μπορείς να κάνεις `import` Server Component μέσα σε Client. Μπορείς όμως να το περάσεις ως **children/prop** — τότε renderάρεται στον server και περνά ως έτοιμο output:
+
+```tsx
+// app/ui/modal.tsx
+"use client";
+export default function Modal({ children }: { children: React.ReactNode }) {
+  return <div className="modal">{children}</div>;
+}
+
+// app/page.tsx (Server Component)
+import Modal from "./ui/modal";
+import Cart from "./ui/cart"; // Server Component
+
+export default function Page() {
+  return (
+    <Modal>
+      <Cart /> {/* renderάρεται server-side, μπαίνει ως slot στο client Modal */}
+    </Modal>
+  );
+}
+```
+
+Τα props που περνάς από Server σε Client πρέπει να είναι **serializable** (όχι functions/Date instances με logic, κλπ — απλά δεδομένα).
+
+## Context providers χρειάζονται Client
+
+Το React Context δεν υποστηρίζεται σε Server Components. Φτιάχνεις provider ως Client Component που δέχεται `children` και τον βάζεις στο (server) layout:
+
+```tsx
+// app/theme-provider.tsx
+"use client";
+import { createContext } from "react";
+export const ThemeContext = createContext("light");
+export default function ThemeProvider({ children }: { children: React.ReactNode }) {
+  return <ThemeContext.Provider value="dark">{children}</ThemeContext.Provider>;
+}
+```
+
+## Μην διαρρεύσεις secrets
+
+Server Components κρατούν API keys ασφαλή. Μόνο μεταβλητές με πρόθεμα `NEXT_PUBLIC_` μπαίνουν στο client bundle — οι υπόλοιπες αντικαθίστανται με κενό string. Για επιπλέον προστασία, το πακέτο `server-only` ρίχνει build-time error αν server κώδικας εισαχθεί σε client.
+
+<Exercise
+  question="Έχεις ένα μεγάλο layout που είναι κυρίως στατικό, αλλά έχει ένα interactive search bar. Τι κάνεις;"
+  options={[
+    "Κρατάς το layout Server Component και βάζεις 'use client' μόνο στο <Search /> — λιγότερη JS στον client.",
+    "Βάζεις 'use client' στο layout για να δουλέψει το search.",
+    "Κάνεις τα πάντα Client Components για συνέπεια."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σπρώχνεις το 'use client' στο φύλλο που χρειάζεται interactivity. Έτσι μόνο το Search μπαίνει στο client bundle· το υπόλοιπο layout μένει server-rendered με μηδενική JS."
+/>
+
+<Exercise
+  question="Θες να δείξεις ένα Server Component (Cart) μέσα σε ένα Client Component (Modal). Πώς;"
+  options={[
+    "Περνάς το <Cart /> ως children στο <Modal> από έναν Server Component γονέα — renderάρεται server-side και μπαίνει ως slot.",
+    "Κάνεις import το Cart μέσα στο Modal.tsx.",
+    "Δεν γίνεται με τίποτα."
+  ]}
+  correctOptionIndex={0}
+  explanation="Δεν κάνεις import Server μέσα σε Client. Το περνάς ως children/prop: ο server το renderάρει και το Client Modal απλώς εμφανίζει το έτοιμο output στο slot. Κλασικό interleaving pattern."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«Server vs Client Components — when do you use each?»
+
+> In the App Router everything is a Server Component by default, which is great for data fetching close to the source, keeping secrets server-side, and shipping less JavaScript. I add `'use client'` only when I need state, event handlers, effects, or browser APIs. The important nuance is that `'use client'` is a boundary, not a per-file label: once a module is a client module, everything it imports and renders directly goes into the client bundle, so I push the directive as far down the tree as possible — to the interactive leaf, like a search bar — and keep the surrounding layout on the server. I can't import a Server Component into a Client one, but I can pass it as `children` so it renders on the server and slots into the client component. Props crossing that boundary must be serializable, and only `NEXT_PUBLIC_`-prefixed env vars reach the client, so secrets stay safe.
+
+<Flashcards
+  title="Server & Client Components — interview drills"
+  cards={[
+    {
+      question: "Τι είναι by default στο App Router;",
+      answer: "Server Components. Τρέχουν στον server, κάνουν async data fetching, κρατούν secrets εκτός client, στέλνουν λιγότερη JS. Client Components χρειάζονται ρητό 'use client'."
+    },
+    {
+      question: "Πότε χρειάζεσαι 'use client';",
+      answer: "Όταν θες state/event handlers (useState, onClick), effects (useEffect), browser APIs (window, localStorage), ή custom hooks που τα χρησιμοποιούν."
+    },
+    {
+      question: "Το 'use client' είναι per-file flag;",
+      answer: "Όχι — είναι boundary. Μόλις ένα module είναι client, όλα τα imports & directly-rendered children μπαίνουν στο client bundle. Σπρώξε το όσο πιο στενά/κάτω γίνεται."
+    },
+    {
+      question: "Πώς βάζεις Server Component μέσα σε Client;",
+      answer: "Δεν το κάνεις import — το περνάς ως children/prop. Renderάρεται server-side και μπαίνει ως slot στο Client Component (interleaving)."
+    },
+    {
+      question: "Γιατί τα Context providers θέλουν 'use client';",
+      answer: "Το React Context δεν υποστηρίζεται σε Server Components. Φτιάχνεις provider ως Client Component με children και τον τοποθετείς στο (server) layout, όσο πιο βαθιά γίνεται."
+    },
+    {
+      question: "Πώς αποφεύγεις διαρροή secrets;",
+      answer: "Κάνε data access σε Server Components. Μόνο NEXT_PUBLIC_ env vars φτάνουν στον client· οι άλλες γίνονται κενό string. Το πακέτο server-only δίνει build-time error σε λάθος import."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Server page με client islands"
+  scenario="Φτιάξε σελίδα προϊόντος που κάνει server data fetching και έχει μικρά interactive κομμάτια."
+  outcomes={[
+    "Να κρατάς το rendering server-first.",
+    "Να απομονώνεις interactivity σε client islands.",
+    "Να κάνεις interleave Server μέσα σε Client."
+  ]}
+  steps={[
+    "Server Component page που φέρνει το προϊόν (await fetch/db).",
+    "AddToCart ως Client Component με useState.",
+    "Layout που μένει Server Component με ένα client Search island.",
+    "Πέρασε ένα Server Component (Reviews) ως children σε ένα client Modal.",
+    "Έλεγξε ότι τα secrets δεν φεύγουν (χωρίς NEXT_PUBLIC_)."
+  ]}
+  checkpoints={[
+    "Μόνο τα interactive φύλλα έχουν 'use client'.",
+    "Το data fetching γίνεται σε Server Components.",
+    "Το client bundle περιέχει μόνο τα islands."
+  ]}
+  mistakes={[
+    "'use client' στο root layout/page χωρίς λόγο (φουσκώνει το bundle).",
+    "import Server Component μέσα σε Client (αντί για children).",
+    "Πέρασμα non-serializable props στο boundary.",
+    "Secrets χωρίς server-only protection / κατά λάθος NEXT_PUBLIC_."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν κρατάς το δέντρο server-first και βάζεις client islands μόνο εκεί που υπάρχει πραγματική interactivity."
+/>

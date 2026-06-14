@@ -1,0 +1,184 @@
+# Consistency, Replication & Scaling
+
+Τα distributed NoSQL stores κλιμακώνουν οριζόντια σε πολλά nodes — αλλά αυτό φέρνει το θεμελιώδες πρόβλημα των κατανεμημένων συστημάτων: **consistency**. Στα interviews εξετάζουν αν καταλαβαίνεις eventual consistency, quorum, και τα trade-offs που το CAP κάνει υποχρεωτικά.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς eventual consistency και πότε είναι αποδεκτή,
+- να υπολογίζεις quorum (R + W > N),
+- να εξηγείς replication και sharding/partitioning,
+- να χειρίζεσαι conflicts (last-write-wins, vector clocks),
+- να ξέρεις το PACELC (επέκταση του CAP).
+
+## Replication — αντίγραφα σε πολλά nodes
+
+Κάθε δεδομένο αποθηκεύεται σε **N replicas** (π.χ. N=3) σε διαφορετικά nodes — για ανθεκτικότητα και διαθεσιμότητα:
+
+```txt
+        write → [node A] [node B] [node C]   (3 replicas του ίδιου δεδομένου)
+        read  ← οποιοδήποτε replica
+```
+
+Αν ένα node πέσει, τα δεδομένα υπάρχουν αλλού. Αλλά: πώς εξασφαλίζεις ότι όλα τα replicas συμφωνούν;
+
+## Eventual consistency
+
+Σε masterless/AP systems, ένα write δεν περιμένει να ενημερωθούν **όλα** τα replicas. Επιστρέφει νωρίς, και τα replicas συγκλίνουν **με τον χρόνο**:
+
+```txt
+t=0:   write στο node A → επιστρέφει "ok"
+t=0:   read από node C → ΑΚΟΜΑ η παλιά τιμή (δεν προλαβε να συγχρονιστεί)
+t=50ms: όλα τα replicas συγχρονισμένα → read δίνει τη νέα τιμή
+```
+
+Αποδεκτό για likes, feeds, view counts. **Μη** αποδεκτό για bank balance. Το «read your own writes» (να βλέπει ο χρήστης τις δικές του αλλαγές) χρειάζεται ειδικό χειρισμό (sticky reads ή υψηλότερο consistency level).
+
+## Quorum: R + W > N
+
+Ο μηχανισμός για **ρυθμιζόμενη** consistency χωρίς να θυσιάσεις όλη την ταχύτητα:
+
+```txt
+N = πλήθος replicas        (π.χ. 3)
+W = replicas που πρέπει να επιβεβαιώσουν ένα WRITE
+R = replicas που ρωτάς σε ένα READ
+
+Αν R + W > N → εγγυημένα διαβάζεις την τελευταία τιμή
+```
+
+<PredictOutput
+  title="Υπολόγισε το quorum"
+  code={`// N = 3 replicas.
+// Θες strong consistency (read your latest write).
+// Διαλέγεις W = 2 (write σε 2 replicas).
+// Ποιο R εγγυάται ότι θα διαβάσεις την τελευταία τιμή;`}
+  options={["R = 2 (γιατί R + W = 4 > 3)", "R = 1", "R = 0", "Αδύνατο με N=3"]}
+  correctOptionIndex={0}
+  answer="R = 2 (R + W > N)"
+  explanation="Με N=3, W=2: χρειάζεσαι R ώστε R + W > 3, δηλαδή R ≥ 2. Με R=2 και W=2, τουλάχιστον ένα replica επικαλύπτεται μεταξύ write-set και read-set → εγγυημένα η τελευταία τιμή. Αν είχες R=1, W=1 (R+W=2 ≤ 3) → eventual μόνο. Έτσι ρυθμίζεις strong vs eventual ανά query."
+/>
+
+## Sharding / Partitioning — μοίρασμα δεδομένων
+
+Replication = ΑΝΤΙΓΡΑΦΑ ίδιων δεδομένων. **Sharding** = ΜΟΙΡΑΣΜΑ διαφορετικών δεδομένων σε nodes, με βάση ένα shard/partition key:
+
+```txt
+users A-H → shard 1
+users I-P → shard 2
+users Q-Z → shard 3
+```
+
+Έτσι κάθε node κρατά μέρος των δεδομένων → οριζόντια κλίμακα. Ο κίνδυνος (όπως και στο SQL sharding): **κακό shard key → hot shards** (ανισοκατανομή). Τα distributed NoSQL το κάνουν αυτόματα, αλλά εσύ διαλέγεις το partition key.
+
+## Conflict resolution
+
+Σε masterless systems, δύο nodes μπορεί να δεχτούν concurrent writes στο ίδιο key. Πώς λύνεται;
+
+```txt
+Last-Write-Wins (LWW)  → κρατά το write με το πιο πρόσφατο timestamp
+                          (απλό, αλλά χάνει δεδομένα σε true concurrency)
+Vector clocks          → ανιχνεύουν causality· εντοπίζουν conflicts για να
+                          τα λύσει ο app (π.χ. merge shopping carts)
+CRDTs                  → Conflict-free Replicated Data Types: δομές που
+                          συγχωνεύονται ντετερμινιστικά (counters, sets)
+```
+
+## PACELC — η επέκταση του CAP
+
+Το CAP μιλά μόνο για partitions. Το **PACELC** συμπληρώνει το «τι γίνεται όταν ΔΕΝ υπάρχει partition»:
+
+```txt
+PAC  → σε Partition: Availability ή Consistency (το CAP)
+ELC  → Else (κανονικά): Latency ή Consistency
+
+π.χ. το DynamoDB είναι PA/EL: προτιμά availability & latency.
+     ένα CP store προτιμά consistency και στις δύο περιπτώσεις.
+```
+
+Δείχνει ότι το trade-off consistency vs latency υπάρχει **πάντα**, όχι μόνο σε αποτυχίες.
+
+<Exercise
+  question="Με N=3 replicas, ποια ρύθμιση R/W δίνει strong consistency;"
+  options={[
+    "Οποιαδήποτε με R + W > N, π.χ. W=2 και R=2 (4 > 3).",
+    "R=1, W=1 (γρηγορότερο).",
+    "R=0, W=3."
+  ]}
+  correctOptionIndex={0}
+  explanation="Strong consistency όταν R + W > N: το read-set και το write-set επικαλύπτονται σε τουλάχιστον ένα replica, άρα διαβάζεις την τελευταία τιμή. R=1,W=1 (=2 ≤ 3) δίνει μόνο eventual. Ρυθμίζεις το trade-off ανά query."
+/>
+
+<Exercise
+  question="Ένα 'likes counter' σε feed app — eventual consistency είναι πρόβλημα;"
+  options={[
+    "Όχι — ένας μετρητής που συγκλίνει σε λίγα ms είναι μια χαρά· κερδίζεις availability/latency.",
+    "Ναι, πρέπει strong consistency πάντα.",
+    "Eventual consistency δεν υπάρχει σε counters."
+  ]}
+  correctOptionIndex={0}
+  explanation="Likes/views/feeds αντέχουν eventual consistency: αν δείξει στιγμιαία 1.204 αντί 1.205, κανείς δεν νοιάζεται. Το trade-off (availability/latency αντί strong consistency) αξίζει. Ένα bank balance, αντίθετα, θέλει strong."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How does consistency work in a distributed NoSQL store?»
+
+> Data is replicated to N nodes for durability and availability, and the question is how the replicas agree. Many NoSQL stores are eventually consistent: a write returns before all replicas are updated, and they converge in milliseconds — fine for likes or feeds, not for a bank balance. I tune it with quorums: with N replicas, if the read set and write set satisfy `R + W > N`, they overlap on at least one replica, so I read the latest write. That lets me pick strong or eventual per query. Replication copies the same data; sharding splits different data across nodes by a partition key, and a bad key causes hot shards just like in SQL. Concurrent writes are resolved with last-write-wins, vector clocks, or CRDTs depending on how much I can tolerate losing. And PACELC reminds me the consistency-versus-latency trade-off exists even without a partition, not just during failures.
+
+<Flashcards
+  title="Consistency & scaling — interview drills"
+  cards={[
+    {
+      question: "Τι είναι eventual consistency;",
+      answer: "Ένα write επιστρέφει πριν ενημερωθούν όλα τα replicas· συγκλίνουν με τον χρόνο (ms). Αποδεκτό για likes/feeds/counters· όχι για bank balance. 'Read your own writes' θέλει ειδικό χειρισμό."
+    },
+    {
+      question: "Τι είναι το quorum R + W > N;",
+      answer: "N replicas, W επιβεβαιώνουν write, R ρωτάς σε read. Αν R+W>N, read-set & write-set επικαλύπτονται → διαβάζεις την τελευταία τιμή (strong). Ρυθμίζεις consistency ανά query."
+    },
+    {
+      question: "Replication vs sharding;",
+      answer: "Replication: ΑΝΤΙΓΡΑΦΑ ίδιων δεδομένων σε N nodes (ανθεκτικότητα/διαθεσιμότητα). Sharding: ΜΟΙΡΑΣΜΑ διαφορετικών δεδομένων με shard key (οριζόντια κλίμακα). Κακό shard key → hot shards."
+    },
+    {
+      question: "Πώς λύνονται concurrent write conflicts;",
+      answer: "Last-Write-Wins (timestamp, απλό αλλά χάνει δεδομένα), vector clocks (ανιχνεύουν causality, ο app κάνει merge), CRDTs (δομές που συγχωνεύονται ντετερμινιστικά: counters/sets)."
+    },
+    {
+      question: "Τι είναι το PACELC;",
+      answer: "Επέκταση CAP: σε Partition → Availability ή Consistency· Else (κανονικά) → Latency ή Consistency. Δείχνει ότι το trade-off consistency/latency υπάρχει ΠΑΝΤΑ, όχι μόνο σε αποτυχίες."
+    },
+    {
+      question: "Πότε διαλέγεις eventual αντί για strong consistency;",
+      answer: "Όταν η διαθεσιμότητα/ταχύτητα μετράει περισσότερο από τη στιγμιαία ακρίβεια: likes, views, feeds, recommendations. Strong όταν η ακρίβεια είναι κρίσιμη: χρήματα, αποθέματα, κρατήσεις."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Consistency/scaling plan για distributed store"
+  scenario="Σχεδίασε replication & consistency strategy για δύο features: ένα likes counter και ένα wallet balance."
+  outcomes={[
+    "Να ρυθμίζεις consistency με quorum.",
+    "Να διακρίνεις replication από sharding.",
+    "Να διαλέγεις consistency level ανά feature."
+  ]}
+  steps={[
+    "Όρισε N replicas και εξήγησε τον ρόλο τους.",
+    "Για το likes counter: διάλεξε eventual (χαμηλό R/W) και δικαιολόγησέ το.",
+    "Για το wallet: διάλεξε quorum (R + W > N) για strong consistency.",
+    "Σχεδίασε sharding με ένα partition key που αποφεύγει hot shards.",
+    "Διάλεξε conflict resolution για concurrent writes (LWW vs CRDT counter)."
+  ]}
+  checkpoints={[
+    "Το wallet έχει R + W > N· το counter όχι (συνειδητά).",
+    "Replication & sharding ξεχωρίζουν στο σχέδιο.",
+    "Το partition key έχει υψηλή cardinality."
+  ]}
+  mistakes={[
+    "Strong consistency παντού (σκοτώνεις availability/latency χωρίς λόγο).",
+    "Eventual consistency σε χρηματικά δεδομένα.",
+    "Σύγχυση replication (αντίγραφα) με sharding (μοίρασμα).",
+    "LWW όπου χρειάζεσαι merge (χάνεις δεδομένα)."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν διαλέγεις consistency level ανά feature και εξηγείς το quorum trade-off."
+/>

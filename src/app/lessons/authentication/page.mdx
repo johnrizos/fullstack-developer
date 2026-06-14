@@ -68,7 +68,7 @@ Set-Cookie: sid=abc123; HttpOnly; Secure; SameSite=Lax; Max-Age=604800; Path=/
 }
 ```
 
-Ο server το υπογράφει με secret (HMAC) ή private key (RSA). Σε κάθε request, ο client το στέλνει στο `Authorization: Bearer <token>` και ο server **επαληθεύει την υπογραφή χωρίς database lookup** — αυτό είναι το stateless πλεονέκτημα.
+Ο server το υπογράφει με ένα κοινό secret (HMAC — symmetric, ίδιο κλειδί για sign & verify) ή με private/public key ζεύγος (RSA — asymmetric). Σε κάθε request, ο client το στέλνει στο `Authorization: Bearer <token>` και ο server **επαληθεύει την υπογραφή χωρίς database lookup** — αυτό είναι το stateless πλεονέκτημα.
 
 Τα τρία πράγματα που ΠΡΕΠΕΙ να πεις σωστά σε συνέντευξη:
 
@@ -133,7 +133,7 @@ Logout / κλοπή → revoke το refresh token στη DB → μετά από 
 7. Από εκεί και πέρα: ΔΙΚΟ σου session/JWT όπως πάντα
 ```
 
-Σημεία που ξεχωρίζουν τον καλό υποψήφιο: το **authorization code** ανταλλάσσεται server-side (το `client_secret` δεν αγγίζει ποτέ τον browser), το **state** parameter προστατεύει από CSRF, και το **PKCE** είναι η επέκταση για mobile/SPA clients που δεν μπορούν να κρατήσουν secret.
+Σημεία που ξεχωρίζουν τον καλό υποψήφιο: το **authorization code** ανταλλάσσεται server-side (το `client_secret` δεν αγγίζει ποτέ τον browser), το **state** parameter προστατεύει από CSRF, και το **PKCE** (Proof Key for Code Exchange) είναι η επέκταση για mobile/SPA (Single-Page App) clients που δεν μπορούν να κρατήσουν μυστικό το `client_secret`.
 
 ## Authorization: το δεύτερο μισό που όλοι ξεχνούν
 
@@ -173,6 +173,49 @@ async function getTask(taskId: string, currentUserId: string) {
   correctOptionIndex={1}
   explanation="Σωστά. IDOR: ο server επαλήθευσε το authentication αλλά ΟΧΙ το ownership. Λύση: κάθε query φιλτράρει με το currentUserId — ποτέ δεν εμπιστεύεσαι το id από το URL μόνο του."
 />
+
+## Σε πραγματικό project: το auth flow ενός feature
+
+Δες πώς ενώνονται τα κομμάτια όταν χτίζεις στ' αλήθεια το «ο χρήστης βλέπει το dashboard του». Ακολούθησε ένα πραγματικό request από το login μέχρι το protected data:
+
+```txt
+1. REGISTER
+   POST /register { email, password }
+   → Zod validation → bcrypt.hash(password, 12) → db.user.create
+   → 201 (ΟΧΙ auto-login· ο χρήστης κάνει login χωριστά)
+
+2. LOGIN
+   POST /login { email, password }
+   → bcrypt.compare → αν λάθος: 401 "Invalid credentials" (generic!)
+   → αν σωστό: createSession(userId) στο Redis
+   → Set-Cookie: sid=...; HttpOnly; Secure; SameSite=Lax
+
+3. PROTECTED REQUEST (κάθε φορά)
+   GET /api/dashboard  (ο browser στέλνει αυτόματα το cookie)
+   → auth middleware: διαβάζει sid → lookup στο Redis → req.user = {...}
+   → αν λείπει/άκυρο: 401
+
+4. OWNERSHIP (το βήμα που ξεχνιέται)
+   GET /api/projects/42
+   → db.project.findFirst({ where: { id: 42, userId: req.user.id } })
+   → αν δεν ανήκει: 404 (όχι IDOR!)
+
+5. LOGOUT
+   POST /logout → deleteSession(sid) από Redis → το cookie αχρηστεύεται
+```
+
+Οι **αποφάσεις** που πήρε η ομάδα εδώ — και το «γιατί», όπως θα τις υπερασπιστείς σε review:
+
+```txt
+"Sessions ή JWT;"   → Sessions + Redis. Είναι web app με δικό μας frontend,
+                      θέλουμε άμεσο logout/revoke. JWT θα το διαλέγαμε αν
+                      είχαμε mobile app ή πολλά microservices.
+"Πού το token;"     → HttpOnly cookie, ποτέ localStorage (XSS theft).
+"Rate limiting;"    → Ναι, στο /login: 5 αποτυχίες/IP → cooldown (brute force).
+"Authorization;"    → Ownership σε ΚΑΘΕ query, όχι μόνο "είναι logged in;".
+```
+
+Αυτό είναι το πλήρες mental model: **κάθε γραμμή** αντιστοιχεί σε μια θεωρία που είδες παραπάνω, αλλά τώρα σε σειρά, σαν πραγματικό feature.
 
 ## Mini project: protected dashboard
 

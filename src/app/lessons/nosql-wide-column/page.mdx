@@ -1,0 +1,180 @@
+# Wide-Column Stores (Cassandra)
+
+Τα wide-column stores (Cassandra, Bigtable, ScyllaDB) είναι φτιαγμένα για **τεράστια κλίμακα write-heavy** δεδομένων κατανεμημένα σε πολλά nodes. Στα interviews εξετάζουν την αντεστραμμένη λογική τους: σχεδιάζεις **query-first**, και το partition key καθορίζει τα πάντα.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς το wide-column μοντέλο (partition + clustering keys),
+- να σχεδιάζεις πίνακα **από το query**, όχι από τα δεδομένα,
+- να καταλαβαίνεις γιατί είναι write-optimized,
+- να εξηγείς tunable consistency,
+- να ξέρεις πότε ταιριάζει (και πότε όχι).
+
+## Το μοντέλο: partition key + clustering key
+
+Δεδομένα οργανώνονται σε **partitions** (κατανεμημένα σε nodes). Μέσα σε ένα partition, τα rows ταξινομούνται από το **clustering key**:
+
+```cql
+CREATE TABLE messages_by_room (
+  room_id    uuid,        -- partition key: ΠΟΥ ζουν τα δεδομένα
+  sent_at    timestamp,   -- clustering key: ΣΕΙΡΑ μέσα στο partition
+  message_id uuid,
+  body       text,
+  PRIMARY KEY (room_id, sent_at)
+) WITH CLUSTERING ORDER BY (sent_at DESC);
+```
+
+Query «τα τελευταία 50 μηνύματα ενός room» → ένα partition, ήδη ταξινομημένα → πανγρήγορο:
+
+```cql
+SELECT * FROM messages_by_room WHERE room_id = ? LIMIT 50;
+```
+
+## Query-first design — η αντεστραμμένη λογική
+
+Στο relational: ένα normalized schema, μετά κάνεις όποιο query θες. Στο Cassandra: **ξεκινάς από τα queries** και φτιάχνεις έναν πίνακα **ανά query pattern** — ακόμα κι αν διπλασιάζεις δεδομένα.
+
+```txt
+Relational:  1 table → πολλά queries (joins, ad-hoc)
+Cassandra:   1 query → 1 table (denormalized, data duplication ΑΠΟΔΕΚΤΗ)
+```
+
+<PredictOutput
+  title="Γιατί δύο πίνακες για ίδια δεδομένα;"
+  code={`// Θες να διαβάζεις μηνύματα ΚΑΙ ανά room ΚΑΙ ανά user.
+// Στο Cassandra τι κάνεις;
+//   A: ένας πίνακας messages + index/join
+//   B: δύο πίνακες: messages_by_room ΚΑΙ messages_by_user
+//      (ίδια δεδομένα, γραμμένα δύο φορές)`}
+  options={[
+    "B — ένας πίνακας ανά access pattern, με data duplication",
+    "A — ένας πίνακας με JOIN",
+    "A — ένας πίνακας με WHERE σε όποια στήλη",
+    "Δεν γίνεται τίποτα από τα δύο"
+  ]}
+  correctOptionIndex={0}
+  answer="B — table ανά query"
+  explanation="Το Cassandra δεν κάνει joins και δεν επιτρέπει αποδοτικά queries σε μη-key στήλες. Σχεδιάζεις έναν πίνακα ανά access pattern (messages_by_room, messages_by_user), γράφοντας τα δεδομένα σε όλους. Η data duplication είναι ΣΧΕΔΙΑΣΤΙΚΗ απόφαση — ο χώρος είναι φθηνός, τα γρήγορα reads όχι."
+/>
+
+## Γιατί write-optimized
+
+Το Cassandra γράφει με **append** σε log (commit log + memtable → SSTable), χωρίς in-place updates ή read-before-write. Αυτό το κάνει εξαιρετικό για:
+
+```txt
+- Time-series data (sensors, metrics, IoT)
+- Event logs / activity feeds
+- Messaging (huge write volume)
+- Tracking/analytics ingestion
+```
+
+Δεν υπάρχει single master — **όλα τα nodes δέχονται writes** (masterless, peer-to-peer), άρα κλιμακώνει οριζόντια γραμμικά προσθέτοντας nodes.
+
+## Tunable consistency
+
+Δεν διαλέγεις «strong ή eventual» μια για πάντα — το ρυθμίζεις **ανά query** με consistency level:
+
+```txt
+Write/Read consistency: ONE, QUORUM, ALL
+- ONE     → γρήγορο, λιγότερη συνέπεια
+- QUORUM  → η πλειοψηφία των replicas (R + W > N → strong-ish)
+- ALL     → όλα τα replicas, αργό αλλά πιο συνεπές
+```
+
+Αν `W + R > N` (replicas που γράφουν + διαβάζουν > σύνολο replicas), έχεις εγγυημένα τελευταία τιμή. Έτσι ισορροπείς latency vs consistency ανά περίπτωση.
+
+## Πότε ΟΧΙ Cassandra
+
+```txt
+- Όταν χρειάζεσαι joins, ad-hoc queries, ή ad-hoc filtering
+- Όταν τα access patterns αλλάζουν συχνά (το schema είναι query-locked)
+- Όταν χρειάζεσαι strong ACID transactions across rows
+- Για μικρά/μεσαία δεδομένα — είναι overkill· relational αρκεί
+```
+
+<Exercise
+  question="Στο Cassandra θες να διαβάζεις δεδομένα με δύο διαφορετικά patterns (ανά room & ανά user). Τι κάνεις;"
+  options={[
+    "Φτιάχνεις δύο πίνακες (έναν ανά pattern) και γράφεις τα δεδομένα και στους δύο — query-first design με αποδεκτή duplication.",
+    "Έναν πίνακα με JOIN.",
+    "Έναν πίνακα και κάνεις WHERE σε non-key στήλη."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το Cassandra δεν έχει joins και δεν κάνει αποδοτικά queries εκτός partition/clustering keys. Σχεδιάζεις έναν πίνακα ανά query pattern. Η data duplication είναι θεμιτή — ο χώρος είναι φθηνός σε σχέση με την απόδοση."
+/>
+
+<Exercise
+  question="Γιατί το Cassandra είναι ιδανικό για time-series/event ingestion;"
+  options={[
+    "Append-based writes χωρίς read-before-write + masterless (όλα τα nodes δέχονται writes) → τεράστιο write throughput που κλιμακώνει γραμμικά.",
+    "Επειδή κάνει τα πιο σύνθετα joins.",
+    "Επειδή έχει το καλύτερο ad-hoc querying."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το write path είναι append (commit log + memtable), χωρίς in-place update. Χωρίς single master, κάθε node δέχεται writes. Αυτό δίνει τεράστιο, οριζόντια κλιμακούμενο write throughput — ιδανικό για logs/metrics/messaging."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«When and how do you use a wide-column store like Cassandra?»
+
+> Cassandra is for massive, write-heavy, distributed data — time-series, event logs, messaging. The model is partition key plus clustering key: the partition key decides which node the data lives on, the clustering key orders rows within a partition. The mental shift is query-first design: instead of one normalized table and arbitrary queries, I design a table per access pattern and duplicate data across them, because there are no joins and you can't efficiently query non-key columns — storage is cheap, fast reads aren't. Writes are append-based with no read-before-write and it's masterless, so every node accepts writes and it scales horizontally and linearly. Consistency is tunable per query with levels like ONE or QUORUM, and `W + R > N` gives me strong reads when I need them. I avoid it when I need joins, ad-hoc queries, or strong cross-row transactions.
+
+<Flashcards
+  title="Wide-column stores — interview drills"
+  cards={[
+    {
+      question: "Partition key vs clustering key;",
+      answer: "Partition key: καθορίζει σε ποιο node ζουν τα δεδομένα (κατανομή). Clustering key: ορίζει τη σειρά των rows μέσα στο partition. Μαζί = primary key."
+    },
+    {
+      question: "Τι είναι το query-first design;",
+      answer: "Σχεδιάζεις έναν πίνακα ανά access pattern (όχι ένα normalized για όλα), με αποδεκτή data duplication. Γιατί: όχι joins, όχι queries σε non-key στήλες. Ξεκινάς από το query, όχι από τα δεδομένα."
+    },
+    {
+      question: "Γιατί είναι write-optimized;",
+      answer: "Append-based writes (commit log + memtable → SSTable), χωρίς in-place update ή read-before-write, masterless (κάθε node δέχεται writes). Τεράστιο, γραμμικά κλιμακούμενο write throughput."
+    },
+    {
+      question: "Τι είναι tunable consistency;",
+      answer: "Ρυθμίζεις consistency ανά query (ONE/QUORUM/ALL). W+R>N → εγγυημένα τελευταία τιμή (strong-ish). Ισορροπείς latency vs consistency ανά περίπτωση αντί για μία σταθερή επιλογή."
+    },
+    {
+      question: "Ιδανικά use cases;",
+      answer: "Time-series (IoT/metrics), event logs, activity feeds, messaging — ό,τι έχει τεράστιο write volume και γνωστά access patterns."
+    },
+    {
+      question: "Πότε ΟΧΙ Cassandra;",
+      answer: "Όταν θες joins, ad-hoc queries, συχνά μεταβαλλόμενα patterns, strong cross-row ACID, ή για μικρά/μεσαία δεδομένα (overkill — relational αρκεί)."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Cassandra table design από access patterns"
+  scenario="Σχεδίασε πίνακες για ένα chat/feed feature στο Cassandra, ξεκινώντας από τα queries."
+  outcomes={[
+    "Να σχεδιάζεις query-first με partition/clustering keys.",
+    "Να δέχεσαι data duplication ως σχεδιαστική απόφαση.",
+    "Να επιλέγεις consistency level ανά query."
+  ]}
+  steps={[
+    "Γράψε τα access patterns (π.χ. 'τελευταία μηνύματα ανά room', 'ανά user').",
+    "Για κάθε pattern φτιάξε πίνακα με σωστό partition + clustering key.",
+    "Όρισε CLUSTERING ORDER για τη σειρά ανάγνωσης.",
+    "Σημείωσε ποια δεδομένα διπλασιάζονται και γιατί είναι οκ.",
+    "Διάλεξε consistency level για ένα critical write και ένα read."
+  ]}
+  checkpoints={[
+    "Κάθε query καλύπτεται από πίνακα με κατάλληλο partition key.",
+    "Δεν υπάρχει query σε non-key στήλη ή join.",
+    "Η data duplication δικαιολογείται από access pattern."
+  ]}
+  mistakes={[
+    "Να σχεδιάζεις normalized σαν relational.",
+    "Partition key χαμηλής cardinality → hot partitions.",
+    "Να περιμένεις joins ή ad-hoc filtering.",
+    "Να χρησιμοποιείς Cassandra για μικρά δεδομένα/μεταβαλλόμενα patterns."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν σχεδιάζεις Cassandra tables ξεκινώντας από τα queries και δικαιολογείς κάθε partition key."
+/>

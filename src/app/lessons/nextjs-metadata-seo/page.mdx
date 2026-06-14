@@ -1,0 +1,222 @@
+# Metadata, SEO & OG Images
+
+Το Next.js παράγει αυτόματα τα σωστά `<head>` tags από ένα **Metadata API** — static object ή dynamic `generateMetadata`. Στα interviews εξετάζουν πώς κάνεις per-page SEO με δεδομένα, πώς αποφεύγεις διπλά fetches, και πώς φτιάχνεις dynamic OG images.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να ορίζεις static `metadata` σε page/layout,
+- να φτιάχνεις dynamic `generateMetadata` με δεδομένα,
+- να αποφεύγεις διπλό fetch με `React.cache`,
+- να παράγεις dynamic OG images με `ImageResponse`,
+- να ξέρεις τα file conventions (sitemap, robots, favicon).
+
+## Static metadata
+
+Export ενός `Metadata` object από `layout.tsx` ή `page.tsx`. Το Next.js φτιάχνει τα `<head>` tags:
+
+```tsx
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "My Blog",
+  description: "Σκέψεις για web development.",
+  openGraph: { title: "My Blog", images: ["/og.png"] },
+};
+
+export default function Layout({ children }: { children: React.ReactNode }) {
+  return <section>{children}</section>;
+}
+```
+
+> `metadata` και `generateMetadata` υποστηρίζονται **μόνο σε Server Components**.
+
+## Dynamic metadata: generateMetadata
+
+Όταν το metadata εξαρτάται από δεδομένα (π.χ. τίτλος blog post), χρησιμοποιείς `generateMetadata`. Το `params` είναι **Promise**:
+
+```tsx
+// app/blog/[slug]/page.tsx
+import type { Metadata } from "next";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const post = await getPost(slug);
+  return { title: post.title, description: post.excerpt };
+}
+
+export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const post = await getPost(slug);
+  return <Article post={post} />;
+}
+```
+
+## Αποφυγή διπλού fetch με React.cache
+
+Παρατήρησε: το `getPost(slug)` καλείται **δύο φορές** — στο `generateMetadata` και στο `Page`. Με `React.cache`, εκτελείται μόνο μία φορά ανά request:
+
+```ts
+// app/lib/data.ts
+import { cache } from "react";
+
+export const getPost = cache(async (slug: string) => {
+  return db.query.posts.findFirst({ where: eq(posts.slug, slug) });
+});
+```
+
+<PredictOutput
+  title="Πόσα DB queries;"
+  code={`// app/lib/data.ts
+export const getPost = cache(async (slug) => db.findPost(slug));
+
+// page.tsx
+export async function generateMetadata({ params }) {
+  const { slug } = await params;
+  const post = await getPost(slug);   // call 1
+  return { title: post.title };
+}
+export default async function Page({ params }) {
+  const { slug } = await params;
+  const post = await getPost(slug);   // call 2
+  return <h1>{post.title}</h1>;
+}
+// Πόσα πραγματικά queries γίνονται για ένα request;`}
+  options={["2", "1", "0", "3"]}
+  correctOptionIndex={1}
+  answer="1 query"
+  explanation="Το React.cache memoize-άρει το αποτέλεσμα ανά request: δύο κλήσεις getPost(slug) με ίδιο argument → ένα πραγματικό query. Χωρίς cache θα γίνονταν 2. Το cache είναι scoped στο τρέχον request (δεν μοιράζεται μεταξύ requests)."
+/>
+
+## Streaming metadata
+
+Για dynamically rendered pages, το Next.js **streamάρει** το metadata ξεχωριστά: το εισάγει στο HTML μόλις resolve-άρει το `generateMetadata`, χωρίς να μπλοκάρει το UI. Για bots/crawlers (Twitterbot, Slackbot, Bingbot) το streaming **απενεργοποιείται** ώστε να βρουν το metadata στο `<head>`.
+
+## Dynamic OG images: ImageResponse
+
+Φτιάχνεις OG image με JSX/CSS μέσω `ImageResponse` από `next/og`, σε αρχείο `opengraph-image.tsx`:
+
+```tsx
+// app/blog/[slug]/opengraph-image.tsx
+import { ImageResponse } from "next/og";
+import { getPost } from "@/app/lib/data";
+
+export const size = { width: 1200, height: 630 };
+export const contentType = "image/png";
+
+export default async function Image({ params }: { params: { slug: string } }) {
+  const post = await getPost(params.slug);
+  return new ImageResponse(
+    (
+      <div style={{ fontSize: 64, width: "100%", height: "100%", display: "flex",
+        alignItems: "center", justifyContent: "center", background: "white" }}>
+        {post.title}
+      </div>
+    ),
+    size,
+  );
+}
+```
+
+> `ImageResponse` υποστηρίζει flexbox και ένα υποσύνολο CSS (όχι `display: grid`). Μετατρέπει HTML/CSS σε PNG.
+
+## File-based metadata
+
+```txt
+favicon.ico / icon.png / apple-icon.png   → icons
+opengraph-image.jpg / twitter-image.jpg   → social images (static ή generated)
+robots.txt  (ή robots.ts)                 → crawling rules
+sitemap.xml (ή sitemap.ts)                → sitemap
+```
+
+Πιο συγκεκριμένο αρχείο (βαθύτερα στο δέντρο) υπερισχύει του γενικότερου.
+
+<Exercise
+  question="Ο τίτλος της σελίδας εξαρτάται από δεδομένα (blog post). Πώς κάνεις το SEO;"
+  options={[
+    "Με export async generateMetadata που φέρνει τα δεδομένα και επιστρέφει Metadata (params είναι Promise → await).",
+    "Με document.title σε useEffect.",
+    "Με static export const metadata και σταθερό τίτλο."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το generateMetadata τρέχει στον server, φέρνει δεδομένα και επιστρέφει το Metadata object — το Next.js παράγει τα <head> tags. Το useEffect/document.title είναι client-side και δεν διαβάζεται από crawlers σωστά."
+/>
+
+<Exercise
+  question="Το getPost καλείται και στο generateMetadata και στο Page. Πώς αποφεύγεις διπλό query;"
+  options={[
+    "Τυλίγεις το getPost σε React.cache — memoize ανά request, ένα πραγματικό query.",
+    "Κάνεις το ένα από τα δύο client-side.",
+    "Δεν γίνεται, πάντα 2 queries."
+  ]}
+  correctOptionIndex={0}
+  explanation="React.cache(fn) memoize-άρει το αποτέλεσμα στο scope του request: ίδιο argument → ένα execution. Ιδανικό όταν metadata και page χρειάζονται τα ίδια δεδομένα."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you handle metadata and SEO in Next.js?»
+
+> Next.js generates the `<head>` tags from a Metadata API, only in Server Components. For static pages I export a `metadata` object from the page or layout; when the metadata depends on data — a blog post's title — I export an async `generateMetadata`, awaiting `params` since it's a Promise, and returning the `Metadata`. Because the page itself usually needs the same data, I wrap the fetch in `React.cache` so it runs once per request instead of twice. For dynamically rendered pages metadata streams in separately so it doesn't block the UI, except for crawlers where it stays in the head. For social previews I generate dynamic OG images with `ImageResponse` from `next/og` in an `opengraph-image.tsx`, using JSX and flexbox CSS, and I rely on file conventions like `sitemap.ts`, `robots.ts`, and `favicon.ico`.
+
+<Flashcards
+  title="Metadata & SEO — interview drills"
+  cards={[
+    {
+      question: "Static vs dynamic metadata;",
+      answer: "Static: export const metadata: Metadata = {...} σε page/layout. Dynamic: export async generateMetadata({ params }) που φέρνει δεδομένα. Μόνο σε Server Components."
+    },
+    {
+      question: "Γιατί params await στο generateMetadata;",
+      answer: "Στο Next.js 16 το params είναι Promise. const { slug } = await params πριν το χρησιμοποιήσεις για fetch."
+    },
+    {
+      question: "Πώς αποφεύγεις διπλό fetch metadata+page;",
+      answer: "React.cache(fn): memoize-άρει το αποτέλεσμα ανά request, ώστε η ίδια κλήση σε generateMetadata και Page να εκτελεστεί μία φορά."
+    },
+    {
+      question: "Πώς φτιάχνεις dynamic OG image;",
+      answer: "opengraph-image.tsx με ImageResponse από next/og: JSX + flexbox CSS → PNG. Export size & contentType. Υποστηρίζει υποσύνολο CSS (όχι grid)."
+    },
+    {
+      question: "Τι είναι το streaming metadata;",
+      answer: "Για dynamic pages, το metadata εισάγεται στο HTML μόλις resolve-άρει το generateMetadata, χωρίς να μπλοκάρει το UI. Απενεργοποιείται για bots/crawlers."
+    },
+    {
+      question: "File conventions για metadata;",
+      answer: "favicon.ico/icon.png, opengraph-image/twitter-image, robots.ts, sitemap.ts. Πιο συγκεκριμένο (βαθύτερα) υπερισχύει του γενικού."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="SEO-ready σελίδες με OG images"
+  scenario="Φτιάξε blog με per-post metadata, μοιρασμένο fetch και dynamic OG image."
+  outcomes={[
+    "Να κάνεις dynamic SEO με generateMetadata.",
+    "Να αποφεύγεις διπλά fetches με React.cache.",
+    "Να παράγεις dynamic OG images."
+  ]}
+  steps={[
+    "Static metadata στο root/blog layout (title template, description).",
+    "generateMetadata στο [slug] που φέρνει τον τίτλο/excerpt.",
+    "Τύλιξε το getPost σε React.cache και χρησιμοποίησέ το και στο Page.",
+    "opengraph-image.tsx με ImageResponse που δείχνει τον τίτλο.",
+    "Πρόσθεσε sitemap.ts και robots.ts."
+  ]}
+  checkpoints={[
+    "Κάθε post έχει σωστό title/description στο <head>.",
+    "Γίνεται ένα query ανά request (React.cache).",
+    "Το OG image δείχνει τον τίτλο του post."
+  ]}
+  mistakes={[
+    "document.title σε useEffect αντί για metadata API.",
+    "params χωρίς await στο generateMetadata.",
+    "Διπλό fetch χωρίς React.cache.",
+    "OG image με grid CSS (δεν υποστηρίζεται)."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν κάθε σελίδα έχει σωστό, data-driven metadata και μοναδικό OG image χωρίς διπλά fetches."
+/>

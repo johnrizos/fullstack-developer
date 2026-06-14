@@ -1,0 +1,183 @@
+# Effects & Lifecycle
+
+Το `useEffect` είναι το πιο παρεξηγημένο hook. Οι περισσότεροι το χρησιμοποιούν υπερβολικά — για πράγματα που ανήκουν στο render. Στα interviews εξετάζουν αν ξέρεις **πότε ΔΕΝ χρειάζεσαι effect**, πώς δουλεύει το cleanup, και πώς αποφεύγεις race conditions.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να ξεχωρίζεις «συγχρονισμό με εξωτερικό σύστημα» από «αντίδραση σε state»,
+- να διαβάζεις σωστά το dependency array,
+- να γράφεις cleanup functions για subscriptions/timers/requests,
+- να λύνεις race conditions με AbortController/flag,
+- να αναγνωρίζεις effects που είναι περιττά.
+
+## Τι είναι effect
+
+Το `useEffect` συγχρονίζει το component με **εξωτερικά συστήματα**: network, subscriptions, timers, DOM APIs, browser storage. Δεν είναι «τρέξε κώδικα μετά το render για να αλλάξεις state» — αυτό συνήθως είναι bug.
+
+```tsx
+useEffect(() => {
+  const id = setInterval(() => setTick((t) => t + 1), 1000);
+  return () => clearInterval(id); // cleanup: σταμάτα το προηγούμενο
+}, []); // [] = μία φορά στο mount
+```
+
+## Το dependency array
+
+```txt
+useEffect(fn)            → κάθε render            (σχεδόν πάντα bug)
+useEffect(fn, [])        → μία φορά στο mount
+useEffect(fn, [filter])  → στο mount + όποτε αλλάξει το filter
+```
+
+Το array λέει στο React **πότε** να ξανατρέξει το effect. Κάθε τιμή που χρησιμοποιείς μέσα στο effect και μπορεί να αλλάξει πρέπει να μπει στο array — αλλιώς δουλεύεις με stale τιμές. Το ESLint `exhaustive-deps` το ελέγχει.
+
+## Cleanup — πριν το επόμενο effect & στο unmount
+
+Η returned function τρέχει **πριν** ξανατρέξει το effect και στο unmount. Εκεί ακυρώνεις ό,τι έστησες.
+
+```tsx
+useEffect(() => {
+  const sub = chatRoom.subscribe(roomId);
+  return () => sub.unsubscribe(); // αλλιώς διπλά subscriptions / memory leak
+}, [roomId]);
+```
+
+Όταν αλλάζει το `roomId`: cleanup του παλιού room → setup του νέου. Χωρίς cleanup μένεις subscribed σε πολλά rooms ταυτόχρονα.
+
+## Race conditions στο data fetching
+
+<PredictOutput
+  title="Γιατί χρειάζεται cleanup σε fetch"
+  code={`useEffect(() => {
+  fetch(\`/api/user/\${userId}\`)
+    .then((r) => r.json())
+    .then((data) => setUser(data));
+}, [userId]);
+
+// Ο χρήστης αλλάζει userId γρήγορα: 1 → 2.
+// Το request για το 1 είναι αργό και απαντά ΜΕΤΑ το 2.
+// Τι user βλέπεις τελικά;`}
+  options={["User 2 πάντα", "User 1 (το αργό response πατάει το νέο)", "Error", "Κανέναν"]}
+  correctOptionIndex={1}
+  answer="User 1 — race condition"
+  explanation="Χωρίς cleanup, το αργό response του userId=1 φτάνει τελευταίο και κάνει setUser με λάθος δεδομένα. Λύση: AbortController ή ένα 'ignore' flag στο cleanup, ώστε το response ενός ακυρωμένου effect να αγνοείται."
+/>
+
+```tsx
+useEffect(() => {
+  let ignore = false;
+  fetch(`/api/user/${userId}`)
+    .then((r) => r.json())
+    .then((data) => {
+      if (!ignore) setUser(data); // αγνόησε αν άλλαξε το effect
+    });
+  return () => {
+    ignore = true; // ή controller.abort()
+  };
+}, [userId]);
+```
+
+## Πότε ΔΕΝ χρειάζεσαι effect
+
+Το πιο σημαντικό κομμάτι. Δεν χρειάζεσαι effect για:
+
+```tsx
+// ❌ Effect για derived τιμή
+useEffect(() => setFullName(`${first} ${last}`), [first, last]);
+// ✅ Υπολόγισέ το στο render
+const fullName = `${first} ${last}`;
+
+// ❌ Effect για να «αντιδράσεις» σε event
+useEffect(() => { if (submitted) showToast(); }, [submitted]);
+// ✅ Κάν' το στον event handler
+function handleSubmit() { ...; showToast(); }
+```
+
+Κανόνας: αν κάτι μπορεί να υπολογιστεί στο render ή να γίνει σε event handler, **δεν** πάει σε effect. Τα effects είναι μόνο για εξωτερικό συγχρονισμό.
+
+<Exercise
+  question="Έχεις first και last name σε state και θες το fullName. Effect ή render;"
+  options={[
+    "Στο render: const fullName = first + ' ' + last — είναι derived, δεν χρειάζεται effect ούτε ξεχωριστό state.",
+    "useEffect που κάνει setFullName όποτε αλλάζουν.",
+    "useState για fullName και ενημέρωση σε κάθε onChange."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το fullName υπολογίζεται από υπάρχον state, άρα είναι derived. Effect + δεύτερο state προσθέτει extra render και πηγή ασυγχρονισμού χωρίς λόγο."
+/>
+
+<Exercise
+  question="Πότε τρέχει η cleanup function ενός useEffect;"
+  options={[
+    "Πριν από κάθε επανεκτέλεση του effect ΚΑΙ όταν το component κάνει unmount.",
+    "Μόνο στο unmount.",
+    "Αμέσως μετά το effect, στο ίδιο render."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το cleanup τρέχει πριν ξανατρέξει το effect (για να καθαρίσει το προηγούμενο setup) και στο unmount. Εκεί κάνεις unsubscribe, clearInterval, abort — αλλιώς memory leaks και race conditions."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«When should you use useEffect, and when not?»
+
+> useEffect is for synchronizing with external systems — data fetching, subscriptions, timers, DOM APIs. It is not for reacting to state or computing values: anything derivable goes in the render body, and anything triggered by a user action goes in the event handler. The dependency array controls when the effect re-runs, and every changing value I read inside has to be listed, or I get stale data. Every effect that sets something up returns a cleanup that runs before the next run and on unmount — that's where I unsubscribe, clear timers, or abort requests. For fetches that's critical: if the user switches fast, a slow earlier response can overwrite a newer one, so I guard with an AbortController or an `ignore` flag in cleanup so a stale response is dropped.
+
+<Flashcards
+  title="Effects — interview drills"
+  cards={[
+    {
+      question: "Για τι είναι το useEffect;",
+      answer: "Για συγχρονισμό με εξωτερικά συστήματα: fetch, subscriptions, timers, DOM/browser APIs. ΟΧΙ για derived τιμές (render) ούτε για αντίδραση σε events (event handler)."
+    },
+    {
+      question: "Τι σημαίνουν [], [x], καθόλου array;",
+      answer: "[] = μία φορά στο mount. [x] = στο mount + όποτε αλλάξει το x. Καθόλου array = κάθε render (σχεδόν πάντα bug)."
+    },
+    {
+      question: "Πότε τρέχει το cleanup;",
+      answer: "Πριν από κάθε επανεκτέλεση του effect και στο unmount. Εκεί κάνεις unsubscribe/clearInterval/abort. Χωρίς αυτό: memory leaks, διπλά subscriptions, race conditions."
+    },
+    {
+      question: "Πώς λύνεις race condition σε fetch;",
+      answer: "Με AbortController (controller.abort() στο cleanup) ή ένα ignore flag που το cleanup θέτει true, ώστε ένα stale response να αγνοείται. Αλλιώς ένα αργό παλιό response πατάει το νέο."
+    },
+    {
+      question: "Σημάδια ότι ένα effect είναι περιττό;",
+      answer: "Κάνει setState για τιμή που υπολογίζεται από props/state (derived), ή 'αντιδρά' σε ένα event που θα μπορούσε να χειριστεί ο handler. Και τα δύο ανήκουν εκτός effect."
+    },
+    {
+      question: "Τι είναι exhaustive-deps;",
+      answer: "ESLint rule που απαιτεί να βάλεις στο dependency array κάθε τιμή που χρησιμοποιείς μέσα στο effect. Παραβίαση → stale closures. Σπάνια το σιωπάς, και μόνο συνειδητά."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Data loader χωρίς race conditions"
+  scenario="Φτιάξε component που φορτώνει δεδομένα ανά userId, με loading/error states και σωστό cleanup."
+  outcomes={[
+    "Να γράφεις effect με σωστό dependency array.",
+    "Να αποφεύγεις race conditions με abort/ignore.",
+    "Να αναγνωρίζεις πότε ΔΕΝ χρειάζεσαι effect."
+  ]}
+  steps={[
+    "Effect που φέρνει δεδομένα όταν αλλάζει το userId.",
+    "Πρόσθεσε loading και error state.",
+    "Βάλε AbortController και ακύρωσέ το στο cleanup.",
+    "Δοκίμασε γρήγορη αλλαγή userId και επιβεβαίωσε ότι δεν εμφανίζονται stale δεδομένα.",
+    "Εντόπισε ένα derived value που έβαλες κατά λάθος σε effect και μετέφερέ το στο render."
+  ]}
+  checkpoints={[
+    "Το dependency array περιέχει το userId.",
+    "Γρήγορη αλλαγή userId δεν δείχνει λάθος χρήστη.",
+    "Δεν υπάρχει effect που απλώς υπολογίζει derived τιμή."
+  ]}
+  mistakes={[
+    "Effect χωρίς cleanup σε fetch → race conditions.",
+    "Λάθος/κενό dependency array → stale δεδομένα ή infinite loop.",
+    "Effect για derived τιμή αντί για υπολογισμό στο render.",
+    "setState μέσα σε effect που εξαρτάται από αυτό το ίδιο state → infinite loop."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν κάθε effect σου συγχρονίζει εξωτερικό σύστημα, έχει cleanup, και δεν υπάρχει περιττό effect."
+/>

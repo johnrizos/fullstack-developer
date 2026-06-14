@@ -1,0 +1,185 @@
+# Patterns, Testing & Production
+
+Το τελευταίο βήμα του React track: τα patterns που κρατούν τον κώδικα καθαρό σε μεγάλη κλίμακα, η προσβασιμότητα, και το testing που δίνει εμπιστοσύνη. Στα interviews ξεχωρίζεις όταν δείχνεις ότι γράφεις React που **αντέχει σε ομάδα και σε production**.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εφαρμόζεις composition patterns (compound components, render-as-children),
+- να γράφεις προσβάσιμα (a11y) components,
+- να τεστάρεις συμπεριφορά, όχι implementation, με React Testing Library,
+- να χειρίζεσαι errors με boundaries σε production,
+- να αναγνωρίζεις code smells σε review.
+
+## Composition patterns
+
+**Compound components** — components που δουλεύουν μαζί και μοιράζονται implicit state:
+
+```tsx
+<Tabs defaultValue="profile">
+  <Tabs.List>
+    <Tabs.Trigger value="profile">Profile</Tabs.Trigger>
+    <Tabs.Trigger value="settings">Settings</Tabs.Trigger>
+  </Tabs.List>
+  <Tabs.Panel value="profile">…</Tabs.Panel>
+  <Tabs.Panel value="settings">…</Tabs.Panel>
+</Tabs>
+```
+
+Το `Tabs` κρατά το active state (μέσω Context) και τα παιδιά το διαβάζουν. Ο caller συνθέτει ελεύθερα — καθαρό API χωρίς prop explosion.
+
+**Custom hooks για logic reuse** (από προηγούμενο μάθημα) είναι σήμερα το προτιμώμενο pattern έναντι των παλιών HOCs/render props για το μοίρασμα λογικής.
+
+## Accessibility — δεν είναι προαιρετικό
+
+```tsx
+// ❌ div ως κουμπί — μη προσβάσιμο
+<div onClick={handleClick}>Delete</div>
+
+// ✅ semantic element + a11y attributes
+<button onClick={handleClick} aria-label="Delete item">Delete</button>
+```
+
+Βασικά: semantic HTML (`button`, `nav`, `main`), labels σε inputs, keyboard navigation, `aria-*` όπου χρειάζεται, focus management σε modals. Το a11y είναι συχνά interview/review σημείο — και νομική απαίτηση σε πολλές εταιρείες.
+
+## Testing: behavior, όχι implementation
+
+Η φιλοσοφία της React Testing Library: τεστάρεις ό,τι **βλέπει και κάνει ο χρήστης**, όχι internal state ή ονόματα functions.
+
+```tsx
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+
+test("προσθέτει todo", async () => {
+  render(<TodoApp />);
+  await userEvent.type(screen.getByRole("textbox"), "Buy milk");
+  await userEvent.click(screen.getByRole("button", { name: /add/i }));
+  expect(screen.getByText("Buy milk")).toBeInTheDocument();
+});
+```
+
+Query με βάση ρόλους/κείμενο (`getByRole`, `getByText`) — όπως θα έβρισκε το στοιχείο ένας χρήστης. Αυτά τα tests δεν σπάνε σε refactor εσωτερικών — σπάνε μόνο όταν αλλάζει η συμπεριφορά.
+
+<PredictOutput
+  title="Ποιο test είναι ανθεκτικό;"
+  code={`// Test A
+expect(component.state.todos.length).toBe(1);
+
+// Test B
+expect(screen.getByText("Buy milk")).toBeInTheDocument();
+
+// Κάνεις refactor: από useState σε useReducer (ίδια συμπεριφορά).
+// Ποιο test συνεχίζει να περνά;`}
+  options={["Test A", "Test B", "Και τα δύο", "Κανένα"]}
+  correctOptionIndex={1}
+  answer="Test B"
+  explanation="Το Test A δένεται με την υλοποίηση (internal state shape) και σπάει στο refactor, αν και η συμπεριφορά είναι ίδια. Το Test B ελέγχει ό,τι βλέπει ο χρήστης, οπότε επιβιώνει. Κανόνας RTL: test behavior, not implementation."
+/>
+
+## Error boundaries σε production
+
+```tsx
+<ErrorBoundary fallback={<ErrorPage />} onError={(e) => reportToSentry(e)}>
+  <Dashboard />
+</ErrorBoundary>
+```
+
+Σε production τυλίγεις λογικές περιοχές (route, widget) σε boundaries ώστε ένα crash σε ένα κομμάτι να μη ρίχνει όλη την εφαρμογή — και στέλνεις το error σε monitoring (Sentry). Συνδυάζεται με loading states (Suspense) για ολοκληρωμένο UX.
+
+## Code smells σε review
+
+```txt
+- Mutation του state (push, άμεση ανάθεση πεδίου)
+- index ως key σε δυναμική λίστα
+- Derived τιμή σε useEffect + δεύτερο state
+- useEffect για κάτι που ανήκει σε event handler
+- Boolean prop explosion αντί για composition
+- Μόνο happy path (χωρίς loading/error/empty)
+- div με onClick αντί για button (a11y)
+```
+
+<Exercise
+  question="Ποια είναι η φιλοσοφία της React Testing Library;"
+  options={[
+    "Τεστάρεις τη συμπεριφορά όπως τη βιώνει ο χρήστης (roles, text, events), όχι internal state/implementation.",
+    "Τεστάρεις κάθε function και internal state ξεχωριστά.",
+    "Τεστάρεις μόνο snapshots του DOM."
+  ]}
+  correctOptionIndex={0}
+  explanation="RTL ενθαρρύνει tests που μιμούνται τον χρήστη: βρες στοιχεία με role/label/text, κάνε events με userEvent, έλεγξε ορατό αποτέλεσμα. Έτσι τα tests επιβιώνουν σε refactors και πιάνουν πραγματικά regressions."
+/>
+
+<Exercise
+  question="Γιατί χρειάζεσαι error boundary σε production app;"
+  options={[
+    "Για να μη ρίχνει όλη την εφαρμογή ένα render-time crash ενός κομματιού, και για να στείλεις το error σε monitoring.",
+    "Για να πιάνεις errors από async/await.",
+    "Για να κάνεις validate τα props."
+  ]}
+  correctOptionIndex={0}
+  explanation="Ένα uncaught error στο render αφήνει λευκή οθόνη. Το boundary δείχνει fallback και απομονώνει το crash σε μια περιοχή, ενώ μπορείς να το logάρεις σε Sentry. (Async errors πιάνονται με try/catch, όχι boundary.)"
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you keep a large React codebase maintainable?»
+
+> I lean on composition over configuration — compound components that share state through context give a clean API without a pile of boolean props, and I reuse logic through custom hooks rather than HOCs. Accessibility is built in, not bolted on: semantic elements, labels, keyboard support, focus management in modals. I test behavior, not implementation, with React Testing Library — querying by role and text the way a user would — so my tests survive refactors like swapping `useState` for `useReducer` and only break on real behavior changes. In production I wrap routes and widgets in error boundaries that show a fallback and report to monitoring, so one crashing piece doesn't take down the app. And in review I watch for the usual smells: state mutation, index keys, derived state in effects, and missing loading/error/empty states.
+
+<Flashcards
+  title="Patterns, testing & production — interview drills"
+  cards={[
+    {
+      question: "Τι είναι compound components;",
+      answer: "Components που δουλεύουν μαζί και μοιράζονται implicit state μέσω Context (π.χ. Tabs/Tabs.Trigger/Tabs.Panel). Καθαρό composition API χωρίς prop explosion."
+    },
+    {
+      question: "Πώς μοιράζεσαι λογική σήμερα;",
+      answer: "Custom hooks — το προτιμώμενο pattern έναντι των παλιών HOCs/render props. Μοιράζονται λογική (όχι state), συνθέτονται εύκολα, διαβάζονται καθαρά."
+    },
+    {
+      question: "Η φιλοσοφία της React Testing Library;",
+      answer: "Test behavior, not implementation. Query με role/label/text όπως ο χρήστης, events με userEvent, έλεγξε ορατό αποτέλεσμα. Επιβιώνει σε refactors, πιάνει πραγματικά regressions."
+    },
+    {
+      question: "Πότε χρησιμοποιείς error boundary;",
+      answer: "Για render-time crashes: τυλίγεις routes/widgets ώστε ένα σφάλμα να μη ρίχνει όλη την app, δείχνεις fallback και logάρεις σε monitoring. Async errors → try/catch."
+    },
+    {
+      question: "Βασικά a11y σε React;",
+      answer: "Semantic HTML (button/nav/main), labels σε inputs, keyboard navigation, aria-* όπου χρειάζεται, focus management σε modals. Όχι div με onClick αντί για button."
+    },
+    {
+      question: "Τρία code smells σε React review;",
+      answer: "State mutation αντί για immutable update· index ως key σε δυναμική λίστα· derived τιμή σε useEffect+δεύτερο state· (+ boolean prop explosion, μόνο happy path)."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Tested, accessible feature"
+  scenario="Φτιάξε ένα Tabs feature με compound components, a11y και tests συμπεριφοράς."
+  outcomes={[
+    "Να σχεδιάζεις compound component API.",
+    "Να γράφεις προσβάσιμο markup.",
+    "Να τεστάρεις behavior με RTL."
+  ]}
+  steps={[
+    "Tabs με Context που κρατά το active value.",
+    "Tabs.List / Tabs.Trigger / Tabs.Panel με σωστά roles & aria.",
+    "Keyboard navigation (arrow keys) στα triggers.",
+    "Tests: αλλαγή tab με click και με keyboard, έλεγχος ορατού panel.",
+    "Τύλιξε σε error boundary και πρόσθεσε loading fallback."
+  ]}
+  checkpoints={[
+    "Τα tests query-άρουν με role/text, όχι internal state.",
+    "Το feature είναι πλήρως προσβάσιμο με πληκτρολόγιο.",
+    "Ένα crash δείχνει fallback, δεν ρίχνει την app."
+  ]}
+  mistakes={[
+    "Tests δεμένα με internal state που σπάνε σε refactor.",
+    "div με onClick αντί για button/role.",
+    "Prop explosion αντί για compound composition.",
+    "Καμία διαχείριση error/loading στο feature."
+  ]}
+  mastery="Το μάθημα — και όλο το React track — πέτυχε όταν παραδίδεις feature που είναι reusable, accessible, tested και ανθεκτικό σε production."
+/>

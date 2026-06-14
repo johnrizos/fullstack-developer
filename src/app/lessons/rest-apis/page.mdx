@@ -171,6 +171,51 @@ Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000
 
 Αυτή η σειρά δείχνει δομημένη σκέψη — αυτό βαθμολογείται, όχι η απομνημόνευση.
 
+## Σε πραγματικό project: από contract σε υλοποίηση
+
+Στην πράξη, το API **δεν** το γράφεις «όπως βγει». Συμβαίνει αυτή η ροή σε μια ομάδα: ο frontend dev χρειάζεται ένα endpoint, εσύ (backend) συμφωνείτε **πρώτα στο contract**, και μετά δουλεύετε **παράλληλα** πάνω σε αυτό.
+
+Σενάριο: το frontend θέλει «λίστα tasks με φίλτρο status». Πριν γράψει κανείς κώδικα, γράφετε μαζί το contract σε ένα markdown/Slack thread:
+
+```txt
+GET /tasks?status=open&page=1&pageSize=20    (auth required)
+
+200 OK
+{ "data": [{ "id": 1, "title": "...", "status": "open" }],
+  "meta": { "page": 1, "pageSize": 20, "total": 42, "totalPages": 3 } }
+
+401  → χωρίς/άκυρο token
+422  → invalid query (π.χ. pageSize=9999)
+```
+
+Γιατί αυτό αλλάζει τα πάντα:
+
+```txt
+✓ Ο frontend ξεκινά ΑΜΕΣΩΣ με mock που επιστρέφει αυτό το shape —
+  δεν περιμένει το backend.
+✓ Εσύ υλοποιείς ξέροντας ακριβώς τι περιμένει ο client.
+✓ Όταν ενώνονται, ταιριάζουν — γιατί συμφωνήσατε στο shape, όχι στην υλοποίηση.
+```
+
+Τώρα η backend υλοποίηση «γεμίζει» απλώς το συμφωνημένο contract:
+
+```ts
+app.get("/tasks", auth, async (req, res) => {
+  const q = TaskQuerySchema.safeParse(req.query);        // 422 αν invalid
+  if (!q.success) return res.status(422).json({ error: q.error.flatten() });
+
+  const { status, page, pageSize } = q.data;
+  const where = { userId: req.user.id, ...(status && { status }) }; // ownership!
+  const [data, total] = await Promise.all([
+    db.task.findMany({ where, skip: (page - 1) * pageSize, take: pageSize }),
+    db.task.count({ where }),
+  ]);
+  res.json({ data, meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } });
+});
+```
+
+Πρόσεξε ότι κάθε θεωρία του μαθήματος εμφανίζεται εδώ ως πραγματική γραμμή: σταθερό envelope (`data`/`meta`), pagination, validation → 422, ownership (`userId`), auth middleware. **Το contract-first** είναι ο τρόπος που οι ομάδες δουλεύουν χωρίς να μπλοκάρει ο ένας τον άλλον.
+
 ## Mini project: CRUD API contract
 
 Σχεδίασε πλήρες contract για tasks API — γράψε το σε ένα markdown αρχείο σαν να το παραδίδεις σε frontend developer:

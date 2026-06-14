@@ -1,0 +1,171 @@
+# Key-Value Stores (Redis & DynamoDB)
+
+Τα key-value stores είναι ο απλούστερος και ταχύτερος τύπος database: `get(key)` / `set(key, value)`. Στα interviews εξετάζουν πού ταιριάζουν (cache, sessions, counters, leaderboards) και — στο DynamoDB — πόσο κρίσιμο είναι το **key design**.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς το key-value model και γιατί είναι τόσο γρήγορο,
+- να αναγνωρίζεις use cases (cache, session, rate limit, counter),
+- να χρησιμοποιείς TTL για auto-expiry,
+- να σχεδιάζεις keys/partition keys σωστά,
+- να ξέρεις τα όρια (όχι ad-hoc queries, όχι joins).
+
+## Το μοντέλο: get / set σε key
+
+```txt
+SET  user:42:session   "{...}"   EX 3600    # value + TTL 1 ώρα
+GET  user:42:session
+DEL  user:42:session
+INCR page:home:views               # atomic counter
+```
+
+Είναι γρήγορο γιατί είναι **απλό**: ο τύπος πρόσβασης είναι O(1) lookup σε hash map (συχνά in-memory, όπως το Redis). Καμία ανάλυση query, κανένα join — απλώς «δώσε μου την τιμή αυτού του key».
+
+## Use cases — εκεί που λάμπει
+
+```txt
+Caching        → cache-άρεις ακριβά query results (key = query hash)
+Sessions       → session id → user data, με TTL auto-expiry
+Rate limiting   → INCR ανά user/IP, με TTL παράθυρο
+Counters        → views, likes (atomic INCR/DECR)
+Leaderboards    → sorted sets (Redis ZADD/ZRANGE)
+Queues/Pub-Sub  → background jobs, real-time messages (Redis)
+```
+
+(Το Redis caching/sessions το εμβαθύνει το μάθημα **Redis, Caching & Sessions** — εδώ εστιάζουμε στο key-value ως data model.)
+
+## TTL (Time To Live) — auto-expiry
+
+Το **TTL** (Time To Live = «χρόνος ζωής») ορίζει πόσο θα ζήσει ένα key πριν σβήσει αυτόματα. Είναι κορυφαίο πλεονέκτημα:
+
+```txt
+SET  cart:42  "{...}"  EX 1800     # το cart σβήνει μόνο του σε 30 λεπτά
+```
+
+Δεν χρειάζεσαι cron για cleanup — η βάση σβήνει τα expired keys. Ιδανικό για cache, sessions, temporary data, OTP codes.
+
+## DynamoDB: το key design είναι ΤΑ ΠΑΝΤΑ
+
+Στο DynamoDB (managed, distributed key-value/document) κάθε item έχει **partition key** (και optional **sort key**). Το partition key καθορίζει σε ποιον server (partition) ζει το item:
+
+```txt
+PK = USER#42        SK = PROFILE        → το προφίλ του user 42
+PK = USER#42        SK = ORDER#1001     → παραγγελία του user 42
+PK = USER#42        SK = ORDER#1002     → άλλη παραγγελία
+```
+
+Query «δώσε όλα τα items με PK=USER#42» → όλα τα δεδομένα ενός χρήστη σε **ένα** γρήγορο query. Αλλά:
+
+<PredictOutput
+  title="Το hot partition πρόβλημα"
+  code={`// DynamoDB table για analytics events.
+// Partition key = ημερομηνία: "2026-06-14"
+// Όλα τα σημερινά events πάνε στο ΙΔΙΟ partition key.
+// Τι πρόβλημα δημιουργείται σε high traffic;`}
+  options={[
+    "Hot partition — όλο το traffic μιας μέρας χτυπά ένα partition, throttling",
+    "Τίποτα, είναι ιδανικό",
+    "Τα δεδομένα χάνονται",
+    "Πολύ αργά reads μόνο"
+  ]}
+  correctOptionIndex={0}
+  answer="Hot partition"
+  explanation="Με partition key την ημερομηνία, όλα τα events μιας μέρας συγκεντρώνονται σε ένα partition → ανισοκατανομή (hot partition), throttling και κακή απόδοση. Καλό partition key έχει υψηλή cardinality & ομοιόμορφη κατανομή (π.χ. eventId ή userId). Το ίδιο πρόβλημα με το 'hot shard' στο sharding."
+/>
+
+## Όρια του key-value
+
+```txt
+- Όχι ad-hoc queries: δεν κάνεις "βρες όλους με age > 30" — μόνο by key
+- Όχι joins / σχέσεις (τα χειρίζεσαι με key design ή στον app)
+- Value συχνά opaque blob (αν θες queries μέσα → document store)
+```
+
+Γι' αυτό το key-value θέλει να ξέρεις τα access patterns **εκ των προτέρων** — σχεδιάζεις τα keys γύρω από το «πώς θα διαβάσω».
+
+<Exercise
+  question="Θες session store με εκατομμύρια ops/sec και αυτόματη λήξη μετά από 1 ώρα αδράνειας. Τι χρησιμοποιείς;"
+  options={[
+    "Key-value store (Redis) με SET sessionId value EX 3600 — O(1) lookup + TTL auto-expiry.",
+    "Relational table με cron που σβήνει expired rows.",
+    "Document store με aggregation."
+  ]}
+  correctOptionIndex={0}
+  explanation="Session = καθαρό get/set ανά key με expiry. Το key-value δίνει O(1) πρόσβαση και TTL που σβήνει μόνο του τα expired — χωρίς cron. Το relational/document είναι overkill για αυτό το access pattern."
+/>
+
+<Exercise
+  question="Σε DynamoDB, τι κάνει ένα partition key 'καλό';"
+  options={[
+    "Υψηλή cardinality & ομοιόμορφη κατανομή — ώστε το traffic να μοιράζεται, χωρίς hot partitions.",
+    "Να είναι όσο πιο μικρό γίνεται.",
+    "Να είναι πάντα η ημερομηνία."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το partition key καθορίζει την κατανομή. Λίγες/ανισοκατανεμημένες τιμές (π.χ. ημερομηνία, status) → hot partitions & throttling. Θες πολλές, ομοιόμορφα κατανεμημένες τιμές (userId, eventId)."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«When do you use a key-value store?»
+
+> When the access pattern is a direct lookup by a known key and I need very high throughput — caching expensive results, sessions, rate-limit counters, leaderboards. It's fast because it's simple: an O(1) lookup, often in memory, with no query planning or joins. TTL is a big win — sessions and caches expire themselves, no cleanup cron. The catch is there are no ad-hoc queries or joins, so I have to know my access patterns up front and design keys around them. In DynamoDB specifically, the partition key is everything: it decides which partition an item lives on, so I pick a high-cardinality, evenly distributed key to avoid hot partitions and throttling — the same idea as avoiding hot shards in sharding.
+
+<Flashcards
+  title="Key-value stores — interview drills"
+  cards={[
+    {
+      question: "Γιατί είναι τόσο γρήγορο το key-value;",
+      answer: "Απλό μοντέλο: O(1) lookup σε hash map (συχνά in-memory, όπως Redis). Καμία ανάλυση query, κανένα join — απλώς get/set σε key."
+    },
+    {
+      question: "Κορυφαία use cases;",
+      answer: "Caching, sessions, rate limiting (INCR), counters, leaderboards (sorted sets), queues/pub-sub. Ό,τι είναι direct lookup by key με υψηλό throughput."
+    },
+    {
+      question: "Τι κερδίζεις με το TTL;",
+      answer: "Auto-expiry: το key σβήνει μόνο του μετά από Χ χρόνο. Ιδανικό για cache/sessions/OTP/temporary data — χωρίς cleanup cron."
+    },
+    {
+      question: "Τι είναι το partition key στο DynamoDB;",
+      answer: "Καθορίζει σε ποιο partition (server) ζει το item. Items με ίδιο PK ομαδοποιούνται (γρήγορο query). Καλό PK: υψηλή cardinality & ομοιόμορφη κατανομή."
+    },
+    {
+      question: "Τι είναι το hot partition;",
+      answer: "Ανισοκατανομή όπου ένα partition key δέχεται δυσανάλογο traffic (π.χ. PK=ημερομηνία) → throttling, κακή απόδοση. Όπως το hot shard. Λύση: high-cardinality PK."
+    },
+    {
+      question: "Όρια του key-value;",
+      answer: "Όχι ad-hoc queries (μόνο by key), όχι joins/σχέσεις, value συχνά opaque. Πρέπει να ξέρεις τα access patterns εκ των προτέρων και να σχεδιάζεις τα keys γύρω τους."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Key design για session/cart/leaderboard"
+  scenario="Σχεδίασε keys για 3 features σε key-value store: user session, shopping cart με expiry, και game leaderboard."
+  outcomes={[
+    "Να σχεδιάζεις keys γύρω από access patterns.",
+    "Να χρησιμοποιείς TTL σωστά.",
+    "Να αποφεύγεις hot partitions."
+  ]}
+  steps={[
+    "Session: key schema + TTL για auto-logout στην αδράνεια.",
+    "Cart: key ανά user, με expiry· σκέψου τι γίνεται στο checkout.",
+    "Leaderboard: sorted set (score → member) για top-N queries.",
+    "Rate limiter: INCR ανά user/IP με TTL παράθυρο.",
+    "Σε DynamoDB version, διάλεξε partition key που αποφεύγει hot partitions."
+  ]}
+  checkpoints={[
+    "Κάθε key αντιστοιχεί σε ένα συγκεκριμένο access pattern.",
+    "Τα προσωρινά δεδομένα έχουν TTL αντί για χειροκίνητο cleanup.",
+    "Το partition key έχει υψηλή cardinality."
+  ]}
+  mistakes={[
+    "Να προσπαθείς ad-hoc queries σε key-value (δεν υποστηρίζονται).",
+    "Partition key χαμηλής cardinality → hot partition.",
+    "Χειροκίνητο cleanup αντί για TTL.",
+    "Να αποθηκεύεις σχεσιακά δεδομένα με joins σε key-value."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν σχεδιάζεις keys που εξυπηρετούν κάθε access pattern σε O(1), χωρίς hot partitions."
+/>

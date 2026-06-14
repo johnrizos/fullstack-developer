@@ -1,0 +1,228 @@
+# Caching & Rendering Strategies
+
+Εδώ ξεχωρίζει ο senior Next.js developer. Στο Next.js 16 το caching γίνεται ρητό με **Cache Components** και τη directive `use cache`, και το default rendering είναι **Partial Prerendering (PPR)**: στατικό shell + δυναμικά κομμάτια που streamάρουν. Στα interviews εξετάζουν αν καταλαβαίνεις τι γίνεται build-time vs request-time.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς static shell vs request-time rendering (PPR),
+- να χρησιμοποιείς `use cache` σε data ή UI level,
+- να ρυθμίζεις `cacheLife` και `cacheTag`,
+- να χειρίζεσαι runtime APIs (`cookies`, `headers`) με `<Suspense>`,
+- να ξέρεις πότε κάτι πρέπει να είναι uncached.
+
+## Το μοντέλο: PPR
+
+Με `cacheComponents: true` στο `next.config.ts`, το Next.js στο build renderάρει το δέντρο και κατατάσσει κάθε κομμάτι:
+
+```txt
+use cache              → το αποτέλεσμα μπαίνει στο static shell
+<Suspense>             → fallback στο shell, περιεχόμενο streamάρει στο request
+deterministic work     → μπαίνει αυτόματα στο shell (pure computation, imports)
+runtime APIs (cookies) → πρέπει να είναι σε <Suspense>, αλλιώς build error
+```
+
+Το αποτέλεσμα: ο χρήστης παίρνει άμεσα ένα static shell, και τα δυναμικά μέρη streamάρουν. Αυτό είναι **Partial Prerendering**.
+
+## use cache — data level
+
+```tsx
+// app/lib/data.ts
+import { cacheLife } from "next/cache";
+
+export async function getUsers() {
+  "use cache";
+  cacheLife("hours"); // πόσο ζει το cache entry
+  return db.query("SELECT * FROM users");
+}
+```
+
+Τα **arguments** της function γίνονται μέρος του cache key — διαφορετικά inputs → διαφορετικά entries (parameterized caching).
+
+## use cache — UI level
+
+Μπορείς να cache-άρεις ολόκληρο component/page/layout:
+
+```tsx
+import { cacheLife, cacheTag } from "next/cache";
+
+async function BlogPosts() {
+  "use cache";
+  cacheLife("hours");
+  cacheTag("posts"); // tag για στοχευμένο invalidation
+
+  const res = await fetch("https://api.example.com/blog");
+  const posts = await res.json();
+  return <PostList posts={posts} />;
+}
+```
+
+Το `cacheTag("posts")` επιτρέπει αργότερα `updateTag("posts")`/`revalidateTag("posts")` μετά από mutation, ώστε να λήξει στοχευμένα αυτό το cache.
+
+## Uncached / runtime data → Suspense
+
+Για δεδομένα που πρέπει να είναι **φρέσκα σε κάθε request**, ΜΗΝ βάζεις `use cache`. Τύλιξε σε `<Suspense>`:
+
+```tsx
+import { cookies } from "next/headers";
+import { Suspense } from "react";
+
+async function UserGreeting() {
+  const theme = (await cookies()).get("theme")?.value ?? "light"; // runtime API, async
+  return <p>Theme: {theme}</p>;
+}
+
+export default function Page() {
+  return (
+    <>
+      <h1>Dashboard</h1>
+      <Suspense fallback={<p>Loading…</p>}>
+        <UserGreeting />
+      </Suspense>
+    </>
+  );
+}
+```
+
+Τα runtime APIs (`cookies()`, `headers()`, `searchParams`, `params`) είναι **async** (await) και απαιτούν το request — γι' αυτό θέλουν `<Suspense>` ή θα πάρεις build error «uncached data accessed outside of Suspense».
+
+<PredictOutput
+  title="Γιατί build error;"
+  code={`// cacheComponents: true
+import { cookies } from "next/headers";
+
+export default async function Page() {
+  const theme = (await cookies()).get("theme")?.value;
+  return <p>Theme: {theme}</p>;
+}
+// Τι συμβαίνει στο build;`}
+  options={[
+    "Build error — runtime data (cookies) εκτός <Suspense>",
+    "Δουλεύει, γίνεται static",
+    "Δουλεύει, γίνεται πλήρως dynamic σιωπηλά",
+    "Runtime crash μόνο"
+  ]}
+  correctOptionIndex={0}
+  answer="Build error — χρειάζεται <Suspense>"
+  explanation="Με Cache Components, το Next.js απαιτεί να χειριστείς ρητά ό,τι δεν μπορεί να prerenderαριστεί. Runtime API (cookies) εκτός Suspense και χωρίς use cache → build-time error που σε καθοδηγεί. Fix: τύλιξε το κομμάτι σε <Suspense> ή πέρασε την τιμή σε cached function."
+/>
+
+## Non-deterministic operations
+
+`Math.random()`, `Date.now()`, `crypto.randomUUID()` δίνουν διαφορετική τιμή κάθε φορά. Δύο επιλογές:
+
+```tsx
+// (α) Μοναδικό ανά request: connection() + Suspense
+import { connection } from "next/server";
+async function Unique() {
+  await connection();
+  return <p>{crypto.randomUUID()}</p>;
+}
+
+// (β) Ίδιο για όλους μέχρι revalidation: cache το
+export default async function Page() {
+  "use cache";
+  return <p>{crypto.randomUUID()}</p>;
+}
+```
+
+## Περνώντας runtime τιμές σε cached function
+
+```tsx
+async function ProfileContent() {
+  const sessionId = (await cookies()).get("session")?.value; // runtime, όχι cached
+  return <CachedContent sessionId={sessionId} />;
+}
+
+async function CachedContent({ sessionId }: { sessionId?: string }) {
+  "use cache";
+  const data = await fetchUserData(sessionId); // sessionId μπαίνει στο cache key
+  return <div>{data}</div>;
+}
+```
+
+<Exercise
+  question="Με Cache Components, ένα component διαβάζει headers() χωρίς Suspense και χωρίς use cache. Τι γίνεται;"
+  options={[
+    "Build-time error που σε καθοδηγεί — runtime data πρέπει να είναι σε <Suspense> ή να καλυφθεί από caching.",
+    "Γίνεται σιωπηλά static με stale headers.",
+    "Δουλεύει χωρίς πρόβλημα."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το Cache Components απαιτεί ρητή διαχείριση μη-prerenderable κομματιών. Runtime API εκτός Suspense → 'uncached data accessed outside of Suspense' build error. Έτσι αποφεύγεις κρυφά dynamic routes."
+/>
+
+<Exercise
+  question="Θες μια λίστα προϊόντων ίδια για όλους, που ανανεώνεται κάθε ώρα και λήγει άμεσα μετά από admin update. Τι χρησιμοποιείς;"
+  options={[
+    "'use cache' + cacheLife('hours') + cacheTag('products'), και updateTag('products') στη mutation.",
+    "useEffect με setInterval κάθε ώρα.",
+    "Τίποτα — το fetch cache-άρεται μόνο του."
+  ]}
+  correctOptionIndex={0}
+  explanation="use cache κάνει το αποτέλεσμα μέρος του static shell· cacheLife('hours') ορίζει διάρκεια· cacheTag('products') επιτρέπει στοχευμένο invalidation με updateTag/revalidateTag μετά το update."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How does caching and rendering work in Next.js 16?»
+
+> The default with Cache Components is Partial Prerendering: at build time Next.js produces a static shell and defers the dynamic parts to request time. Caching is explicit through the `use cache` directive — I can apply it at data level on a function or at UI level on a whole component, and its arguments become part of the cache key, so different inputs get separate entries. I tune lifetime with `cacheLife` and tag entries with `cacheTag` so a mutation can invalidate them precisely via `revalidateTag`/`updateTag`. Anything that must be fresh per request — `cookies()`, `headers()`, `searchParams` — is async and has to be wrapped in `<Suspense>`; otherwise Cache Components gives me a build-time error instead of silently making the whole route dynamic. Non-deterministic values like `randomUUID` I either defer with `connection()` and Suspense, or cache so everyone sees the same value until revalidation.
+
+<Flashcards
+  title="Caching & rendering — interview drills"
+  cards={[
+    {
+      question: "Τι είναι το PPR (Partial Prerendering);",
+      answer: "Default με Cache Components: στατικό shell στο build + δυναμικά κομμάτια που streamάρουν στο request. Ο χρήστης παίρνει άμεσα το shell, τα dynamic μέρη έρχονται μετά."
+    },
+    {
+      question: "Τι κάνει η directive 'use cache';",
+      answer: "Cache-άρει το return μιας async function (data level) ή ενός component/page (UI level). Τα arguments γίνονται μέρος του cache key (parameterized)."
+    },
+    {
+      question: "cacheLife vs cacheTag;",
+      answer: "cacheLife('hours'/'days'...): πόσο ζει το entry. cacheTag('x'): tag για στοχευμένο invalidation αργότερα με revalidateTag/updateTag μετά από mutation."
+    },
+    {
+      question: "Πώς χειρίζεσαι cookies()/headers();",
+      answer: "Είναι async (await) runtime APIs. Πρέπει να τα τυλίξεις σε <Suspense> (ή να περάσεις την τιμή σε cached function). Αλλιώς build error με Cache Components."
+    },
+    {
+      question: "Πότε ΔΕΝ βάζεις use cache;",
+      answer: "Όταν χρειάζεσαι φρέσκα δεδομένα κάθε request. Τότε τυλίγεις σε <Suspense> με fallback και αφήνεις να streamάρει στο request time."
+    },
+    {
+      question: "Πώς χειρίζεσαι Math.random()/randomUUID με Cache Components;",
+      answer: "Μοναδικό ανά request: await connection() + <Suspense>. Ίδιο για όλους μέχρι revalidation: βάλε το σε 'use cache'. Το framework απαιτεί να το χειριστείς ρητά."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Σελίδα: static + cached + request-time"
+  scenario="Φτιάξε σελίδα blog που συνδυάζει static header, cached λίστα posts και per-user personalized κομμάτι."
+  outcomes={[
+    "Να συνδυάζεις τα τρία είδη περιεχομένου σε ένα route.",
+    "Να ρυθμίζεις cacheLife/cacheTag.",
+    "Να χειρίζεσαι runtime APIs με Suspense."
+  ]}
+  steps={[
+    "Ενεργοποίησε cacheComponents: true.",
+    "Static header (απλό JSX) — μπαίνει στο shell.",
+    "BlogPosts με 'use cache' + cacheLife('hours') + cacheTag('posts').",
+    "UserPreferences που διαβάζει cookies(), τυλιγμένο σε <Suspense>.",
+    "Server action που κάνει updateTag('posts') μετά από νέο post."
+  ]}
+  checkpoints={[
+    "Το header & posts είναι στο static shell.",
+    "Τα personalized κομμάτια streamάρουν στο request.",
+    "Μετά από mutation, το posts cache λήγει στοχευμένα."
+  ]}
+  mistakes={[
+    "Runtime API (cookies/headers) εκτός Suspense → build error.",
+    "'use cache' σε δεδομένα που πρέπει να είναι φρέσκα ανά χρήστη.",
+    "Να περιμένεις caching χωρίς use cache (το fetch δεν cache-άρει by default).",
+    "Non-deterministic ops χωρίς connection() ή cache."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν σχεδιάζεις ένα route όπου ξέρεις ακριβώς τι είναι static, τι cached και τι request-time."
+/>

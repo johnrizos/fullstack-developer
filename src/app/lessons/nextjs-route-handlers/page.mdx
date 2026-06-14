@@ -1,0 +1,193 @@
+# Route Handlers & APIs
+
+Όταν χρειάζεσαι πραγματικά HTTP endpoints (webhooks, public API, third-party callbacks), φτιάχνεις **Route Handlers** με `route.ts`. Στα interviews εξετάζουν τη διαφορά από Server Actions, τα supported HTTP methods, και ότι χρησιμοποιούν τα Web `Request`/`Response` APIs.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να φτιάχνεις `route.ts` με GET/POST/PUT/PATCH/DELETE,
+- να διαβάζεις request data και να επιστρέφεις `Response.json`,
+- να χρησιμοποιείς `NextRequest`/`NextResponse`,
+- να τυποποιείς το context με `RouteContext`,
+- να ξέρεις πότε route handler vs Server Action.
+
+## Convention
+
+Ένα `route.ts` μέσα στο `app/` ορίζει custom request handler. **Δεν** μπορεί να συνυπάρχει `route.ts` με `page.tsx` στο ίδιο segment.
+
+```ts
+// app/api/health/route.ts → GET /api/health
+export async function GET() {
+  return Response.json({ status: "ok" });
+}
+```
+
+Route Handlers είναι το ισοδύναμο των παλιών API Routes (`pages/api`) — αλλά μέσα στο `app/`, χτισμένα πάνω στα Web `Request`/`Response`.
+
+## Supported HTTP methods
+
+```ts
+// app/api/tasks/route.ts
+export async function GET() { /* λίστα */ }
+export async function POST(request: Request) {
+  const body = await request.json();
+  // create
+  return Response.json({ id: "1", ...body }, { status: 201 });
+}
+```
+
+Υποστηρίζονται `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`. Μη υποστηριζόμενο method → αυτόματα `405 Method Not Allowed`. Κάθε `route.ts` αναλαμβάνει όλα τα verbs του route του.
+
+## NextRequest / NextResponse
+
+Το Next.js επεκτείνει τα native με helpers:
+
+```ts
+import { type NextRequest, NextResponse } from "next/server";
+
+export async function GET(request: NextRequest) {
+  const query = request.nextUrl.searchParams.get("q");
+  const token = request.cookies.get("token")?.value;
+  return NextResponse.json({ query }, { status: 200 });
+}
+```
+
+## Typed dynamic params: RouteContext
+
+Για dynamic route handlers, υπάρχει global helper `RouteContext` (παράγεται σε `next dev`/`build`). Το `params` είναι **Promise** (await):
+
+```ts
+// app/users/[id]/route.ts
+import type { NextRequest } from "next/server";
+
+export async function GET(_req: NextRequest, ctx: RouteContext<"/users/[id]">) {
+  const { id } = await ctx.params; // typed & await
+  return Response.json({ id });
+}
+```
+
+## Caching
+
+Τα Route Handlers **δεν είναι cached by default**. Μπορείς να κάνεις opt-in caching μόνο για `GET` με `export const dynamic = "force-static"`. Με Cache Components, τα `GET` ακολουθούν το ίδιο μοντέλο prerendering με τα pages, και cache-άρεις uncached data με `use cache` σε helper (όχι απευθείας στο handler body).
+
+```ts
+// app/api/products/route.ts
+import { cacheLife } from "next/cache";
+
+export async function GET() {
+  return Response.json(await getProducts());
+}
+
+async function getProducts() {
+  "use cache"; // σε helper, ΟΧΙ μέσα στο GET απευθείας
+  cacheLife("hours");
+  return db.query("SELECT * FROM products");
+}
+```
+
+## Route Handler vs Server Action
+
+<PredictOutput
+  title="Διάλεξε το σωστό εργαλείο"
+  code={`// Σενάριο: ένας τρίτος (Stripe) στέλνει webhook POST στο app σου.
+// Χρειάζεσαι ένα σταθερό public HTTP endpoint με URL.
+
+// Επιλογή A: Server Action ('use server')
+// Επιλογή B: Route Handler (app/api/webhooks/stripe/route.ts)`}
+  options={["A — Server Action", "B — Route Handler", "Οποιοδήποτε", "Κανένα"]}
+  correctOptionIndex={1}
+  answer="B — Route Handler"
+  explanation="Για external/public HTTP endpoints (webhooks, third-party callbacks, public REST/JSON API) θες Route Handler με σταθερό URL και πλήρη έλεγχο request/response. Τα Server Actions είναι για in-app mutations από το δικό σου UI (forms/handlers), δεν είναι σχεδιασμένα ως public API."
+/>
+
+```txt
+Server Action   → in-app mutations από το δικό σου UI (forms, handlers)
+Route Handler   → public/external HTTP endpoints: webhooks, REST/JSON API,
+                  OAuth callbacks, ό,τι χρειάζεται σταθερό URL & control σε req/res
+```
+
+<Exercise
+  question="Φτιάχνεις app/api/users/[id]/route.ts. Πώς διαβάζεις το id και τι type helper;"
+  options={[
+    "ctx: RouteContext<'/users/[id]'> και const { id } = await ctx.params.",
+    "params.id απευθείας από το πρώτο argument.",
+    "useParams() μέσα στο handler."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το context τυποποιείται με το global RouteContext<'/route'> helper, και το params είναι Promise (await). Το useParams είναι client hook, δεν ισχύει εδώ."
+/>
+
+<Exercise
+  question="Έχεις app/dashboard/page.tsx και θες ένα GET endpoint στο ίδιο route. Τι πρόβλημα υπάρχει;"
+  options={[
+    "Δεν μπορεί να υπάρχει route.ts στο ίδιο segment με page.tsx — βάλ' το σε διαφορετικό path (π.χ. app/api/dashboard/route.ts).",
+    "Κανένα, συνυπάρχουν.",
+    "Πρέπει να μετονομάσεις το page σε route."
+  ]}
+  correctOptionIndex={0}
+  explanation="route.ts και page.tsx δεν επιτρέπονται στο ίδιο route segment (conflict). Το route handler πάει σε ξεχωριστό path, συνήθως κάτω από app/api/."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«When do you use a Route Handler vs a Server Action?»
+
+> Route Handlers are custom HTTP endpoints defined in a `route.ts` inside `app`, built on the Web `Request`/`Response` APIs — they're the App Router equivalent of API Routes. I export functions named after HTTP methods (`GET`, `POST`, …); an unsupported method returns 405, and a `route.ts` can't sit in the same segment as a `page.tsx`. For dynamic segments I type the context with the global `RouteContext<'/users/[id]'>` helper and `await ctx.params`. I reach for a Route Handler when I need a stable public URL with full control over request and response — webhooks, OAuth callbacks, a REST/JSON API for external clients. Server Actions are for in-app mutations triggered from my own forms and handlers, not as a public API. Route Handlers aren't cached by default; I opt in for `GET` with `force-static` or wrap uncached data in a `use cache` helper.
+
+<Flashcards
+  title="Route Handlers — interview drills"
+  cards={[
+    {
+      question: "Πώς ορίζεις route handler;",
+      answer: "route.ts μέσα στο app/, με exported functions ανά HTTP method: GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS. Χτισμένο πάνω στα Web Request/Response."
+    },
+    {
+      question: "route.ts και page.tsx στο ίδιο segment;",
+      answer: "Δεν επιτρέπεται (conflict). Βάλε το route handler σε ξεχωριστό path, συνήθως app/api/.../route.ts."
+    },
+    {
+      question: "Τι είναι NextRequest/NextResponse;",
+      answer: "Επεκτάσεις των native Request/Response με helpers: request.nextUrl.searchParams, request.cookies, NextResponse.json/redirect κλπ."
+    },
+    {
+      question: "Πώς τυποποιείς dynamic params σε handler;",
+      answer: "ctx: RouteContext<'/users/[id]'> (global helper) και const { id } = await ctx.params (params είναι Promise)."
+    },
+    {
+      question: "Cache-άρονται τα Route Handlers;",
+      answer: "Όχι by default. Opt-in για GET με export const dynamic = 'force-static', ή cache uncached data με 'use cache' σε helper function (όχι μέσα στο handler body)."
+    },
+    {
+      question: "Route Handler vs Server Action;",
+      answer: "Route Handler: public/external HTTP endpoints (webhooks, REST API, callbacks) με σταθερό URL. Server Action: in-app mutations από το δικό σου UI (forms/handlers)."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="REST endpoints με route handlers"
+  scenario="Φτιάξε ένα tasks API με route handlers, typed dynamic params και ένα webhook endpoint."
+  outcomes={[
+    "Να φτιάχνεις route.ts με σωστά HTTP methods & status codes.",
+    "Να τυποποιείς context με RouteContext.",
+    "Να διακρίνεις route handler από server action."
+  ]}
+  steps={[
+    "app/api/tasks/route.ts: GET (200, λίστα) και POST (201, create).",
+    "app/api/tasks/[id]/route.ts: GET/PATCH/DELETE με RouteContext & await params.",
+    "Χρησιμοποίησε NextResponse.json με σωστά status codes.",
+    "app/api/webhooks/stripe/route.ts: POST που διαβάζει raw body.",
+    "Πρόσθεσε caching σε ένα GET με use cache helper."
+  ]}
+  checkpoints={[
+    "Τα params διαβάζονται με await μέσω RouteContext.",
+    "Τα status codes είναι σωστά (201 create, 404 not found...).",
+    "Το webhook είναι route handler, όχι server action."
+  ]}
+  mistakes={[
+    "route.ts στο ίδιο segment με page.tsx.",
+    "params χωρίς await στο context.",
+    "Χρήση Server Action για public webhook.",
+    "'use cache' απευθείας στο handler body αντί για helper."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν χτίζεις typed HTTP endpoints και ξέρεις πότε route handler και πότε server action."
+/>

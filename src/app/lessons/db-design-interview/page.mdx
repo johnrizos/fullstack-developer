@@ -1,0 +1,178 @@
+# Schema Design & Interview Practice
+
+Το τελευταίο βήμα του database track: να **συνθέτεις** όλα τα προηγούμενα σε ένα πραγματικό design. Στις συνεντεύξεις το «σχεδίασε το schema για X» είναι ανοιχτό — δεν υπάρχει μία σωστή απάντηση, αλλά υπάρχει σωστή **διαδικασία**.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να ακολουθείς δομημένη διαδικασία σχεδιασμού,
+- να ξεκινάς από access patterns & requirements,
+- να επιλέγεις τύπους, keys, σχέσεις και indexes συνειδητά,
+- να εξηγείς trade-offs (normalization, consistency, scale),
+- να απαντάς σε κλασικές db ερωτήσεις με δομή.
+
+## Η διαδικασία σχεδιασμού
+
+```txt
+1. Requirements   → τι entities; τι σχέσεις; read-heavy ή write-heavy;
+2. Access patterns→ ποια queries θα τρέχουν συχνά; (αυτά οδηγούν το design)
+3. Entities/tables→ ένα table ανά entity, σωστοί τύποι, primary keys
+4. Relationships  → FKs, 1-N / N-N (join tables)
+5. Constraints    → NOT NULL, UNIQUE, CHECK, referential integrity
+6. Indexes        → στις στήλες των συχνών WHERE/JOIN/ORDER BY
+7. Scale/trade-offs→ normalization vs denormalization, SQL vs NoSQL, caching
+```
+
+Μην ορμήσεις στα tables — ξεκίνα από **requirements & access patterns**. Αυτό δείχνει ωριμότητα.
+
+## Παράδειγμα: σχεδίασε ένα «URL shortener»
+
+```txt
+Requirements: short code → long URL, click analytics, πολύ read-heavy.
+Access patterns:
+  - GET /:code → redirect (ΠΟΛΥ συχνό, πρέπει να είναι γρήγορο)
+  - δημιουργία νέου short link
+  - analytics ανά link (λιγότερο συχνό)
+```
+
+```sql
+CREATE TABLE links (
+  id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  code        TEXT NOT NULL UNIQUE,      -- index για το hot lookup
+  long_url    TEXT NOT NULL,
+  user_id     BIGINT REFERENCES users(id),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE clicks (             -- ξεχωριστά: write-heavy, μη μπλοκάρει το read
+  id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  link_id    BIGINT NOT NULL REFERENCES links(id),
+  clicked_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+Σχεδιαστικές αποφάσεις: το `code` έχει `UNIQUE` index (το hot `WHERE code = ?`)· τα clicks σε ξεχωριστό πίνακα (διαφορετικό write pattern)· caching layer μπροστά για το redirect· analytics ίσως aggregated table αν τα raw clicks γίνουν τεράστια.
+
+<PredictOutput
+  title="Από πού ξεκινάς;"
+  code={`Interviewer: "Σχεδίασε το schema για ένα ride-sharing app."
+// Ποια είναι η ΚΑΛΥΤΕΡΗ πρώτη σου κίνηση;`}
+  options={[
+    "Ρωτάς requirements & access patterns (ποιες queries, scale, consistency)",
+    "Αρχίζεις αμέσως να γράφεις CREATE TABLE",
+    "Λες 'θα χρησιμοποιήσω NoSQL για scale'",
+    "Σχεδιάζεις indexes πρώτα"
+  ]}
+  correctOptionIndex={0}
+  answer="Ρωτάς requirements & access patterns"
+  explanation="Το design ξεκινά από κατανόηση: τι entities, ποια access patterns είναι hot, read- ή write-heavy, ανάγκες consistency/scale. Το να ορμήσεις σε tables ή να πετάξεις 'NoSQL για scale' χωρίς λόγο δείχνει έλλειψη διαδικασίας. Οι interviewers αξιολογούν το ΠΩΣ σκέφτεσαι."
+/>
+
+## Trade-offs που πρέπει να αρθρώνεις
+
+```txt
+- Normalize vs denormalize → ακεραιότητα vs ταχύτητα reads (με μέτρηση)
+- SQL vs NoSQL             → σχέσεις/ACID vs scale/ευελιξία/access patterns
+- Strong vs eventual       → consistency vs availability/latency (CAP)
+- Index ή όχι              → γρήγορα reads vs αργά writes & χώρος
+- Sync vs async            → π.χ. analytics γράψε async για να μη μπλοκάρει το hot path
+```
+
+Καλή απάντηση = «εξαρτάται, και να γιατί». Δείξε ότι ξέρεις και τις δύο πλευρές.
+
+## Κλασικές db ερωτήσεις — δομημένα
+
+```txt
+"SQL ή NoSQL;"        → access patterns, σχέσεις, ACID, scale (μάθημα NoSQL)
+"Πώς θα έκανες αυτό το query πιο γρήγορο;" → EXPLAIN → index → query rewrite
+"N+1;"               → όρισέ το, δείξε eager loading
+"Πώς αλλάζεις schema χωρίς downtime;" → expand/contract + batched backfill
+"Race condition σε αγορά;" → atomic update / FOR UPDATE / optimistic lock
+"Πώς κλιμακώνεις;"   → optimize → cache → scale up → replicas → shard
+```
+
+<Exercise
+  question="Σου ζητούν να σχεδιάσεις schema για ένα feature. Ποια είναι η σωστή προσέγγιση;"
+  options={[
+    "Ξεκίνα από requirements & access patterns, μετά entities/relationships/constraints/indexes, και άρθρωσε trade-offs.",
+    "Γράψε αμέσως όσα tables σου έρθουν στο μυαλό.",
+    "Διάλεξε την πιο μοντέρνα τεχνολογία και προσαρμόσου."
+  ]}
+  correctOptionIndex={0}
+  explanation="Δομημένη διαδικασία: requirements → access patterns → entities → relationships → constraints → indexes → trade-offs. Δείχνει ότι σχεδιάζεις με βάση πραγματικές ανάγκες, όχι αυθαίρετα ή με βάση hype."
+/>
+
+<Exercise
+  question="Στο URL shortener, γιατί βάζεις τα clicks σε ξεχωριστό πίνακα από τα links;"
+  options={[
+    "Διαφορετικό access pattern: τα clicks είναι write-heavy/append-only και δεν πρέπει να μπλοκάρουν ή να φουσκώνουν το hot read του link.",
+    "Επειδή το ORM το απαιτεί υποχρεωτικά.",
+    "Δεν υπάρχει λόγος — θα μπορούσαν μαζί."
+  ]}
+  correctOptionIndex={0}
+  explanation="Τα links διαβάζονται πάρα πολύ (redirect), τα clicks γράφονται πάρα πολύ (analytics). Ξεχωρίζοντάς τα, το hot read path μένει λεπτό και γρήγορο, και το write-heavy analytics δεν παρεμβαίνει. Σχεδιασμός γύρω από access patterns."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«Design the database schema for [a feature].»
+
+> I don't jump to tables — I start by clarifying requirements and the access patterns: what entities exist, how they relate, which queries are hot, and whether it's read- or write-heavy, plus any consistency and scale needs. Those patterns drive the design. Then I lay out a table per entity with proper types and primary keys, model relationships with foreign keys and join tables for many-to-many, and push integrity into constraints. I index the columns that show up in frequent `WHERE`, `JOIN`, and `ORDER BY` clauses, and I separate tables with very different access patterns — like keeping append-heavy analytics out of a hot read path. Throughout, I think out loud about trade-offs: normalize for integrity versus denormalize for read speed when measured, SQL versus NoSQL based on relationships and access patterns, strong versus eventual consistency. There's rarely one right schema, so I justify each decision and name what I'd revisit at scale.
+
+<Flashcards
+  title="Schema design & interview — drills"
+  cards={[
+    {
+      question: "Η διαδικασία σχεδιασμού schema;",
+      answer: "Requirements → access patterns → entities/tables → relationships (FK/join) → constraints → indexes → scale/trade-offs. Ξεκίνα από ανάγκες, όχι από tables."
+    },
+    {
+      question: "Πρώτη κίνηση σε 'σχεδίασε schema για X';",
+      answer: "Ρώτα requirements & access patterns (ποιες queries είναι hot, read/write-heavy, consistency/scale). Όχι άμεσο CREATE TABLE ούτε 'NoSQL για scale' χωρίς λόγο."
+    },
+    {
+      question: "Ποια trade-offs αρθρώνεις;",
+      answer: "Normalize vs denormalize, SQL vs NoSQL, strong vs eventual consistency (CAP), index ή όχι (reads vs writes), sync vs async writes. 'Εξαρτάται, και να γιατί'."
+    },
+    {
+      question: "Γιατί χωρίζεις πίνακες με διαφορετικό access pattern;",
+      answer: "Π.χ. read-heavy links vs write-heavy clicks: ο διαχωρισμός κρατά το hot read path λεπτό και δεν αφήνει το write-heavy κομμάτι να παρεμβαίνει."
+    },
+    {
+      question: "Πώς απαντάς 'κάνε αυτό το query γρήγορο';",
+      answer: "EXPLAIN για το plan → πρόσθεσε/διόρθωσε index → ξαναγράψε το query (απόφυγε function-on-column, leading wildcard) → ξαναμέτρα."
+    },
+    {
+      question: "Τι αξιολογεί ο interviewer σε design ερώτηση;",
+      answer: "Τη ΔΙΑΔΙΚΑΣΙΑ & το σκεπτικό, όχι μια 'σωστή' απάντηση. Δομή, ερωτήσεις διευκρίνισης, συνειδητά trade-offs, και τι θα ξανακοίταζες στο scale."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Σχεδιασμός schema από την αρχή"
+  scenario="Διάλεξε ένα feature (booking, chat, feed ή e-shop) και σχεδίασέ το end-to-end με τη διαδικασία."
+  outcomes={[
+    "Να ακολουθείς δομημένη διαδικασία σχεδιασμού.",
+    "Να συνθέτεις keys/σχέσεις/indexes/constraints.",
+    "Να αρθρώνεις trade-offs καθαρά."
+  ]}
+  steps={[
+    "Γράψε requirements & 3-5 βασικά access patterns.",
+    "Όρισε entities/tables με τύπους & primary keys.",
+    "Πρόσθεσε relationships (FK, join tables) & constraints.",
+    "Διάλεξε indexes με βάση τα hot queries.",
+    "Άρθρωσε trade-offs: normalization, SQL/NoSQL, caching, τι θα άλλαζες στο scale."
+  ]}
+  checkpoints={[
+    "Το design ξεκινά από access patterns, όχι από tables.",
+    "Κάθε index/constraint αντιστοιχεί σε ανάγκη.",
+    "Μπορείς να δικαιολογήσεις κάθε σημαντική απόφαση."
+  ]}
+  mistakes={[
+    "Άμεσο CREATE TABLE χωρίς requirements/patterns.",
+    "Επιλογή τεχνολογίας με βάση hype, όχι ανάγκες.",
+    "Indexes/denormalization χωρίς δικαιολόγηση.",
+    "Καμία αναφορά σε trade-offs ή consistency/scale."
+  ]}
+  mastery="Το μάθημα — και όλο το database track — πέτυχε όταν σχεδιάζεις schema με δομημένη διαδικασία και υπερασπίζεσαι κάθε trade-off."
+/>

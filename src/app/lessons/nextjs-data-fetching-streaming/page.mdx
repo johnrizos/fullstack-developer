@@ -1,0 +1,213 @@
+# Data Fetching & Streaming
+
+Στο App Router φέρνεις δεδομένα **κατευθείαν μέσα σε async Server Components** — χωρίς `getServerSideProps`/`getStaticProps`. Στα interviews εξετάζουν αν ξέρεις ότι το `fetch` **δεν cache-άρεται πια by default**, πώς γίνεται streaming με `loading.js`/`<Suspense>`, και πώς αποφεύγεις request waterfalls.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να φέρνεις δεδομένα σε async Server Components (fetch ή ORM),
+- να ξέρεις ότι το `fetch` δεν είναι cached by default,
+- να κάνεις streaming με `loading.js` και `<Suspense>`,
+- να ξεχωρίζεις parallel από sequential fetching,
+- να στέλνεις δεδομένα σε Client Component με το `use` API.
+
+## Fetch σε Server Component
+
+```tsx
+// app/blog/page.tsx — async Server Component
+export default async function Page() {
+  const res = await fetch("https://api.example.com/blog");
+  const posts = await res.json();
+  return (
+    <ul>
+      {posts.map((post: { id: string; title: string }) => (
+        <li key={post.id}>{post.title}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+Ή κατευθείαν με ORM/database — επειδή τρέχει στον server, τα credentials δεν φεύγουν στον client:
+
+```tsx
+import { db, posts } from "@/lib/db";
+export default async function Page() {
+  const allPosts = await db.select().from(posts);
+  return <List items={allPosts} />;
+}
+```
+
+## fetch: ΔΕΝ είναι cached by default (Next.js 16)
+
+Κρίσιμο breaking change. Παλιότερα το `fetch` cache-αρόταν αυτόματα· τώρα **όχι** — μπλοκάρει το render μέχρι να ολοκληρωθεί. Για caching χρησιμοποιείς τη directive `use cache` (επόμενο μάθημα), ή τυλίγεις σε `<Suspense>` για streaming. Επίσης, ίδια `fetch` requests στο ίδιο render **memoize-άρονται** (deduplication ανά request).
+
+## Streaming με loading.js
+
+Ένα `loading.tsx` δίπλα στο `page.tsx` δείχνει instant loading UI ενώ φορτώνει η σελίδα — αυτόματα τυλίγει το page σε `<Suspense>`:
+
+```tsx
+// app/blog/loading.tsx
+export default function Loading() {
+  return <BlogSkeleton />;
+}
+```
+
+Ο χρήστης βλέπει αμέσως το layout + skeleton, και το περιεχόμενο μπαίνει όταν ετοιμαστεί.
+
+## Streaming με `<Suspense>` (granular)
+
+```tsx
+import { Suspense } from "react";
+
+export default function BlogPage() {
+  return (
+    <div>
+      <header><h1>Welcome</h1></header> {/* στέλνεται αμέσως */}
+      <Suspense fallback={<BlogListSkeleton />}>
+        <BlogList /> {/* αργό async — streamάρει όταν ετοιμαστεί */}
+      </Suspense>
+    </div>
+  );
+}
+```
+
+Το `<Suspense>` σου δίνει έλεγχο: ό,τι είναι εκτός boundary φαίνεται αμέσως, ό,τι μέσα streamάρει.
+
+## Parallel vs sequential
+
+<PredictOutput
+  title="Sequential waterfall"
+  code={`export default async function Page({ params }) {
+  const { username } = await params;
+  const artist = await getArtist(username);   // 300ms
+  const albums = await getAlbums(username);   // 300ms
+  return <Profile artist={artist} albums={albums} />;
+}
+// Τα δύο requests δεν εξαρτώνται μεταξύ τους. Συνολικός χρόνος;`}
+  options={["~300ms (parallel)", "~600ms (sequential)", "~150ms", "Εξαρτάται από το cache"]}
+  correctOptionIndex={1}
+  answer="~600ms — sequential waterfall"
+  explanation="Δύο await στη σειρά εκτελούνται διαδοχικά: ~600ms. Επειδή δεν εξαρτώνται, ξεκίνα και τα δύο μαζί και κάνε await με Promise.all → ~300ms. Το waterfall είναι το πιο συχνό performance λάθος σε server data fetching."
+/>
+
+```tsx
+// ✅ Parallel — ξεκινούν μαζί
+const artistData = getArtist(username);
+const albumsData = getAlbums(username);
+const [artist, albums] = await Promise.all([artistData, albumsData]); // ~300ms
+```
+
+Όταν το ένα request **εξαρτάται** από το άλλο (χρειάζεσαι το `artist.id`), τότε sequential είναι αναπόφευκτο — αλλά τύλιξε το εξαρτημένο σε `<Suspense>` για να μη μπλοκάρει όλη η σελίδα.
+
+## Client streaming με το use API
+
+Φέρνεις στον server, περνάς το **promise** (χωρίς await) σε Client Component, και το διαβάζεις με `use`:
+
+```tsx
+// Server
+export default function Page() {
+  const posts = getPosts(); // ΧΩΡΙΣ await
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <Posts posts={posts} />
+    </Suspense>
+  );
+}
+
+// Client
+"use client";
+import { use } from "react";
+export default function Posts({ posts }: { posts: Promise<Post[]> }) {
+  const all = use(posts); // resolve-άρει το promise
+  return <ul>{all.map((p) => <li key={p.id}>{p.title}</li>)}</ul>;
+}
+```
+
+Για data fetching σε Client Components, εναλλακτικά χρησιμοποιείς SWR/React Query.
+
+<Exercise
+  question="Έχεις δύο ανεξάρτητα fetch σε ένα Server Component που τρέχουν σειριακά και αργεί η σελίδα. Τι κάνεις;"
+  options={[
+    "Ξεκινάς και τα δύο χωρίς await και τα κάνεις await μαζί με Promise.all — parallel.",
+    "Προσθέτεις 'use client'.",
+    "Τα βάζεις σε useEffect."
+  ]}
+  correctOptionIndex={0}
+  explanation="Δύο await στη σειρά = waterfall. Αν δεν υπάρχει εξάρτηση, κάλεσε και τα δύο (ξεκινούν αμέσως) και await Promise.all. Αν ένα fails, σκέψου Promise.allSettled."
+/>
+
+<Exercise
+  question="Θες να δείξεις αμέσως το layout και να φορτώσει αργότερα μια αργή λίστα. Ποιο εργαλείο;"
+  options={[
+    "Τύλιξε τη λίστα σε <Suspense fallback> (ή βάλε loading.tsx για όλο το page) — streaming.",
+    "Κάνε το page Client Component με useState loading.",
+    "Βάλε setTimeout στο fetch."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το <Suspense> (ή loading.js για ολόκληρο segment) δείχνει fallback άμεσα και streamάρει το αργό κομμάτι όταν ετοιμαστεί. Το loading.js τυλίγει αυτόματα το page σε Suspense."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you fetch data in the App Router?»
+
+> I fetch directly inside async Server Components — no `getServerSideProps`. I can `await fetch` or query a database/ORM, and since it runs on the server, credentials stay off the client. A big Next.js 16 change is that `fetch` is no longer cached by default; it blocks rendering until it resolves, and I opt into caching with the `use cache` directive or stream with Suspense. Identical fetches in one render are still deduped. For perceived performance I stream: a `loading.tsx` gives the whole segment an instant skeleton, and `<Suspense>` lets me stream specific slow parts while the rest shows immediately. I watch for waterfalls — two independent `await`s in a row run sequentially, so I kick them off together and `await Promise.all`. To stream data into a Client Component I pass the unawaited promise and read it with React's `use`.
+
+<Flashcards
+  title="Data fetching & streaming — interview drills"
+  cards={[
+    {
+      question: "Πώς φέρνεις δεδομένα σε σελίδα App Router;",
+      answer: "Σε async Server Component: await fetch(...) ή query με ORM/db. Χωρίς getServerSideProps/getStaticProps. Τα credentials μένουν στον server."
+    },
+    {
+      question: "Cache-άρεται το fetch by default;",
+      answer: "ΟΧΙ στο Next.js 16 (breaking change). Μπλοκάρει το render μέχρι να τελειώσει. Caching με 'use cache' directive· ίδια fetch στο ίδιο render γίνονται memoize (dedup)."
+    },
+    {
+      question: "loading.js vs <Suspense>;",
+      answer: "loading.tsx: instant loading UI για ΟΛΟ το segment (αυτόματο Suspense). <Suspense>: granular — streamάρεις συγκεκριμένα αργά κομμάτια, το υπόλοιπο φαίνεται αμέσως."
+    },
+    {
+      question: "Sequential vs parallel fetching;",
+      answer: "Δύο await στη σειρά = waterfall (αθροιστικός χρόνος). Ανεξάρτητα requests: ξεκίνα μαζί και await Promise.all. Εξαρτημένα: sequential + Suspense για να μη μπλοκάρει όλη η σελίδα."
+    },
+    {
+      question: "Πώς streamάρεις δεδομένα σε Client Component;",
+      answer: "Φέρε στον server, πέρασε το promise (ΧΩΡΙΣ await) ως prop, διάβασέ το με use(promise) στο client, τυλιγμένο σε <Suspense>."
+    },
+    {
+      question: "Τι κάνεις αν ένα από πολλά parallel fetch μπορεί να αποτύχει;",
+      answer: "Promise.all αποτυγχάνει όλο αν ένα fail. Για ανεκτικότητα χρησιμοποίησε Promise.allSettled και χειρίσου ξεχωριστά τα fulfilled/rejected."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Σελίδα με streaming & parallel loading"
+  scenario="Φτιάξε dashboard που δείχνει αμέσως το layout και streamάρει αργά widgets, με parallel data."
+  outcomes={[
+    "Να φέρνεις δεδομένα σε Server Components.",
+    "Να κάνεις streaming με loading.js/Suspense.",
+    "Να αποφεύγεις waterfalls."
+  ]}
+  steps={[
+    "Server page που φέρνει βασικά δεδομένα.",
+    "Πρόσθεσε loading.tsx για instant skeleton.",
+    "Τύλιξε δύο αργά widgets σε ξεχωριστά <Suspense> boundaries.",
+    "Κάνε δύο ανεξάρτητα fetch parallel με Promise.all.",
+    "Πέρασε ένα promise σε Client Component και διάβασέ το με use."
+  ]}
+  checkpoints={[
+    "Το layout φαίνεται αμέσως, τα αργά κομμάτια streamάρουν.",
+    "Δεν υπάρχουν sequential awaits για ανεξάρτητα δεδομένα.",
+    "Τα credentials δεν φεύγουν στον client."
+  ]}
+  mistakes={[
+    "Sequential awaits για ανεξάρτητα requests (waterfall).",
+    "Να περιμένεις caching από το fetch by default (δεν υπάρχει πια).",
+    "Μία αργή κλήση να μπλοκάρει όλη τη σελίδα χωρίς Suspense.",
+    "Data fetching σε client με useEffect ενώ ταιριάζει server."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν η σελίδα σου δείχνει instant shell, streamάρει τα αργά κομμάτια και δεν έχει waterfalls."
+/>

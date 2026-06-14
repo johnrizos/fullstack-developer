@@ -1,0 +1,215 @@
+# App Router & File-System Routing
+
+Το Next.js χρησιμοποιεί **file-system routing**: φάκελοι και ειδικά αρχεία μέσα στο `app/` ορίζουν τα routes. Στα interviews εξετάζουν αν ξέρεις τη διαφορά `page` vs `layout`, πώς δουλεύουν τα nested/dynamic routes, και — προσοχή στο Next.js 16 — ότι **τα `params`/`searchParams` είναι πλέον Promises**.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να φτιάχνεις routes με `page.tsx` και shared UI με `layout.tsx`,
+- να χτίζεις nested routes με φακέλους,
+- να ορίζεις dynamic segments `[slug]` και να διαβάζεις `params` (await),
+- να διαβάζεις `searchParams` και να ξέρεις ότι κάνει το route dynamic,
+- να πλοηγείσαι με `<Link>`.
+
+## page & layout
+
+Ένα **page** είναι UI για ένα route· ένα **layout** είναι shared UI που τυλίγει pages και **διατηρεί state στο navigation** (δεν ξανα-renderάρει).
+
+```tsx
+// app/page.tsx → route "/"
+export default function Page() {
+  return <h1>Hello Next.js!</h1>;
+}
+
+// app/layout.tsx → root layout (ΥΠΟΧΡΕΩΤΙΚΟ, με html & body)
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="el">
+      <body>
+        <main>{children}</main>
+      </body>
+    </html>
+  );
+}
+```
+
+Το root layout είναι υποχρεωτικό και πρέπει να περιέχει `<html>` και `<body>`. Τα layouts φωλιάζουν: το root τυλίγει το `app/blog/layout.tsx`, που τυλίγει το `app/blog/page.tsx`.
+
+## Nested routes
+
+```txt
+app/
+  page.tsx                → /
+  blog/
+    page.tsx              → /blog
+    layout.tsx            → shared UI για όλα τα /blog/*
+    [slug]/
+      page.tsx            → /blog/:slug
+```
+
+**Φάκελοι** ορίζουν URL segments· **αρχεία** (`page`, `layout`) φτιάχνουν το UI. Για να γίνει ένα segment δημόσια προσβάσιμο, χρειάζεται `page.tsx`.
+
+## Dynamic segments — params είναι Promise
+
+Όνομα φακέλου σε αγκύλες `[slug]` φτιάχνει dynamic segment. Στο Next.js 16 το `params` είναι **Promise** — κάνεις `await`:
+
+```tsx
+// app/blog/[slug]/page.tsx
+export default async function BlogPostPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params; // ← await, ΟΧΙ params.slug απευθείας
+  const post = await getPost(slug);
+  return <h1>{post.title}</h1>;
+}
+```
+
+<PredictOutput
+  title="Το breaking change των params"
+  code={`// Next.js 16
+export default async function Page({ params }: {
+  params: Promise<{ slug: string }>
+}) {
+  const slug = params.slug; // ← έτσι, χωρίς await
+  return <h1>{slug}</h1>;
+}
+// Τι πρόβλημα έχει αυτός ο κώδικας;`}
+  options={[
+    "Το params είναι Promise — πρέπει const { slug } = await params",
+    "Τίποτα, δουλεύει κανονικά",
+    "Το slug πρέπει να είναι number",
+    "Λείπει το 'use client'"
+  ]}
+  correctOptionIndex={0}
+  answer="params είναι Promise — χρειάζεται await"
+  explanation="Στο Next.js 16 τα params/searchParams έγιναν Promises (async). Το params.slug χωρίς await δίνει undefined/τύπο Promise. Σωστά: const { slug } = await params. Είναι από τα πιο συχνά λάθη όταν έρχεσαι από παλιότερη έκδοση."
+/>
+
+Με `generateStaticParams` προ-παράγεις τα slugs στο build για static generation:
+
+```tsx
+export function generateStaticParams() {
+  return [{ slug: "hello" }, { slug: "world" }];
+}
+```
+
+## searchParams → dynamic rendering
+
+```tsx
+// app/page.tsx
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const { q } = await searchParams;
+  // ...
+}
+```
+
+Η χρήση `searchParams` σε server page κάνει το route **dynamic** (χρειάζεται το incoming request). Σε Client Components διαβάζεις query με το `useSearchParams` hook.
+
+## Link & typed route props
+
+```tsx
+import Link from "next/link";
+
+<Link href={`/blog/${post.slug}`}>{post.title}</Link>;
+```
+
+Το `<Link>` δίνει prefetching και client-side navigation. Επίσης υπάρχουν global typed helpers (παράγονται σε `next dev`/`build`):
+
+```tsx
+export default async function Page(props: PageProps<"/blog/[slug]">) {
+  const { slug } = await props.params; // πλήρως typed από το route
+  return <h1>{slug}</h1>;
+}
+```
+
+<Exercise
+  question="Πού βάζεις UI που πρέπει να μένει ίδιο (π.χ. sidebar) σε όλα τα /dashboard/* και να ΜΗΝ ξανα-renderάρει στο navigation;"
+  options={[
+    "Σε app/dashboard/layout.tsx — τα layouts είναι shared και διατηρούν state μεταξύ navigations.",
+    "Σε κάθε app/dashboard/*/page.tsx ξεχωριστά.",
+    "Σε ένα Client Component με useEffect."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το layout τυλίγει όλα τα nested pages, μοιράζεται μεταξύ τους και διατηρεί state/scroll position κατά το navigation. Αντιγραφή του ίδιου UI σε κάθε page είναι duplication και χάνει αυτό το πλεονέκτημα."
+/>
+
+<Exercise
+  question="Δημιουργείς app/products/[id]/page.tsx. Πώς διαβάζεις το id;"
+  options={[
+    "const { id } = await params, με params τύπου Promise<{ id: string }>.",
+    "const id = params.id απευθείας.",
+    "Με useParams() σε server component."
+  ]}
+  correctOptionIndex={0}
+  explanation="Στο Next.js 16 το params είναι Promise — κάνεις await. Το useParams είναι client hook (χρειάζεται 'use client'), όχι ο τρόπος σε async server page."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How does routing work in the Next.js App Router?»
+
+> Routing is file-system based inside the `app` directory: folders define URL segments and special files build the UI. A `page.tsx` makes a segment publicly accessible, and a `layout.tsx` is shared UI that wraps nested pages and preserves state across navigations instead of re-rendering. I nest folders for nested routes and wrap a segment name in square brackets, like `[slug]`, for a dynamic segment. A key Next.js 16 detail is that `params` and `searchParams` are now Promises, so I `await` them — `const { slug } = await params`. Reading `searchParams` opts the route into dynamic rendering because it needs the request, and for prerendering dynamic routes I provide `generateStaticParams`. I navigate with `<Link>` for prefetching and client-side transitions, and I lean on the generated `PageProps`/`LayoutProps` helpers for fully typed route props.
+
+<Flashcards
+  title="App Router routing — interview drills"
+  cards={[
+    {
+      question: "page vs layout;",
+      answer: "page: UI για ένα συγκεκριμένο route. layout: shared UI που τυλίγει nested pages και διατηρεί state στο navigation (δεν ξανα-renderάρει). Το root layout είναι υποχρεωτικό με html & body."
+    },
+    {
+      question: "Πώς φτιάχνεις dynamic route;",
+      answer: "Φάκελος με αγκύλες: app/blog/[slug]/page.tsx → /blog/:slug. Διαβάζεις με const { slug } = await params (params είναι Promise στο Next.js 16)."
+    },
+    {
+      question: "Γιατί await στο params/searchParams;",
+      answer: "Στο Next.js 16 έγιναν Promises (async APIs). Χωρίς await παίρνεις λάθος τιμή/τύπο. const { x } = await params."
+    },
+    {
+      question: "Τι κάνει το searchParams στο rendering;",
+      answer: "Χρήση searchParams σε server page → dynamic rendering (χρειάζεται το request). Σε client το διαβάζεις με useSearchParams."
+    },
+    {
+      question: "Τι κάνει το <Link>;",
+      answer: "Επεκτείνει το <a> με prefetching και client-side navigation (χωρίς full reload). Ο κύριος τρόπος πλοήγησης· για προγραμματιστική, useRouter."
+    },
+    {
+      question: "Τι είναι generateStaticParams;",
+      answer: "Function που επιστρέφει τη λίστα των dynamic params στο build, ώστε το Next.js να προ-παράγει στατικά τα αντίστοιχα pages."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Multi-page app με nested layouts"
+  scenario="Φτιάξε ένα app με home, blog list και dynamic blog post, με shared layout στο /blog."
+  outcomes={[
+    "Να οργανώνεις routes με φακέλους και page/layout.",
+    "Να διαβάζεις σωστά params/searchParams (await).",
+    "Να πλοηγείσαι με <Link>."
+  ]}
+  steps={[
+    "app/layout.tsx (root, html+body) και app/page.tsx (home).",
+    "app/blog/page.tsx (λίστα) με <Link> σε κάθε post.",
+    "app/blog/layout.tsx με shared sidebar/heading.",
+    "app/blog/[slug]/page.tsx με const { slug } = await params.",
+    "Πρόσθεσε generateStaticParams για τα γνωστά slugs."
+  ]}
+  checkpoints={[
+    "Τα params διαβάζονται με await.",
+    "Το /blog layout δεν ξανα-renderάρει σε κάθε post navigation.",
+    "Η πλοήγηση γίνεται με <Link>, όχι <a>."
+  ]}
+  mistakes={[
+    "params.slug χωρίς await (Next.js 16 breaking change).",
+    "Παράλειψη html/body στο root layout.",
+    "Αντιγραφή shared UI σε κάθε page αντί για layout.",
+    "Χρήση <a> αντί για <Link> (χάνεις prefetch & client navigation)."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν στήνεις nested routing με dynamic segments και διαβάζεις params/searchParams σωστά ως Promises."
+/>

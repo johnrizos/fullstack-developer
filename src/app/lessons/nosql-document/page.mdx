@@ -1,0 +1,194 @@
+# Document Databases (MongoDB)
+
+Τα document stores (MongoDB, Firestore) αποθηκεύουν δεδομένα ως **JSON-like documents** με ευέλικτο schema. Είναι ο πιο διαδεδομένος τύπος NoSQL σε fullstack apps. Στα interviews εξετάζουν την κρίσιμη απόφαση **embed vs reference** και ότι το modeling οδηγείται από τα access patterns.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να σχεδιάζεις documents γύρω από το πώς διαβάζεις,
+- να διαλέγεις embed vs reference συνειδητά,
+- να γράφεις βασικά queries και updates,
+- να ξέρεις πότε χρειάζεσαι index,
+- να εξηγείς το aggregation pipeline.
+
+## Document = ένα aggregate
+
+Ένα document κρατά μαζί δεδομένα που **διαβάζονται μαζί** — όχι σπασμένα σε tables:
+
+```js
+// collection: users — ένα document ανά χρήστη
+{
+  _id: ObjectId("..."),
+  email: "ana@x.com",
+  name: "Ana",
+  address: { city: "Athens", zip: "11525" },   // nested object
+  roles: ["user", "editor"]                     // array
+}
+```
+
+Ευέλικτο schema: δύο documents στην ίδια collection μπορούν να έχουν διαφορετικά πεδία. Καλό για εξελισσόμενα δεδομένα — αλλά η πειθαρχία (validation στον app ή schema rules) μένει δική σου ευθύνη.
+
+## Embed vs Reference — η κρίσιμη απόφαση
+
+```js
+// EMBED: τα related μέσα στο document — ένα read, χωρίς "join"
+{
+  _id: "post_1",
+  title: "Hello",
+  author: { name: "Ana", avatar: "..." },        // embedded
+  comments: [{ text: "Nice!", by: "Bob" }]       // embedded array
+}
+
+// REFERENCE: κρατάς id και κάνεις δεύτερο query (σαν FK)
+{ _id: "post_1", title: "Hello", authorId: "user_42" }
+```
+
+```txt
+EMBED όταν:                          REFERENCE όταν:
+- διαβάζονται πάντα μαζί             - μοιράζονται (ο author σε πολλά posts)
+- ανήκουν στο ίδιο aggregate         - μεγαλώνουν απεριόριστα (unbounded)
+- bounded (λίγα comments)            - ενημερώνονται ανεξάρτητα/συχνά
+```
+
+<PredictOutput
+  title="Embed ή reference;"
+  code={`// Blog post με σχόλια. Ένα δημοφιλές post μπορεί να φτάσει
+// 50.000 σχόλια. Τα σχόλια φορτώνονται σελιδοποιημένα.
+// Embed τα σχόλια μέσα στο post document ή reference;`}
+  options={[
+    "Reference — τα σχόλια σε δική τους collection",
+    "Embed — όλα μέσα στο post",
+    "Δεν έχει σημασία",
+    "Embed αλλά μόνο τα 3 πρώτα"
+  ]}
+  correctOptionIndex={0}
+  answer="Reference (unbounded growth)"
+  explanation="Τα σχόλια μεγαλώνουν απεριόριστα (unbounded). Embedding 50.000 σχολίων κάνει το document τεράστιο (όριο 16MB στη MongoDB), αργό να φορτώσει και αδύνατο να σελιδοποιήσεις σωστά. Reference σε ξεχωριστή collection με postId + index. Vuln pattern: 'unbounded array' σε embedded document."
+/>
+
+## Queries & updates
+
+```js
+// Find με φίλτρο και projection (μόνο τα πεδία που θες)
+db.users.find({ "address.city": "Athens" }, { name: 1, email: 1 });
+
+// Update — atomic operators
+db.users.updateOne(
+  { _id: id },
+  { $set: { name: "Ana B." }, $push: { roles: "admin" } }
+);
+
+// Πάντα φίλτραρε με access pattern + ownership (όπως στο SQL)
+db.posts.find({ authorId: currentUserId });
+```
+
+## Indexes — ίδια λογική με SQL
+
+Χωρίς index, ένα query κάνει **collection scan** (σαρώνει όλα τα documents). Index στα πεδία που φιλτράρεις/ταξινομείς συχνά:
+
+```js
+db.posts.createIndex({ authorId: 1, createdAt: -1 }); // composite, όπως SQL
+```
+
+Ίδιοι κανόνες με το relational indexing: composite index ακολουθεί left-prefix, indexes επιβαρύνουν writes, indexάρεις selective πεδία.
+
+## Aggregation pipeline
+
+Για analytics/μετασχηματισμούς, η MongoDB έχει **pipeline** από στάδια (αντίστοιχο του GROUP BY/JOIN του SQL):
+
+```js
+db.orders.aggregate([
+  { $match: { status: "paid" } },                    // ~ WHERE
+  { $group: { _id: "$userId", total: { $sum: "$amount" } } }, // ~ GROUP BY
+  { $sort: { total: -1 } },                          // ~ ORDER BY
+  { $limit: 10 }
+]);
+```
+
+Το `$lookup` κάνει join-like ένωση collections — αλλά αν το χρειάζεσαι συχνά, ίσως το data model έπρεπε να είναι διαφορετικό (ή relational).
+
+<Exercise
+  question="Πότε κάνεις embed τα related δεδομένα σε ένα document;"
+  options={[
+    "Όταν διαβάζονται πάντα μαζί, ανήκουν στο ίδιο aggregate και είναι bounded (περιορισμένα σε πλήθος).",
+    "Πάντα — το embedding είναι πάντα πιο γρήγορο.",
+    "Όταν μοιράζονται μεταξύ πολλών documents."
+  ]}
+  correctOptionIndex={0}
+  explanation="Embed όταν τα δεδομένα διαβάζονται μαζί, ανήκουν στο ίδιο aggregate και δεν μεγαλώνουν απεριόριστα. Αν μοιράζονται (ο author σε πολλά posts) ή μεγαλώνουν unbounded (σχόλια), κάνεις reference."
+/>
+
+<Exercise
+  question="Το query db.posts.find({ category: 'tech' }) είναι αργό σε μεγάλη collection. Γιατί;"
+  options={[
+    "Πιθανώς λείπει index στο category — γίνεται collection scan, σαν seq scan στο SQL.",
+    "Η MongoDB δεν υποστηρίζει find.",
+    "Πρέπει να κάνεις embed την category."
+  ]}
+  correctOptionIndex={0}
+  explanation="Χωρίς index στο category, η βάση σαρώνει όλα τα documents (collection scan). Πρόσθεσε createIndex({ category: 1 }). Η λογική του indexing είναι ίδια με το relational — explain() δείχνει αν χρησιμοποιείται."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you model data in a document database?»
+
+> I model around how the data is read, not how it's normalized. A document is an aggregate that holds together things read together. The key decision is embed versus reference: I embed when related data is always read with the parent, belongs to the same aggregate, and is bounded — like an address on a user. I reference when data is shared across documents, grows unbounded, or is updated independently — comments on a popular post go in their own collection with a `postId` and index, because embedding tens of thousands would blow past the document size limit and break pagination. Indexing follows the same rules as SQL — composite indexes with a left prefix, and `explain` to verify — and for analytics I use the aggregation pipeline rather than pulling everything into the app.
+
+<Flashcards
+  title="Document databases — interview drills"
+  cards={[
+    {
+      question: "Τι είναι ένα document;",
+      answer: "JSON-like aggregate που κρατά μαζί δεδομένα που διαβάζονται μαζί (nested objects, arrays). Ευέλικτο schema — η πειθαρχία/validation μένει δική σου ευθύνη."
+    },
+    {
+      question: "Embed vs reference;",
+      answer: "Embed: related μέσα στο document (ένα read) όταν διαβάζονται μαζί, ίδιο aggregate, bounded. Reference: id σε άλλη collection όταν μοιράζονται, μεγαλώνουν unbounded, ή ενημερώνονται ανεξάρτητα."
+    },
+    {
+      question: "Τι είναι το 'unbounded array' anti-pattern;",
+      answer: "Embedding array που μεγαλώνει απεριόριστα (π.χ. σχόλια). Φτάνει το όριο document size (16MB MongoDB), αργό load, αδύνατη σωστή pagination. Λύση: reference σε ξεχωριστή collection."
+    },
+    {
+      question: "Χρειάζεται indexing σε document store;",
+      answer: "Ναι, ίδια λογική με SQL: χωρίς index → collection scan. createIndex στα πεδία που φιλτράρεις/ταξινομείς, composite με left-prefix, explain() για επιβεβαίωση. Indexes επιβαρύνουν writes."
+    },
+    {
+      question: "Τι είναι το aggregation pipeline;",
+      answer: "Αλυσίδα σταδίων ($match, $group, $sort, $lookup) για analytics/μετασχηματισμούς — το αντίστοιχο των WHERE/GROUP BY/JOIN του SQL, εκτελεσμένο μέσα στη βάση."
+    },
+    {
+      question: "Document store ≠ schemaless;",
+      answer: "Ευέλικτο schema, αλλά όχι 'χωρίς δομή'. Χωρίς πειθαρχία (app validation ή schema validation rules), καταλήγεις σε ασυνεπή documents που σπάνε τον κώδικα. Η δομή απλώς δεν επιβάλλεται από τη βάση by default."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Document schema για blog"
+  scenario="Μοντελοποίησε ένα blog (users, posts, comments, tags) σε document store με σωστές αποφάσεις embed/reference."
+  outcomes={[
+    "Να σχεδιάζεις documents γύρω από access patterns.",
+    "Να διαλέγεις embed vs reference με κριτήρια.",
+    "Να βάζεις indexes στα σωστά πεδία."
+  ]}
+  steps={[
+    "Γράψε τα 3-4 βασικά access patterns (π.χ. 'δες post + author + πρώτα σχόλια').",
+    "Σχεδίασε το post document: τι embed (author summary;) και τι reference.",
+    "Αποφάσισε πού ζουν τα σχόλια (embed bounded; reference unbounded;).",
+    "Πρόσθεσε indexes για τα queries (authorId, tags, createdAt).",
+    "Γράψε ένα aggregation: top 5 authors κατά πλήθος posts."
+  ]}
+  checkpoints={[
+    "Καμία unbounded array δεν είναι embedded.",
+    "Τα embed/reference δικαιολογούνται από access patterns.",
+    "Τα συχνά queries καλύπτονται από index."
+  ]}
+  mistakes={[
+    "Embedding δεδομένων που μεγαλώνουν απεριόριστα.",
+    "Document model σχεδιασμένο σαν relational (πολλά references/lookups).",
+    "Καθόλου indexes → collection scans.",
+    "Αντιμετώπιση του 'flexible schema' ως 'χωρίς validation'."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν σχεδιάζεις document schema όπου κάθε embed/reference δικαιολογείται από το πώς διαβάζονται τα δεδομένα."
+/>

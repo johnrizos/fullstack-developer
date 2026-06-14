@@ -1,0 +1,168 @@
+# Scaling, Replication & Partitioning
+
+Όταν ένα μόνο database server δεν αντέχει το φορτίο, το κλιμακώνεις. Στα interviews εξετάζουν τη σειρά: **πρώτα optimize, μετά scale up, μετά scale out** — και τα trade-offs replication/sharding (consistency, complexity).
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να ξεχωρίζεις vertical από horizontal scaling,
+- να εξηγείς read replicas και replication lag,
+- να καταλαβαίνεις partitioning vs sharding,
+- να ξέρεις τη θέση του caching στο scaling,
+- να ακολουθείς σωστή σειρά (μην κάνεις sharding πρώτο).
+
+## Η σωστή σειρά
+
+```txt
+1. Optimize       → indexes, σβήσε N+1, διόρθωσε αργά queries (φθηνό, μεγάλο κέρδος)
+2. Cache          → βάλε caching layer για read-heavy δεδομένα (Redis)
+3. Scale up       → μεγαλύτερο μηχάνημα (vertical) — απλό, μέχρι ένα όριο
+4. Read replicas  → ξεφόρτωσε reads σε αντίγραφα
+5. Shard/Partition→ μοίρασε τα δεδομένα (πολύπλοκο — τελευταία λύση)
+```
+
+Το πιο συχνό λάθος σε interview: «θα κάνω sharding» ως πρώτη απάντηση. Το sharding είναι η **τελευταία** και πιο ακριβή λύση.
+
+## Vertical vs horizontal
+
+```txt
+Vertical (scale up):   μεγαλύτερο μηχάνημα (CPU/RAM/disk). Απλό, αλλά έχει οροφή & cost.
+Horizontal (scale out): περισσότερα μηχανήματα (replicas/shards). Χωρίς οροφή, αλλά πολυπλοκότητα.
+```
+
+## Read replicas & replication lag
+
+Οι περισσότερες apps είναι **read-heavy**. Στήνεις replicas: ο **primary** δέχεται writes, τα **replicas** εξυπηρετούν reads.
+
+```txt
+        writes →  [ PRIMARY ]  → replication →  [ REPLICA ] [ REPLICA ]
+                                                     ↑ reads
+```
+
+Πρόβλημα: **replication lag** — τα replicas ενημερώνονται με μικρή καθυστέρηση (eventual consistency).
+
+<PredictOutput
+  title="Read-after-write & lag"
+  code={`// Ο χρήστης ενημερώνει το profile του (write → PRIMARY).
+// Αμέσως μετά, η σελίδα διαβάζει το profile (read → REPLICA).
+// Replication lag = 200ms.
+// Τι βλέπει ο χρήστης;`}
+  options={[
+    "Πιθανώς τα ΠΑΛΙΑ δεδομένα — το replica δεν έχει προλάβει να ενημερωθεί",
+    "Πάντα τα νέα δεδομένα",
+    "Error",
+    "Διπλά δεδομένα"
+  ]}
+  correctOptionIndex={0}
+  answer="Πιθανώς τα παλιά δεδομένα"
+  explanation="Λόγω replication lag, το replica μπορεί να μην έχει ακόμα την αλλαγή — ο χρήστης βλέπει stale data αμέσως μετά το δικό του write (read-after-write inconsistency). Λύση: διάβασε από τον primary για δεδομένα που μόλις έγραψε ο ίδιος ο χρήστης ('read your own writes'), ή sticky-to-primary για λίγο μετά το write."
+/>
+
+## Partitioning vs sharding
+
+```txt
+Partitioning: σπας έναν μεγάλο πίνακα σε κομμάτια στο ΙΔΙΟ database
+              (π.χ. orders ανά μήνα). Μικρότερα indexes, ταχύτερα queries/maintenance.
+
+Sharding:     μοιράζεις τα δεδομένα σε ΠΟΛΛΑ database servers με βάση ένα shard key
+              (π.χ. user_id % N). Οριζόντια κλίμακα για writes/δεδομένα.
+```
+
+Το sharding φέρνει σοβαρή πολυπλοκότητα:
+
+```txt
+- Διάλεξε καλό shard key (ομοιόμορφη κατανομή, αλλιώς "hot shards")
+- Cross-shard queries/joins είναι δύσκολα/αργά
+- Cross-shard transactions σχεδόν αδύνατα
+- Rebalancing/re-sharding είναι πόνος
+```
+
+## Caching στο scaling
+
+Πριν προσθέσεις replicas/shards, ένα **cache** (Redis) μπροστά από τη βάση απορροφά την πλειονότητα των read-heavy queries. (Λεπτομέρειες στο μάθημα Redis, Caching & Sessions.) Είναι από τα φθηνότερα και πιο αποτελεσματικά βήματα — αρκεί να χειρίζεσαι invalidation.
+
+<Exercise
+  question="Η βάση σου αργεί σε read-heavy φορτίο. Ποιο είναι το ΠΡΩΤΟ που κάνεις;"
+  options={[
+    "Optimize (indexes, σβήσε N+1, διόρθωσε αργά queries) και βάλε caching — πριν καν σκεφτείς replicas/sharding.",
+    "Κάνεις αμέσως sharding σε 10 servers.",
+    "Αγοράζεις το μεγαλύτερο δυνατό μηχάνημα."
+  ]}
+  correctOptionIndex={0}
+  explanation="Η σειρά είναι: optimize → cache → scale up → read replicas → shard. Το sharding είναι η τελευταία, πιο ακριβή λύση. Συχνά ένα index ή ένα cache λύνει το πρόβλημα με ελάχιστο κόστος."
+/>
+
+<Exercise
+  question="Μετά από write, ο χρήστης βλέπει stale δεδομένα όταν διαβάζεις από replica. Γιατί και πώς το χειρίζεσαι;"
+  options={[
+    "Replication lag — διάβασε από τον primary για 'read your own writes', ή sticky-to-primary για λίγο μετά το write.",
+    "Bug στο replica — αντικατέστησέ το.",
+    "Πρέπει να σταματήσεις να χρησιμοποιείς replicas."
+  ]}
+  correctOptionIndex={0}
+  explanation="Τα replicas έχουν lag (eventual consistency). Για δεδομένα που μόλις έγραψε ο ίδιος ο χρήστης, διάβασε από τον primary ώστε να δει τις δικές του αλλαγές. Τα replicas παραμένουν χρήσιμα για τα υπόλοιπα reads."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«Your database can't keep up — how do you scale it?»
+
+> I go in order, cheapest and highest-leverage first. I optimize: add the missing indexes, kill N+1 queries, fix slow queries with `EXPLAIN`. Then I put a cache in front for read-heavy data. Then scale up to a bigger machine, which is simple up to a ceiling. Most apps are read-heavy, so next I add read replicas — the primary takes writes, replicas serve reads — but I account for replication lag: right after a user's own write, I read from the primary so they see their changes, otherwise they might get stale data from a lagging replica. Only as a last resort do I shard, splitting data across servers by a shard key, because that brings real complexity: choosing a key that avoids hot shards, cross-shard queries and transactions becoming hard, and painful rebalancing. The mistake I avoid is jumping to sharding first when an index or a cache would have solved it.
+
+<Flashcards
+  title="Scaling & replication — interview drills"
+  cards={[
+    {
+      question: "Ποια είναι η σωστή σειρά scaling;",
+      answer: "1) Optimize (indexes/N+1/queries) 2) Cache 3) Scale up (vertical) 4) Read replicas 5) Shard/partition. Το sharding είναι τελευταίο — πιο ακριβό & πολύπλοκο."
+    },
+    {
+      question: "Vertical vs horizontal scaling;",
+      answer: "Vertical (scale up): μεγαλύτερο μηχάνημα — απλό, με οροφή/cost. Horizontal (scale out): περισσότερα μηχανήματα (replicas/shards) — χωρίς οροφή, με πολυπλοκότητα."
+    },
+    {
+      question: "Τι είναι read replicas & replication lag;",
+      answer: "Primary δέχεται writes, replicas εξυπηρετούν reads (ξεφόρτωμα). Lag: τα replicas ενημερώνονται με καθυστέρηση → stale reads (eventual consistency)."
+    },
+    {
+      question: "Read-after-write inconsistency — λύση;",
+      answer: "Μετά από write, διάβασε από τον primary για δεδομένα που έγραψε ο ίδιος ο χρήστης ('read your own writes'), ή sticky-to-primary για λίγο. Τα replicas για τα υπόλοιπα reads."
+    },
+    {
+      question: "Partitioning vs sharding;",
+      answer: "Partitioning: σπας πίνακα σε κομμάτια στο ΙΔΙΟ db (π.χ. ανά μήνα). Sharding: μοιράζεις δεδομένα σε ΠΟΛΛΑ servers με shard key. Sharding = πολύ μεγαλύτερη πολυπλοκότητα."
+    },
+    {
+      question: "Κίνδυνοι του sharding;",
+      answer: "Κακό shard key → hot shards (ανισοκατανομή). Cross-shard joins/queries αργά/δύσκολα. Cross-shard transactions σχεδόν αδύνατα. Rebalancing πόνος."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Scaling plan για read-heavy service"
+  scenario="Ένα read-heavy API αργεί υπό φορτίο. Φτιάξε σχέδιο κλιμάκωσης βήμα-βήμα με trade-offs."
+  outcomes={[
+    "Να ακολουθείς τη σωστή σειρά scaling.",
+    "Να χειρίζεσαι replication lag.",
+    "Να εξηγείς πότε (και πότε όχι) sharding."
+  ]}
+  steps={[
+    "Optimize: εντόπισε αργά queries (EXPLAIN), πρόσθεσε indexes, σβήσε N+1.",
+    "Πρόσθεσε caching layer για τα πιο συχνά reads.",
+    "Πρόσθεσε read replicas και δρομολόγησε reads εκεί.",
+    "Χειρίσου read-your-own-writes διαβάζοντας από τον primary όπου χρειάζεται.",
+    "Σκέψου partitioning για έναν τεράστιο πίνακα· κράτα το sharding ως τελευταία επιλογή με δικαιολόγηση."
+  ]}
+  checkpoints={[
+    "Η σειρά είναι optimize→cache→scale up→replicas→shard.",
+    "Το replication lag αντιμετωπίζεται για user-own writes.",
+    "Το sharding δικαιολογείται (ή απορρίπτεται) με trade-offs."
+  ]}
+  mistakes={[
+    "Sharding ως πρώτη λύση πριν optimize/cache.",
+    "Reads από replica αμέσως μετά το write του ίδιου χρήστη (stale).",
+    "Κακό shard key → hot shards.",
+    "Αγνόηση caching ως φθηνού πρώτου βήματος."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν προτείνεις scaling plan με σωστή σειρά και κατανόηση των consistency trade-offs."
+/>

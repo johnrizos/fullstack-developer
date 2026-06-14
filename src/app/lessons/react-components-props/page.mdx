@@ -1,0 +1,217 @@
+# Components, Props & Composition
+
+Τα components είναι οι δομικοί λίθοι, και τα **props είναι το δημόσιο API τους**. Στα interviews δεν ρωτάνε «τι είναι component» — ρωτάνε αν ξέρεις να σχεδιάζεις καθαρά contracts, πότε να κάνεις composition αντί για configuration, και πώς ρέουν τα δεδομένα. Όλα typed με TypeScript από την αρχή.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να γράφεις typed props ως ρητό contract,
+- να χρησιμοποιείς `children` και composition αντί για ατελείωτα boolean flags,
+- να εξηγείς one-way data flow (data κάτω, events πάνω),
+- να ξεχωρίζεις presentational από container components,
+- να αποφεύγεις prop drilling με composition.
+
+## Typed props — το contract
+
+```tsx
+type ButtonProps = {
+  label: string;
+  onClick: () => void;
+  variant?: "primary" | "secondary"; // union, όχι σκέτο string
+  disabled?: boolean;
+};
+
+function Button({ label, onClick, variant = "primary", disabled = false }: ButtonProps) {
+  return (
+    <button className={variant} onClick={onClick} disabled={disabled}>
+      {label}
+    </button>
+  );
+}
+```
+
+Το TypeScript κάνει το contract ρητό: ποια props είναι required, ποια optional, ποιες τιμές επιτρέπονται. Το `variant?: "primary" | "secondary"` πιάνει typos στο compile time — αδύνατο με σκέτο `string`.
+
+## children & composition
+
+Αντί να περνάς δεκάδες props για να παραμετροποιήσεις ένα component, **σύνθεσέ** το με `children`:
+
+```tsx
+type CardProps = {
+  title: string;
+  children: React.ReactNode; // οτιδήποτε renderable
+};
+
+function Card({ title, children }: CardProps) {
+  return (
+    <section className="card">
+      <h3>{title}</h3>
+      <div className="card-body">{children}</div>
+    </section>
+  );
+}
+
+// Χρήση: το περιεχόμενο μπαίνει «μέσα», όχι μέσω props
+<Card title="Profile">
+  <Avatar user={user} />
+  <p>{user.bio}</p>
+</Card>;
+```
+
+Το `React.ReactNode` είναι ο τύπος για οτιδήποτε μπορεί να renderάρει το React: JSX, strings, numbers, arrays, `null`.
+
+## Composition αντί για configuration
+
+<PredictOutput
+  title="Ποιο API κλιμακώνεται;"
+  code={`// Προσέγγιση A — configuration
+<Dialog
+  title="Delete"
+  body="Are you sure?"
+  showCancel
+  cancelText="No"
+  confirmText="Yes"
+  confirmVariant="danger"
+  showIcon
+  iconType="warning"
+/>
+
+// Προσέγγιση B — composition
+<Dialog>
+  <Dialog.Title>Delete</Dialog.Title>
+  <Dialog.Body>Are you sure?</Dialog.Body>
+  <Dialog.Actions>
+    <Button variant="ghost">No</Button>
+    <Button variant="danger">Yes</Button>
+  </Dialog.Actions>
+</Dialog>
+
+// Ποια προσέγγιση δέχεται νέα requirement (π.χ. δεύτερο body paragraph) χωρίς νέο prop;`}
+  options={["A (configuration)", "B (composition)", "Καμία", "Και οι δύο ίδια"]}
+  correctOptionIndex={1}
+  answer="B (composition)"
+  explanation="Με composition (B), το component δέχεται αυθαίρετο περιεχόμενο μέσω children/slots — νέα requirement δεν προσθέτει νέο prop. Το configuration API (A) μεγαλώνει ασταμάτητα με boolean flags (το 'boolean prop explosion' anti-pattern)."
+/>
+
+## One-way data flow
+
+Τα δεδομένα ρέουν **προς τα κάτω** μέσω props· τα events **προς τα πάνω** μέσω callbacks. Ένα child δεν αλλάζει ποτέ απευθείας το state του parent — ζητάει την αλλαγή μέσω callback.
+
+```tsx
+function TodoList({ todos, onToggle }: { todos: Todo[]; onToggle: (id: string) => void }) {
+  return (
+    <ul>
+      {todos.map((todo) => (
+        // data ↓ (todo),  event ↑ (onToggle)
+        <TodoItem key={todo.id} todo={todo} onToggle={onToggle} />
+      ))}
+    </ul>
+  );
+}
+```
+
+Αυτό κάνει τη ροή προβλέψιμη: για να βρεις «ποιος αλλάζει αυτό το δεδομένο», ανεβαίνεις το δέντρο μέχρι το state. Το state ζει στον χαμηλότερο κοινό πρόγονο όσων το χρειάζονται (lifting state up).
+
+## Presentational vs container
+
+```tsx
+// Container: ξέρει ΑΠΟ ΠΟΥ έρχονται τα δεδομένα
+function UserProfileContainer({ userId }: { userId: string }) {
+  const { data, loading } = useUser(userId);
+  if (loading) return <Spinner />;
+  return <UserProfile user={data} />;
+}
+
+// Presentational: ξέρει μόνο ΠΩΣ φαίνονται — εύκολα testable & reusable
+function UserProfile({ user }: { user: User }) {
+  return <h2>{user.name}</h2>;
+}
+```
+
+Ο διαχωρισμός κάνει τα presentational components καθαρά (props in → JSX out), άρα εύκολα να τα τεστάρεις και να τα ξαναχρησιμοποιείς.
+
+<Exercise
+  question="Έχεις ένα component με 12 boolean props (showHeader, showFooter, isCompact...). Τι προτείνεις;"
+  options={[
+    "Composition: σπάσε το σε υπο-components/slots (children) ώστε ο caller να συνθέτει ό,τι χρειάζεται, αντί να ανάβει flags.",
+    "Πρόσθεσε ένα config object prop με 12 πεδία.",
+    "Άσ' το όπως είναι — τα boolean props είναι καλό API."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το 'boolean prop explosion' είναι σημάδι ότι το component προσπαθεί να κάνει πολλά. Composition με children/slots μετακινεί τις αποφάσεις στον caller και το component μένει ανοιχτό σε επεκτάσεις χωρίς νέα props."
+/>
+
+<Exercise
+  question="Ένα child component θέλει να ενημερώσει δεδομένα που ζουν στον parent. Πώς;"
+  options={[
+    "Ο parent περνά callback ως prop· το child το καλεί (event πάνω). Ο parent κρατά το state και αποφασίζει την αλλαγή.",
+    "Το child κάνει import το setState του parent και το καλεί απευθείας.",
+    "Το child κάνει mutate το prop που του δόθηκε."
+  ]}
+  correctOptionIndex={0}
+  explanation="One-way data flow: data κάτω, events πάνω. Το child σηματοδοτεί την πρόθεση μέσω callback· ο owner του state εφαρμόζει την αλλαγή. Τα props είναι read-only — ποτέ mutation."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you decide between props and composition?»
+
+> Props are the component's contract — I type them explicitly, use unions instead of bare strings, and mark optionals. But when I notice a growing pile of boolean flags configuring layout or content, that's a smell: the component is doing too much. I switch to composition, exposing slots via `children` or sub-components, so the caller assembles what they need and the component stays open to new requirements without new props. Data always flows down through props and events flow up through callbacks, so a child never mutates a prop — it calls a callback and the state owner applies the change. I keep presentational components pure (props in, JSX out) and push data-fetching into container components, which makes the presentational ones trivial to test and reuse.
+
+<Flashcards
+  title="Components & props — interview drills"
+  cards={[
+    {
+      question: "Γιατί union types αντί για string σε props;",
+      answer: "variant: 'primary' | 'secondary' πιάνει typos στο compile time και τεκμηριώνει τις επιτρεπτές τιμές. Σκέτο string δέχεται οτιδήποτε και μετακυλίει τα bugs στο runtime."
+    },
+    {
+      question: "Τι είναι το React.ReactNode;",
+      answer: "Ο τύπος για οτιδήποτε renderable: JSX, string, number, array, null. Ο σωστός τύπος για το children prop."
+    },
+    {
+      question: "Composition vs configuration;",
+      answer: "Configuration: παραμετροποιείς με props/flags — μεγαλώνει ασταμάτητα. Composition: ο caller συνθέτει περιεχόμενο μέσω children/slots — το component μένει ανοιχτό σε επεκτάσεις χωρίς νέα props."
+    },
+    {
+      question: "Τι είναι one-way data flow;",
+      answer: "Data ρέει κάτω (props), events ρέουν πάνω (callbacks). Τα props είναι read-only· το child ζητάει αλλαγή μέσω callback, ο owner του state την εφαρμόζει. Κάνει τη ροή προβλέψιμη."
+    },
+    {
+      question: "Presentational vs container component;",
+      answer: "Presentational: props in → JSX out, χωρίς data fetching — εύκολα testable/reusable. Container: ξέρει από πού έρχονται τα δεδομένα (hooks, fetch) και τα περνά στο presentational."
+    },
+    {
+      question: "Τι σημαίνει 'lifting state up';",
+      answer: "Όταν πολλά components χρειάζονται το ίδιο state, το ανεβάζεις στον χαμηλότερο κοινό πρόγονο και το περνάς κάτω ως props. Ένα source of truth, προβλέψιμη ροή."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Reusable component library"
+  scenario="Φτιάξε μικρό set από components (Button, Card, Dialog) με typed props και composition."
+  outcomes={[
+    "Να σχεδιάζεις καθαρά props contracts.",
+    "Να προτιμάς composition σε boolean flags.",
+    "Να κρατάς presentational components καθαρά."
+  ]}
+  steps={[
+    "Button με variant union, disabled και typed onClick.",
+    "Card με title + children (React.ReactNode).",
+    "Dialog με σύνθεση (Title/Body/Actions) αντί για flags.",
+    "Φτιάξε ένα container που φέρνει data και τροφοδοτεί presentational components.",
+    "Πρόσθεσε ένα νέο requirement και δες ότι η composition δεν χρειάζεται νέο prop."
+  ]}
+  checkpoints={[
+    "Όλα τα props είναι typed με unions όπου ταιριάζει.",
+    "Το Dialog δέχεται αυθαίρετο περιεχόμενο χωρίς boolean flags.",
+    "Τα presentational components δεν κάνουν data fetching."
+  ]}
+  mistakes={[
+    "Boolean prop explosion αντί για composition.",
+    "Σκέτο string εκεί που χρειάζεται union.",
+    "Child που κάνει mutate props ή πειράζει parent state απευθείας.",
+    "Ανάμειξη data fetching μέσα σε presentational component."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μπορείς να σχεδιάσεις ένα component API που επεκτείνεται με composition αντί για νέα props."
+/>

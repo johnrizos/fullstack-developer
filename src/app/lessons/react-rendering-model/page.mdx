@@ -1,0 +1,169 @@
+# Rendering & Reconciliation
+
+Πριν μάθεις hooks, πρέπει να καταλάβεις **πώς το React αποφασίζει τι να ζωγραφίσει στην οθόνη**. Σχεδόν κάθε «παράξενο» React bug — stale τιμές, περιττά re-renders, χαμένο state σε λίστες — εξηγείται από αυτό το μοντέλο. Στη συνέντευξη: «what triggers a re-render;», «what is reconciliation;», «why not index as key;».
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς το `UI = f(state)` και τι σημαίνει «render»,
+- να ξέρεις τι προκαλεί re-render και τι όχι,
+- να περιγράφεις reconciliation και το virtual DOM diffing,
+- να εξηγείς γιατί τα keys πρέπει να είναι σταθερά και μοναδικά,
+- να αναγνωρίζεις γιατί το reference equality οδηγεί σε immutable updates.
+
+## UI = f(state)
+
+Η κεντρική ιδέα: το UI είναι **καθαρή συνάρτηση** του state. Δεν πειράζεις το DOM με το χέρι· αλλάζεις state και το React ξανατρέχει το component για να παράγει την περιγραφή του UI.
+
+```tsx
+function Counter() {
+  const [count, setCount] = useState(0);
+  // Αυτή η function ΞΑΝΑΤΡΕΧΕΙ ολόκληρη σε κάθε αλλαγή του count.
+  return <button onClick={() => setCount(count + 1)}>Count: {count}</button>;
+}
+```
+
+«Render» = το React καλεί τη function του component και παίρνει πίσω JSX (μια περιγραφή, όχι DOM). «Commit» = το React εφαρμόζει τις διαφορές στο πραγματικό DOM. Render συμβαίνει συχνά· commit μόνο όταν κάτι όντως άλλαξε.
+
+## Τι προκαλεί re-render
+
+Μόνο τρία πράγματα:
+
+```txt
+1. Αλλαγή του δικού του state         (setState με ΝΕΑ τιμή)
+2. Re-render του parent              (το παιδί ξαναγίνεται render by default)
+3. Αλλαγή του context που καταναλώνει
+```
+
+Αυτό που **δεν** προκαλεί re-render: αλλαγή props χωρίς re-render του parent (αδύνατο by default), mutation αντικειμένου, ή αλλαγή μεταβλητής εκτός state. Το «το parent ξανα-renderάρει → τα παιδιά ξανα-renderάρουν» είναι ο νούμερο ένα λόγος για περιττά renders.
+
+## Κάθε render είναι ένα στιγμιότυπο
+
+Κάθε φορά που τρέχει το component, οι μεταβλητές και οι functions του **ξαναδημιουργούνται**. Το `count` ενός render είναι μια σταθερή τιμή για εκείνο το render — δεν «ενημερώνεται» αργότερα.
+
+<PredictOutput
+  title="Stale closure σε setTimeout"
+  code={`function App() {
+  const [count, setCount] = useState(0);
+
+  function handleClick() {
+    setCount(count + 1);
+    setTimeout(() => alert(count), 1000);
+  }
+
+  // count = 0. Πατάς το κουμπί, και μέσα στο 1s ξαναπατάς.
+  // Τι δείχνει το ΠΡΩΤΟ alert;
+  return <button onClick={handleClick}>{count}</button>;
+}`}
+  options={["0", "1", "2", "undefined"]}
+  correctOptionIndex={0}
+  answer="0"
+  explanation="Το closure του setTimeout 'κλείδωσε' το count εκείνου του render (0). Το setState προγραμματίζει νέο render με νέα τιμή, αλλά το ήδη-προγραμματισμένο callback κρατά το παλιό στιγμιότυπο. Γι' αυτό σε async κώδικα χρησιμοποιείς functional updates ή ref."
+/>
+
+## Reconciliation & virtual DOM
+
+Στο re-render, το React δεν αγγίζει αμέσως το DOM. Παράγει ένα νέο δέντρο (virtual DOM) και το **συγκρίνει** με το προηγούμενο (diffing). Εφαρμόζει στο πραγματικό DOM μόνο τις διαφορές. Αυτό λέγεται **reconciliation**.
+
+Δύο ευρετικοί κανόνες κάνουν το diffing γρήγορο:
+
+- **Διαφορετικός τύπος element → πετάει όλο το subtree.** `<div>` → `<section>` σημαίνει unmount/remount, όχι patch.
+- **Λίστες ταιριάζονται με βάση το `key`.** Με σταθερό key, το React ξέρει ποιο στοιχείο μετακινήθηκε αντί να τα ξαναχτίσει.
+
+## Γιατί όχι index ως key
+
+```tsx
+// ❌ index ως key
+{todos.map((todo, i) => <TodoRow key={i} todo={todo} />)}
+
+// ✅ σταθερό id
+{todos.map((todo) => <TodoRow key={todo.id} todo={todo} />)}
+```
+
+Αν διαγράψεις το πρώτο στοιχείο, όλα τα indexes μετατοπίζονται: το key=`0` τώρα δείχνει σε διαφορετικό todo. Το React νομίζει ότι «το στοιχείο 0 απλώς άλλαξε περιεχόμενο» και κρατά το παλιό εσωτερικό state (π.χ. το κείμενο ενός input ή ένα checked checkbox) στο **λάθος** row. Με σταθερό `id`, κάθε row κρατά την ταυτότητά του.
+
+<Exercise
+  question="Πατάς ένα κουμπί που κάνει setState στην ίδια τιμή (π.χ. setCount(0) όταν count=0). Τι γίνεται;"
+  options={[
+    "Το React κάνει bail out — δεν ξανα-renderάρει το subtree, γιατί η τιμή είναι ίδια (Object.is).",
+    "Πάντα γίνεται re-render — κάθε setState προκαλεί render.",
+    "Πετάει error γιατί η τιμή δεν άλλαξε."
+  ]}
+  correctOptionIndex={0}
+  explanation="Αν η νέα τιμή είναι ίση (Object.is) με την προηγούμενη, το React συνήθως κάνει bail out και δεν ξανα-renderάρει. Προσοχή: με objects/arrays, νέα reference = 'άλλαξε' ακόμα κι αν το περιεχόμενο είναι ίδιο."
+/>
+
+<Exercise
+  question="Γιατί τα immutable updates είναι απαραίτητα στο React;"
+  options={[
+    "Επειδή το React συγκρίνει references (Object.is) — mutation κρατά την ίδια reference, οπότε η αλλαγή γίνεται 'αόρατη'.",
+    "Επειδή το JavaScript δεν επιτρέπει mutation σε arrays.",
+    "Επειδή το immutability κάνει τον κώδικα να τρέχει πιο γρήγορα πάντα."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το React κάνει shallow reference comparison για state και props. todos.push() κρατά την ίδια reference → καμία ανανέωση. Νέο array/object με spread/map/filter → νέα reference → re-render."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«What happens when state changes in React?»
+
+> React calls the component function again to produce a new tree of elements — that's a render, and it's just a description, not DOM. Then it reconciles: it diffs the new virtual tree against the previous one and commits only the differences to the real DOM. A component re-renders when its own state changes, when its parent re-renders, or when a context it consumes changes. Because the diff relies on reference equality and on `key` for lists, I always update state immutably and use stable ids as keys — mutating an object leaves the same reference, so React can't see the change, and index keys make React attach the wrong state to the wrong row after a reorder.
+
+<Flashcards
+  title="Rendering & reconciliation — interview drills"
+  cards={[
+    {
+      question: "Render vs commit;",
+      answer: "Render: το React καλεί τη function του component και παίρνει JSX (περιγραφή). Commit: εφαρμόζει τις διαφορές στο πραγματικό DOM. Render γίνεται συχνά· commit μόνο όταν άλλαξε κάτι."
+    },
+    {
+      question: "Τι προκαλεί re-render;",
+      answer: "Τρία πράγματα: αλλαγή του δικού του state, re-render του parent, ή αλλαγή consumed context. Όχι: mutation, ή αλλαγή μεταβλητής εκτός state."
+    },
+    {
+      question: "Τι είναι reconciliation;",
+      answer: "Η διαδικασία όπου το React συγκρίνει (diffing) το νέο virtual DOM δέντρο με το παλιό και εφαρμόζει στο πραγματικό DOM μόνο τις διαφορές. Διαφορετικός τύπος element → remount· λίστες → ταίριασμα με key."
+    },
+    {
+      question: "Γιατί όχι index ως key;",
+      answer: "Όταν η λίστα αναδιατάσσεται/φιλτράρεται, τα indexes αλλάζουν ιδιοκτήτη και το React κρατά το εσωτερικό state (inputs, checkboxes) σε λάθος row. Σταθερό id → κάθε στοιχείο κρατά την ταυτότητά του."
+    },
+    {
+      question: "Γιατί immutable updates;",
+      answer: "Το React κάνει reference comparison (Object.is). Mutation κρατά ίδια reference → η αλλαγή γίνεται αόρατη και δεν γίνεται re-render. Νέο array/object → νέα reference → ανανέωση."
+    },
+    {
+      question: "Τι είναι το 'render snapshot';",
+      answer: "Κάθε render έχει το δικό του στιγμιότυπο από state/props/μεταβλητές. Async callbacks (timers, fetch) κλειδώνουν την τιμή εκείνου του render — γι' αυτό εμφανίζονται stale closures."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Re-render visualizer"
+  scenario="Φτιάξε μικρή εφαρμογή που κάνει ορατό πότε και γιατί ξανα-renderάρει κάθε component."
+  outcomes={[
+    "Να αναγνωρίζεις περιττά re-renders από parent.",
+    "Να εξηγείς το ταίριασμα λίστας με keys.",
+    "Να συνδέεις immutable updates με το reference equality."
+  ]}
+  steps={[
+    "Φτιάξε parent με count state και δύο children (ένα 'static', ένα που δείχνει το count).",
+    "Βάλε ένα console.log / counter στο render κάθε child.",
+    "Άλλαξε το count και παρατήρησε ότι ΚΑΙ το static child ξανα-renderάρει.",
+    "Φτιάξε λίστα με add/remove/reorder, δοκίμασε index key vs id key με ένα input ανά row.",
+    "Δοκίμασε mutation (push) vs immutable (spread) και δες ποιο ενημερώνει το UI."
+  ]}
+  checkpoints={[
+    "Μπορείς να εξηγήσεις γιατί το static child ξανα-renderάρει.",
+    "Με index key, το input value 'κολλάει' σε λάθος row μετά από reorder.",
+    "Το mutation δεν ενημερώνει το UI· το immutable update ναι."
+  ]}
+  mistakes={[
+    "Να νομίζεις ότι αλλαγή props χωρίς parent re-render είναι δυνατή.",
+    "Να χρησιμοποιείς index ως key σε δυναμική λίστα.",
+    "Να κάνεις mutate state και να απορείς γιατί δεν αλλάζει το UI.",
+    "Να μπερδεύεις 'render' (περιγραφή) με 'commit' (DOM)."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μπορείς να προβλέψεις ποια components θα ξανα-renderάρουν σε μια αλλαγή και να το δικαιολογήσεις."
+/>

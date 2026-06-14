@@ -1,0 +1,196 @@
+# Data Fetching & Server State
+
+Το data fetching με σκέτο `useEffect` δουλεύει σε demos, αλλά σε production θες caching, refetch, dedup, retries και error handling. Στα interviews εξετάζουν αν καταλαβαίνεις γιατί το **server state είναι διαφορετικό** και πώς το διαχειρίζεσαι σωστά.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς γιατί το server state χρειάζεται διαφορετική μεταχείριση,
+- να γράφεις σωστά loading/error/empty/success states,
+- να χρησιμοποιείς React Query/SWR concepts (cache, staleness, invalidation),
+- να αποφεύγεις race conditions και waterfalls,
+- να βάζεις error boundaries γύρω από data UI.
+
+## Γιατί το server state είναι ιδιαίτερο
+
+Το server state δεν «ανήκει» στο component — είναι ένα **cache** μιας αλήθειας που ζει αλλού (database) και μπορεί να αλλάξει χωρίς να το ξέρεις.
+
+```txt
+Client state:  το ελέγχεις πλήρως, sync, δικό σου
+Server state:  async, shared, μπορεί να γίνει stale, χρειάζεται
+               caching / refetch / invalidation / dedup
+```
+
+Γι' αυτό το «βάλ' το σε useState μέσω useEffect» δεν φτάνει: δεν cache-άρεται μεταξύ components, ξανα-φέρνεται περιττά, και κάθε component ξαναγράφει loading/error.
+
+## Η αφελής προσέγγιση και τα όριά της
+
+```tsx
+function useUser(id: string) {
+  const [data, setData] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    let ignore = false;
+    setLoading(true);
+    fetch(`/api/users/${id}`)
+      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then((d) => { if (!ignore) { setData(d); setError(null); } })
+      .catch((e) => { if (!ignore) setError(e); })
+      .finally(() => { if (!ignore) setLoading(false); });
+    return () => { ignore = true; };
+  }, [id]);
+
+  return { data, loading, error };
+}
+```
+
+Δουλεύει και χειρίζεται race condition (`ignore` flag) — αλλά **δεν** έχει caching, dedup, ή background refetch. Δύο components με ίδιο `id` κάνουν δύο requests.
+
+## React Query / SWR — server state σωστά
+
+```tsx
+function UserProfile({ id }: { id: string }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["user", id],
+    queryFn: () => fetch(`/api/users/${id}`).then((r) => r.json()),
+  });
+
+  if (isLoading) return <Spinner />;
+  if (error) return <ErrorBox error={error} />;
+  return <h2>{data.name}</h2>;
+}
+```
+
+Τι σου δίνει έτοιμο:
+
+- **Caching ανά `queryKey`** — δύο components με ίδιο key μοιράζονται ένα request (dedup).
+- **Stale-while-revalidate** — δείχνει cached δεδομένα αμέσως, ξανα-φέρνει στο background.
+- **Invalidation** — μετά από mutation, `invalidateQueries(["user", id])` ανανεώνει.
+- **Retries, refetch on focus/reconnect**, loading/error states.
+
+<PredictOutput
+  title="Caching με queryKey"
+  code={`// Component A
+useQuery({ queryKey: ["user", "42"], queryFn: fetchUser });
+// Component B (renderάρει ταυτόχρονα)
+useQuery({ queryKey: ["user", "42"], queryFn: fetchUser });
+
+// Πόσα network requests γίνονται για το user 42;`}
+  options={["2 — ένα ανά component", "1 — dedup με βάση το queryKey", "0 — έρχεται από props", "Εξαρτάται από το server"]}
+  correctOptionIndex={1}
+  answer="1 request (dedup)"
+  explanation="Το React Query βλέπει το ίδιο queryKey και κάνει dedup: ένα request, ένα cache entry, και οι δύο consumers διαβάζουν από το ίδιο cache. Με σκέτο useEffect θα γίνονταν δύο ξεχωριστά requests."
+/>
+
+## Πάντα τέσσερα states
+
+Κάθε async UI έχει τέσσερις καταστάσεις — μη ξεχνάς καμία:
+
+```tsx
+if (isLoading) return <Spinner />;        // loading
+if (error) return <ErrorBox error={error} />; // error
+if (data.length === 0) return <Empty />;  // empty (success χωρίς δεδομένα)
+return <List items={data} />;             // success με δεδομένα
+```
+
+Το «μόνο το happy path» είναι ο νούμερο ένα λόγος για buggy UI σε review.
+
+## Error boundaries
+
+Τα errors στο render δεν τα πιάνει το try/catch. Ένα **error boundary** πιάνει crashes στο subtree και δείχνει fallback UI αντί για λευκή οθόνη:
+
+```tsx
+<ErrorBoundary fallback={<p>Κάτι πήγε στραβά</p>}>
+  <UserProfile id={id} />
+</ErrorBoundary>
+```
+
+Συνδυάζεται με `Suspense` για declarative loading: `<Suspense fallback={<Spinner/>}>`.
+
+<Exercise
+  question="Δύο components δείχνουν τον ίδιο χρήστη και κάνουν fetch ξεχωριστά. Πώς αποφεύγεις τα διπλά requests;"
+  options={[
+    "Server-state lib (React Query/SWR) με κοινό queryKey — dedup + shared cache.",
+    "Κάνε lift το state και πέρνα το data ως props παντού.",
+    "Βάλε setTimeout στο δεύτερο component."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το shared caching με queryKey κάνει dedup των ταυτόχρονων requests και μοιράζεται το αποτέλεσμα. Το lifting δουλεύει σε μικρή κλίμακα αλλά δεν σου δίνει caching/refetch/invalidation."
+/>
+
+<Exercise
+  question="Μετά από μια επιτυχημένη mutation (π.χ. update user), πώς ανανεώνεις τα δεδομένα στην οθόνη;"
+  options={[
+    "invalidateQueries του σχετικού queryKey — το lib ξανα-φέρνει και ενημερώνει τους consumers.",
+    "Κάνεις window.location.reload().",
+    "Δεν χρειάζεται, ανανεώνεται μόνο του."
+  ]}
+  correctOptionIndex={0}
+  explanation="Η invalidation σημειώνει το cache ως stale και προκαλεί refetch, ώστε το UI να δείξει τα νέα δεδομένα. (Optionally optimistic update για άμεσο feedback.) Το reload είναι σφυρί — χάνεις client state και είναι αργό."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you handle data fetching in React?»
+
+> I treat server state as different from client state: it's an async cache of data that lives in a database and can go stale, so it needs caching, deduplication, refetching and invalidation — things plain `useEffect` doesn't give you. A bare effect works but two components fetching the same thing make two requests and each re-implements loading and error. So I use a server-state library like React Query: queries are keyed, identical keys are deduped and share a cache, it serves cached data immediately while revalidating in the background, and after a mutation I invalidate the relevant key to refresh. I always render all four states — loading, error, empty, and success — and wrap data UI in an error boundary, optionally with Suspense, so a render-time failure shows a fallback instead of a blank screen.
+
+<Flashcards
+  title="Data fetching & server state — interview drills"
+  cards={[
+    {
+      question: "Γιατί το server state είναι διαφορετικό;",
+      answer: "Είναι async cache δεδομένων που ζουν σε database, shared και μπορεί να γίνει stale. Χρειάζεται caching, refetch, invalidation, dedup — όχι απλό useState. Client state το ελέγχεις πλήρως."
+    },
+    {
+      question: "Τι σου δίνει το React Query/SWR;",
+      answer: "Caching ανά queryKey, dedup ταυτόχρονων requests, stale-while-revalidate, background refetch (focus/reconnect), retries, invalidation, έτοιμα loading/error states."
+    },
+    {
+      question: "Τα τέσσερα states κάθε async UI;",
+      answer: "loading, error, empty (success χωρίς δεδομένα), success με δεδομένα. Το 'μόνο happy path' είναι κλασικό review finding."
+    },
+    {
+      question: "Τι είναι error boundary;",
+      answer: "Component που πιάνει render-time errors στο subtree του και δείχνει fallback αντί για crash/λευκή οθόνη. Το try/catch ΔΕΝ πιάνει errors στο render — χρειάζεσαι boundary."
+    },
+    {
+      question: "Πώς ανανεώνεις data μετά από mutation;",
+      answer: "invalidateQueries(key) → το cache γίνεται stale → refetch → οι consumers ενημερώνονται. Optionally optimistic update για άμεσο feedback πριν επιβεβαιώσει ο server."
+    },
+    {
+      question: "Τι είναι request waterfall και πώς το αποφεύγεις;",
+      answer: "Σειριακά εξαρτημένα requests (το ένα περιμένει το άλλο) που αργούν. Αποφυγή: parallel fetching όπου δεν υπάρχει εξάρτηση, prefetch, ή φέρε τα δεδομένα ψηλότερα."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Data layer με caching & error boundary"
+  scenario="Φτιάξε μια οθόνη που φέρνει λίστα και detail, με caching, σωστά states και error boundary."
+  outcomes={[
+    "Να χειρίζεσαι server state με caching/refetch.",
+    "Να renderάρεις και τα τέσσερα states.",
+    "Να προστατεύεις το UI με error boundary."
+  ]}
+  steps={[
+    "Query για λίστα με queryKey και loading/error/empty/success.",
+    "Detail query με key που εξαρτάται από selection (dedup όταν ίδιο).",
+    "Mutation που κάνει invalidate το σχετικό key.",
+    "Τύλιξε σε error boundary με fallback.",
+    "Δοκίμασε διπλό consumer ίδιου key και επιβεβαίωσε ένα request."
+  ]}
+  checkpoints={[
+    "Ίδιο queryKey → ένα request (dedup).",
+    "Και τα τέσσερα states renderάρονται σωστά.",
+    "Μετά τη mutation, το UI δείχνει τα νέα δεδομένα μέσω invalidation."
+  ]}
+  mistakes={[
+    "Μόνο happy path — ξεχασμένα loading/error/empty.",
+    "Server data σε global store με χειροκίνητο caching.",
+    "Διπλά requests από έλλειψη shared cache.",
+    "try/catch γύρω από render αντί για error boundary."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν διαχειρίζεσαι server state δηλωτικά, με caching και πλήρη κάλυψη καταστάσεων."
+/>

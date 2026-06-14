@@ -1,0 +1,230 @@
+# Error & Loading UI
+
+Το App Router έχει **file-based UI states**: ειδικά αρχεία (`loading.tsx`, `error.tsx`, `not-found.tsx`) που το Next.js συνδέει αυτόματα με Suspense/error boundaries. Στα interviews εξετάζουν τη διαφορά expected vs uncaught errors, και ότι το `error.tsx` πρέπει να είναι Client Component.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να ξεχωρίζεις expected errors από uncaught exceptions,
+- να φτιάχνεις `error.tsx` (Client) με `unstable_retry`,
+- να χρησιμοποιείς `notFound()` + `not-found.tsx`,
+- να βάζεις `global-error.tsx` για το root,
+- να ξέρεις ότι τα boundaries δεν πιάνουν errors σε event handlers.
+
+## Δύο κατηγορίες errors
+
+```txt
+Expected errors      → validation, failed request. Τα ΠΕΡΙΜΕΝΕΙΣ.
+                       Μοντελοποίησέ τα ως return values (useActionState),
+                       ή conditional render σε Server Component.
+
+Uncaught exceptions  → bugs/απρόσμενα. Τα THROW-άρεις →
+                       τα πιάνει το error boundary (error.tsx).
+```
+
+## Expected errors
+
+Σε Server Component, χρησιμοποιείς το response για conditional render ή `redirect`:
+
+```tsx
+export default async function Page() {
+  const res = await fetch("https://...");
+  if (!res.ok) return <p>Υπήρξε πρόβλημα φόρτωσης.</p>;
+  const data = await res.json();
+  return <View data={data} />;
+}
+```
+
+(Για forms/actions, τα expected errors πάνε ως return values + `useActionState` — δες το μάθημα Server Actions.)
+
+## error.tsx — uncaught exceptions
+
+Ένα `error.tsx` σε route segment πιάνει errors των children του και δείχνει fallback. **Πρέπει να είναι Client Component**:
+
+```tsx
+// app/dashboard/error.tsx
+"use client"; // τα error boundaries είναι Client Components
+
+import { useEffect } from "react";
+
+export default function ErrorPage({
+  error,
+  unstable_retry,
+}: {
+  error: Error & { digest?: string };
+  unstable_retry: () => void;
+}) {
+  useEffect(() => {
+    console.error(error); // log σε monitoring (Sentry)
+  }, [error]);
+
+  return (
+    <div>
+      <h2>Κάτι πήγε στραβά!</h2>
+      <button onClick={() => unstable_retry()}>Δοκίμασε ξανά</button>
+    </div>
+  );
+}
+```
+
+> Προσοχή: στο Next.js 16 το recovery function λέγεται **`unstable_retry`** — επιχειρεί re-fetch & re-render του segment. (Αν έρχεσαι από παλιότερη έκδοση, αντικαθιστά το παλιό `reset`.)
+
+Τα errors **ανεβαίνουν** στο πλησιέστερο parent boundary — βάζεις `error.tsx` σε διάφορα επίπεδα για granular handling.
+
+## notFound() & not-found.tsx
+
+```tsx
+// app/blog/[slug]/page.tsx
+import { notFound } from "next/navigation";
+
+export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const post = await getPost(slug);
+  if (!post) notFound(); // → δείχνει το πλησιέστερο not-found.tsx (404)
+  return <Article post={post} />;
+}
+```
+
+```tsx
+// app/blog/[slug]/not-found.tsx
+export default function NotFound() {
+  return <p>404 — Το post δεν βρέθηκε.</p>;
+}
+```
+
+## loading.tsx
+
+Ένα `loading.tsx` δίνει instant loading UI για το segment (αυτόματο `<Suspense>` γύρω από το page):
+
+```tsx
+// app/dashboard/loading.tsx
+export default function Loading() {
+  return <DashboardSkeleton />;
+}
+```
+
+## global-error.tsx
+
+Για errors στο root layout, βάζεις `global-error.tsx` στο root — αντικαθιστά όλο το layout, οπότε **πρέπει να ορίζει δικά του `<html>`/`<body>`**:
+
+```tsx
+// app/global-error.tsx
+"use client";
+export default function GlobalError({ unstable_retry }: { error: Error; unstable_retry: () => void }) {
+  return (
+    <html>
+      <body>
+        <h2>Κάτι πήγε πολύ στραβά!</h2>
+        <button onClick={() => unstable_retry()}>Δοκίμασε ξανά</button>
+      </body>
+    </html>
+  );
+}
+```
+
+<PredictOutput
+  title="Πιάνει το error.tsx αυτό το error;"
+  code={`"use client";
+export function Button() {
+  const handleClick = () => {
+    throw new Error("Boom"); // μέσα σε event handler
+  };
+  return <button onClick={handleClick}>Click</button>;
+}
+// Θα εμφανιστεί το error.tsx fallback όταν πατήσεις;`}
+  options={[
+    "Όχι — τα error boundaries δεν πιάνουν errors σε event handlers",
+    "Ναι, πάντα",
+    "Μόνο σε production",
+    "Ναι, αν υπάρχει global-error"
+  ]}
+  correctOptionIndex={0}
+  answer="Όχι — event handler errors δεν πιάνονται"
+  explanation="Τα error boundaries πιάνουν errors κατά το RENDERING, όχι σε event handlers ή async callbacks (τρέχουν μετά το render). Για event handlers, πιάσε το error με try/catch και αποθήκευσέ το σε useState για να δείξεις fallback. (Εξαίρεση: errors μέσα σε startTransition ανεβαίνουν στο boundary.)"
+/>
+
+<Exercise
+  question="Φτιάχνεις error.tsx. Τι πρέπει οπωσδήποτε;"
+  options={[
+    "Να είναι Client Component ('use client') και να δέχεται { error, unstable_retry }.",
+    "Να είναι Server Component για ασφάλεια.",
+    "Να κάνει export μια function GET."
+  ]}
+  correctOptionIndex={0}
+  explanation="Τα error boundaries στο Next.js είναι Client Components ('use client'). Δέχονται error (με optional digest) και unstable_retry για να ξαναδοκιμάσεις το segment. Το event-handler error δεν πιάνεται από εδώ."
+/>
+
+<Exercise
+  question="Ένα blog post δεν υπάρχει. Πώς δείχνεις 404;"
+  options={[
+    "Καλείς notFound() και φτιάχνεις not-found.tsx στο segment.",
+    "Κάνεις throw new Error('404').",
+    "Επιστρέφεις null από το page."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το notFound() σταματά το rendering και δείχνει το πλησιέστερο not-found.tsx με status 404. Το throw θα πήγαινε στο error boundary (500-style), όχι σε σωστό 404· το null απλώς δεν renderάρει τίποτα."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How does error handling work in the App Router?»
+
+> I split errors into expected and uncaught. Expected ones — validation, a failed request — I model as data: a return value read through `useActionState` in forms, or a conditional render/`redirect` in a Server Component. Uncaught exceptions I let throw, and the nearest `error.tsx` boundary catches them and shows a fallback. That file must be a Client Component and receives the `error` plus `unstable_retry`, which re-attempts the segment — I also log the error to monitoring in an effect. Errors bubble to the closest boundary, so I place `error.tsx` at different levels for granularity, and `global-error.tsx` at the root handles failures in the root layout, defining its own html and body. For missing resources I call `notFound()`, which renders `not-found.tsx` with a real 404. One gotcha: boundaries only catch render-time errors, not event handlers or async callbacks — those I catch manually and store in state.
+
+<Flashcards
+  title="Error & loading UI — interview drills"
+  cards={[
+    {
+      question: "Expected vs uncaught errors;",
+      answer: "Expected (validation, failed request): μοντελοποίησε ως return values/conditional render. Uncaught (bugs): throw → πιάνει το error.tsx boundary με fallback."
+    },
+    {
+      question: "Τι χρειάζεται το error.tsx;",
+      answer: "Να είναι Client Component ('use client'), να δέχεται { error (με digest), unstable_retry }. Το unstable_retry ξαναδοκιμάζει το segment. Errors ανεβαίνουν στο πλησιέστερο boundary."
+    },
+    {
+      question: "Πώς δείχνεις 404;",
+      answer: "notFound() από next/navigation σταματά το render και δείχνει το πλησιέστερο not-found.tsx με status 404."
+    },
+    {
+      question: "Τι κάνει το loading.tsx;",
+      answer: "Instant loading UI για το segment — το Next.js τυλίγει αυτόματα το page σε <Suspense> με αυτό το fallback."
+    },
+    {
+      question: "Τι ιδιαίτερο έχει το global-error.tsx;",
+      answer: "Πιάνει errors του root layout και το αντικαθιστά — γι' αυτό πρέπει να ορίζει δικά του <html>/<body>. Client Component."
+    },
+    {
+      question: "Πιάνουν τα boundaries event-handler errors;",
+      answer: "Όχι — μόνο render-time errors. Event handlers/async callbacks: try/catch + useState. Εξαίρεση: errors μέσα σε startTransition ανεβαίνουν στο boundary."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Route με error, not-found & loading"
+  scenario="Φτιάξε blog post route με loading skeleton, 404 για άγνωστα slugs και error boundary."
+  outcomes={[
+    "Να χρησιμοποιείς τα file-based UI states.",
+    "Να ξεχωρίζεις expected από uncaught errors.",
+    "Να χειρίζεσαι 404 σωστά."
+  ]}
+  steps={[
+    "app/blog/[slug]/loading.tsx με skeleton.",
+    "page.tsx που καλεί notFound() αν δεν υπάρχει το post.",
+    "not-found.tsx με φιλικό 404 μήνυμα.",
+    "error.tsx (Client) με unstable_retry + logging.",
+    "Δοκίμασε event-handler error και δες ότι ΔΕΝ το πιάνει το boundary."
+  ]}
+  checkpoints={[
+    "Άγνωστο slug → not-found.tsx (404), όχι error.tsx.",
+    "Throw στο render → error.tsx με working retry.",
+    "Event-handler error χειρίζεται με try/catch + state."
+  ]}
+  mistakes={[
+    "error.tsx ως Server Component (πρέπει 'use client').",
+    "throw για 404 αντί για notFound().",
+    "global-error χωρίς δικά του html/body.",
+    "Προσδοκία ότι το boundary πιάνει event-handler errors."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν κάθε route έχει σωστά loading, 404 και error fallback, και ξέρεις τι πιάνει και τι όχι το boundary."
+/>

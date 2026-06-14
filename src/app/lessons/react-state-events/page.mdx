@@ -1,0 +1,191 @@
+# State, Events & Forms
+
+Το state είναι η «μνήμη» ενός component και η πιο συχνή πηγή bugs. Στα interviews εξετάζουν αν καταλαβαίνεις γιατί το `setState` είναι async, πότε χρειάζεσαι functional update, και γιατί τα controlled inputs είναι ο default τρόπος για forms.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να διαλέγεις σωστά τι ανήκει σε state και τι όχι,
+- να κάνεις immutable updates σε arrays/objects,
+- να χρησιμοποιείς functional updates όταν το νέο state εξαρτάται από το παλιό,
+- να φτιάχνεις controlled inputs με typed events,
+- να αποφεύγεις duplicate/derived state.
+
+## Τι ανήκει σε state
+
+State είναι μόνο ό,τι **αλλάζει με τον χρόνο ΚΑΙ δεν μπορεί να υπολογιστεί** από κάτι άλλο. Αν προκύπτει από props ή άλλο state, δεν είναι state — είναι derived.
+
+```tsx
+const [todos, setTodos] = useState<Todo[]>([]);
+const [filter, setFilter] = useState<Filter>("all");
+
+// ❌ ΟΧΙ state — υπολογίζεται
+const [activeCount, setActiveCount] = useState(0);
+
+// ✅ derived στο render
+const activeCount = todos.filter((t) => !t.completed).length;
+```
+
+Διπλό state που «καθρεφτίζει» άλλο state ξεσυγχρονίζεται αναπόφευκτα. Ένα source of truth, τα υπόλοιπα υπολογισμένα.
+
+## setState είναι async & batched
+
+```tsx
+function handleClick() {
+  setCount(count + 1);
+  console.log(count); // ΑΚΟΜΑ η παλιά τιμή — το render δεν έγινε ακόμα
+}
+```
+
+Το `setState` προγραμματίζει render· δεν αλλάζει την τοπική μεταβλητή αμέσως. Το React μαζεύει (batches) πολλά setState σε ένα render για performance.
+
+<PredictOutput
+  title="Functional update vs απευθείας"
+  code={`function App() {
+  const [count, setCount] = useState(0);
+
+  function handleClick() {
+    setCount((c) => c + 1);
+    setCount((c) => c + 1);
+    setCount((c) => c + 1);
+  }
+
+  // Πατάς ΜΙΑ φορά. Τι δείχνει;
+  return <button onClick={handleClick}>{count}</button>;
+}`}
+  options={["1", "3", "0", "2"]}
+  correctOptionIndex={1}
+  answer="3"
+  explanation="Με functional updates, κάθε updater παίρνει την πιο πρόσφατη τιμή στην ουρά: 0→1→2→3. Αν ήταν setCount(count + 1) τρεις φορές, και οι τρεις θα διάβαζαν το ίδιο count=0 και το αποτέλεσμα θα ήταν 1. Κανόνας: όταν το νέο state εξαρτάται από το παλιό, χρησιμοποίησε functional update."
+/>
+
+## Immutable updates σε arrays & objects
+
+```tsx
+// Προσθήκη
+setTodos([...todos, newTodo]);
+
+// Ενημέρωση ενός
+setTodos(todos.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)));
+
+// Διαγραφή
+setTodos(todos.filter((t) => t.id !== id));
+
+// Nested object
+setUser({ ...user, address: { ...user.address, city: "Athens" } });
+```
+
+Ποτέ `todos.push()` ή `user.address.city = ...` — αυτό κάνει mutate την ίδια reference και το React δεν βλέπει αλλαγή. Πάντα νέα reference σε κάθε επίπεδο που αλλάζεις.
+
+## Controlled inputs
+
+Σε controlled input, το `value` έρχεται από state και ο χρήστης δεν μπορεί να αλλάξει τίποτα χωρίς να περάσει από `onChange`. Το React είναι το source of truth.
+
+```tsx
+function NameForm() {
+  const [name, setName] = useState("");
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault(); // αλλιώς το browser κάνει full reload
+    console.log(name.trim());
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input
+        value={name}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
+      />
+      <button type="submit" disabled={name.trim().length < 2}>Save</button>
+    </form>
+  );
+}
+```
+
+Πλεονεκτήματα: validation σε πραγματικό χρόνο, conditional disable, εύκολος έλεγχος/μετασχηματισμός της τιμής. Το `e.preventDefault()` στο submit είναι υποχρεωτικό — αλλιώς η σελίδα κάνει reload.
+
+<Exercise
+  question="Έχεις state count και θες ένα κουμπί που προσθέτει 1 αξιόπιστα ακόμα και σε γρήγορα κλικ/async. Τι χρησιμοποιείς;"
+  options={[
+    "Functional update: setCount(c => c + 1) — παίρνει πάντα την πιο πρόσφατη τιμή από την ουρά.",
+    "setCount(count + 1) — διαβάζει το count του render.",
+    "Άμεση mutation: count++ και μετά setCount(count)."
+  ]}
+  correctOptionIndex={0}
+  explanation="Όταν το νέο state εξαρτάται από το προηγούμενο, το functional update είναι ασφαλές γιατί δεν βασίζεται στο (πιθανώς stale) count του render. Το count++ είναι mutation και απαγορεύεται."
+/>
+
+<Exercise
+  question="Controlled vs uncontrolled input — ποιο είναι το default και γιατί;"
+  options={[
+    "Controlled: το value έρχεται από state, αλλάζει μέσω onChange — επιτρέπει validation, conditional disable και προβλέψιμο state.",
+    "Uncontrolled: το DOM κρατά την τιμή — πάντα προτιμότερο γιατί είναι λιγότερος κώδικας.",
+    "Δεν υπάρχει διαφορά στην πράξη."
+  ]}
+  correctOptionIndex={0}
+  explanation="Default είναι controlled: το React είναι το source of truth, οπότε μπορείς να κάνεις validation, formatting και να ελέγχεις πότε ενεργοποιείται το submit. Uncontrolled (με ref) χρησιμεύει σε απλές περιπτώσεις ή integration με non-React κώδικα."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«Why is setState asynchronous, and when do you need a functional update?»
+
+> `setState` schedules a re-render instead of mutating a variable, and React batches multiple updates into one render for performance — so right after calling it, the local variable still holds the old value. That's fine when I'm setting an independent value, but when the new state depends on the previous one — incrementing a counter, toggling, appending — I pass a function, `setCount(c => c + 1)`. The updater receives the latest queued value, so three of them in a row correctly produce +3, whereas reading `count` directly would read the same stale snapshot three times. For forms I default to controlled inputs: the value comes from state and changes go through `onChange`, which gives me validation and conditional submit, and I always `preventDefault` on submit and update state immutably.
+
+<Flashcards
+  title="State & events — interview drills"
+  cards={[
+    {
+      question: "Τι ανήκει σε state;",
+      answer: "Μόνο ό,τι αλλάζει με τον χρόνο ΚΑΙ δεν υπολογίζεται από props/άλλο state. Ό,τι προκύπτει (counts, filtered lists) είναι derived — υπολόγισέ το στο render, μην το αποθηκεύεις."
+    },
+    {
+      question: "Γιατί setState(count+1) δύο φορές δεν κάνει +2;",
+      answer: "Και οι δύο διαβάζουν το ίδιο count του τρέχοντος render. Λύση: functional update setState(c => c + 1), που παίρνει την πιο πρόσφατη τιμή από την ουρά."
+    },
+    {
+      question: "Πώς κάνεις immutable update σε array;",
+      answer: "Add: [...arr, x]. Update: arr.map(i => i.id===id ? {...i, ...} : i). Remove: arr.filter(i => i.id!==id). Ποτέ push/splice/απευθείας ανάθεση πεδίου."
+    },
+    {
+      question: "Controlled input — τα δύο κομμάτια;",
+      answer: "value={state} (το React ορίζει την τιμή) και onChange={e => setState(e.target.value)} (κάθε αλλαγή περνά από state). Το React είναι το source of truth."
+    },
+    {
+      question: "Γιατί preventDefault στο form submit;",
+      answer: "Το default browser behavior κάνει full page reload (παραδοσιακό form POST). Στο React το χειρίζεσαι client-side, οπότε καλείς e.preventDefault() και διαχειρίζεσαι το submit μόνος σου."
+    },
+    {
+      question: "Τι είναι το event object στο React;",
+      answer: "SyntheticEvent — wrapper γύρω από το native event, με ίδιο API cross-browser. Τυποποιείται π.χ. React.ChangeEvent<HTMLInputElement>, React.FormEvent, React.MouseEvent."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Controlled form με validation"
+  scenario="Φτιάξε form (όνομα, email, ποσότητα) με controlled inputs, typed events και live validation."
+  outcomes={[
+    "Να φτιάχνεις controlled inputs με typed onChange.",
+    "Να κάνεις immutable updates σε form object.",
+    "Να ξεχωρίζεις state από derived τιμές."
+  ]}
+  steps={[
+    "Κράτα τα πεδία σε ένα object state και ενημέρωσέ τα με spread.",
+    "Πρόσθεσε live validation (derived: errors υπολογισμένα από τα πεδία).",
+    "Disable το submit όταν υπάρχουν errors.",
+    "Στο submit κάνε preventDefault και κανονικοποίησε τα δεδομένα.",
+    "Πρόσθεσε ένα +/- counter με functional update."
+  ]}
+  checkpoints={[
+    "Κάθε input value έρχεται από state.",
+    "Τα errors είναι derived, όχι ξεχωριστό state που συγχρονίζεις.",
+    "Ο counter δουλεύει σωστά σε γρήγορα κλικ (functional update)."
+  ]}
+  mistakes={[
+    "Διπλό state που καθρεφτίζει άλλο (errors/counts ως state).",
+    "setState(count+1) εκεί που χρειάζεται functional update.",
+    "Mutation του form object αντί για spread.",
+    "Ξεχασμένο preventDefault → η σελίδα κάνει reload."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν το form σου δεν έχει duplicate state και κάθε αλλαγή περνά καθαρά από controlled inputs."
+/>

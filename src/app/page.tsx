@@ -4,25 +4,46 @@ import Link from "next/link";
 import { allLessons, curriculum, flattenItems, isLessonGroup, type Lesson } from "@/lib/curriculum";
 import { useProgress } from "@/hooks/useProgress";
 
-function LessonCard({ lesson, label, completed }: { lesson: Lesson; label: number; completed: boolean }) {
+function LessonCard({
+  lesson,
+  label,
+  completed,
+  variant = "primary",
+}: {
+  lesson: Lesson;
+  label: number;
+  completed: boolean;
+  variant?: "primary" | "sub";
+}) {
+  const isSub = variant === "sub";
   return (
     <Link
       href={lesson.href}
-      className={`group block p-5 transition-colors hover:bg-blue-50/50 dark:hover:bg-blue-950/20 ${
-        completed ? "bg-green-50/50 dark:bg-green-950/10" : ""
-      }`}
+      className={`group block transition-colors hover:bg-blue-50/50 dark:hover:bg-blue-950/20 ${
+        isSub ? "py-3 pr-5 pl-7" : "p-5"
+      } ${completed ? "bg-green-50/50 dark:bg-green-950/10" : ""}`}
     >
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span
-              className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold ${
-                completed ? "bg-green-500 text-white" : "bg-blue-600 text-white"
+              className={`inline-flex items-center justify-center rounded-full font-bold ${
+                isSub ? "h-6 w-6 text-xs" : "h-7 w-7 text-sm"
+              } ${
+                completed
+                  ? "bg-green-500 text-white"
+                  : isSub
+                    ? "border-2 border-blue-400 bg-white text-blue-600 dark:bg-gray-900 dark:text-blue-300"
+                    : "bg-blue-600 text-white"
               }`}
             >
               {completed ? "✓" : label}
             </span>
-            <h4 className="text-lg font-bold text-gray-900 group-hover:text-blue-700 dark:text-gray-100 dark:group-hover:text-blue-400">
+            <h4
+              className={`font-bold text-gray-900 group-hover:text-blue-700 dark:text-gray-100 dark:group-hover:text-blue-400 ${
+                isSub ? "text-base" : "text-lg"
+              }`}
+            >
               {lesson.title}
             </h4>
           </div>
@@ -148,46 +169,64 @@ export default function Home() {
 
               <div className="divide-y divide-gray-100 dark:divide-gray-800">
                 {(() => {
-                  let counter = 0;
+                  let topCounter = 0;
                   return section.lessons.map((item) => {
+                    topCounter += 1;
+                    const topLabel = topCounter;
+
                     if (isLessonGroup(item)) {
                       const groupDone = item.lessons.filter((l) => isLoaded && isCompleted(l.id)).length;
+                      const groupComplete = isLoaded && groupDone === item.lessons.length;
                       return (
-                        <div key={item.id} className="bg-gray-50/40 dark:bg-gray-900/30">
-                          <div className="border-l-4 border-blue-500 px-5 pt-4 pb-2">
-                            <div className="flex items-center justify-between gap-3">
-                              <h4 className="text-sm font-extrabold uppercase tracking-wide text-blue-600 dark:text-blue-400">
-                                {item.title}
-                              </h4>
-                              <span className="shrink-0 text-xs font-semibold text-gray-500 dark:text-gray-400">
-                                {groupDone}/{item.lessons.length}
+                        <details key={item.id} className="group/acc bg-gray-50/40 dark:bg-gray-900/30">
+                          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 border-l-4 border-blue-500 px-5 py-4 transition-colors hover:bg-blue-50/40 dark:hover:bg-blue-950/20">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span
+                                className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+                                  groupComplete ? "bg-green-500 text-white" : "bg-blue-600 text-white"
+                                }`}
+                              >
+                                {groupComplete ? "✓" : topLabel}
                               </span>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <h4 className="text-base font-extrabold text-gray-900 dark:text-gray-100">
+                                    {item.title}
+                                  </h4>
+                                  <span
+                                    aria-hidden
+                                    className="text-xs text-blue-500 transition-transform group-open/acc:rotate-90"
+                                  >
+                                    ▶
+                                  </span>
+                                </div>
+                                <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">{item.description}</p>
+                              </div>
                             </div>
-                            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{item.description}</p>
-                          </div>
+                            <span className="shrink-0 text-xs font-semibold text-gray-500 dark:text-gray-400">
+                              {groupDone}/{item.lessons.length}
+                            </span>
+                          </summary>
                           <div className="divide-y divide-gray-100 border-l-4 border-blue-500/40 dark:divide-gray-800">
-                            {item.lessons.map((lesson) => {
-                              counter += 1;
-                              return (
-                                <LessonCard
-                                  key={lesson.id}
-                                  lesson={lesson}
-                                  label={counter}
-                                  completed={Boolean(isLoaded && isCompleted(lesson.id))}
-                                />
-                              );
-                            })}
+                            {item.lessons.map((lesson, lessonIndex) => (
+                              <LessonCard
+                                key={lesson.id}
+                                lesson={lesson}
+                                label={lessonIndex + 1}
+                                variant="sub"
+                                completed={Boolean(isLoaded && isCompleted(lesson.id))}
+                              />
+                            ))}
                           </div>
-                        </div>
+                        </details>
                       );
                     }
 
-                    counter += 1;
                     return (
                       <LessonCard
                         key={item.id}
                         lesson={item}
-                        label={counter}
+                        label={topLabel}
                         completed={Boolean(isLoaded && isCompleted(item.id))}
                       />
                     );

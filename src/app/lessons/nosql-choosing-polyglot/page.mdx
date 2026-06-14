@@ -1,0 +1,175 @@
+# Choosing a Store & Polyglot Persistence
+
+Το τελευταίο βήμα του NoSQL track: να **συνθέτεις** όλα τα προηγούμενα σε μια απόφαση. Στα interviews, το «τι database θα διάλεγες για X;» δεν έχει μία σωστή απάντηση — έχει σωστή **διαδικασία** και ώριμα trade-offs. Και συχνά η απάντηση είναι «περισσότερα από ένα».
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να ακολουθείς decision framework για επιλογή store,
+- να αντιστοιχίζεις access patterns σε τύπο database,
+- να εξηγείς polyglot persistence,
+- να σταθμίζεις operational κόστος (όχι μόνο τεχνικά),
+- να απαντάς σε «design the data layer» ερωτήσεις.
+
+## Decision framework
+
+```txt
+1. Ποια είναι τα access patterns;   (read/write-heavy; by key; ad-hoc; σχέσεις;)
+2. Χρειάζομαι ACID transactions;     → ναι: relational
+3. Έχω σχέσεις & joins;              → ναι: relational
+4. Σταθερά patterns + κλίμακα;       → key-value / wide-column
+5. Ευέλικτο schema / nested data;    → document (ή Postgres JSONB)
+6. Consistency needs;               → strong: relational/quorum· eventual: AP NoSQL
+7. Operational κόστος & ομάδα;       → ξέρει η ομάδα να το τρέξει;
+```
+
+Default: **ξεκίνα relational** (καλύπτει τα περισσότερα), πήγαινε αλλού όταν ένα συγκεκριμένο pattern το απαιτεί.
+
+## Access pattern → store (γρήγορος χάρτης)
+
+```txt
+Σχεσιακά δεδομένα, transactions      → PostgreSQL / MySQL
+Cache, sessions, rate limit, counter → Redis (key-value)
+Ευέλικτα documents, nested           → MongoDB (ή Postgres JSONB)
+Τεράστιο write volume, time-series   → Cassandra (wide-column)
+Σχέσεις-first (social, fraud)        → Neo4j (graph)
+Full-text search                     → Elasticsearch
+```
+
+## Polyglot persistence — όχι μία βάση για όλα
+
+Σε πραγματικά συστήματα, **διαφορετικά μέρη χρησιμοποιούν διαφορετικά stores** — το καθένα εκεί που λάμπει:
+
+```txt
+E-commerce app:
+  PostgreSQL   → orders, payments, inventory (ACID, σχέσεις)
+  Redis        → sessions, cart, rate limiting (key-value, TTL)
+  Elasticsearch→ product search (full-text)
+  Cassandra    → activity/event log (write-heavy)
+```
+
+<PredictOutput
+  title="Polyglot ή μία βάση;"
+  code={`// E-commerce: χρειάζεσαι ACID για πληρωμές, full-text search για
+// προϊόντα, και session store με TTL.
+// Καλύτερη προσέγγιση;`}
+  options={[
+    "Polyglot: Postgres (πληρωμές) + Elasticsearch (search) + Redis (sessions)",
+    "Μόνο MongoDB για όλα",
+    "Μόνο Redis για όλα",
+    "Μόνο μία relational βάση χωρίς εξαίρεση"
+  ]}
+  correctOptionIndex={0}
+  answer="Polyglot persistence"
+  explanation="Καμία βάση δεν είναι άριστη σε ACID payments ΚΑΙ full-text search ΚΑΙ TTL sessions. Polyglot persistence: κάθε store για ό,τι κάνει καλύτερα. Το κόστος: περισσότερη operational πολυπλοκότητα — γι' αυτό δεν το παρακάνεις. Ξεκινάς με ένα και προσθέτεις store όταν ένα pattern το δικαιολογεί."
+/>
+
+## Το operational κόστος μετράει
+
+Η σωστή τεχνική επιλογή δεν είναι πάντα η σωστή επιλογή:
+
+```txt
+- Κάθε νέο store = backups, monitoring, scaling, expertise, on-call
+- Μια ομάδα που ξέρει Postgres καλά συχνά κερδίζει με Postgres+JSONB
+  αντί για νέο MongoDB που κανείς δεν ξέρει να τρέξει σε production
+- "Boring technology" που κατέχεις > "ιδανικό" που δεν ξέρεις
+```
+
+Σε interview, το να αναφέρεις το operational κόστος δείχνει ωριμότητα — δεν διαλέγεις με βάση το τι είναι «cool».
+
+## Migration considerations
+
+Αλλαγή store δεν είναι ασήμαντη:
+
+```txt
+- Dual-write period (γράφεις και στα δύο) + backfill ιστορικών δεδομένων
+- Επαλήθευση consistency πριν το cutover
+- Rollback plan αν κάτι πάει στραβά
+- Το data model συχνά πρέπει να ξανασχεδιαστεί (SQL→NoSQL ≠ απλό export/import)
+```
+
+<Exercise
+  question="Τι είναι polyglot persistence;"
+  options={[
+    "Χρήση πολλαπλών τύπων database στο ίδιο σύστημα, ο καθένας για ό,τι κάνει καλύτερα.",
+    "Μια βάση που μιλά πολλές γλώσσες προγραμματισμού.",
+    "Η αντικατάσταση όλων των SQL με NoSQL."
+  ]}
+  correctOptionIndex={0}
+  explanation="Polyglot persistence: διαφορετικά μέρη του συστήματος χρησιμοποιούν διαφορετικά stores (Postgres για transactions, Redis για cache, Elasticsearch για search). Trade-off: μεγαλύτερη operational πολυπλοκότητα — γι' αυτό προσθέτεις store μόνο όταν δικαιολογείται."
+/>
+
+<Exercise
+  question="Η ομάδα ξέρει άριστα Postgres. Χρειάζεστε ευέλικτα nested δεδομένα. Πρώτη σκέψη;"
+  options={[
+    "Postgres JSONB — καλύπτει document ανάγκες χωρίς νέο store/operational κόστος, αξιοποιώντας την υπάρχουσα expertise.",
+    "Αμέσως MongoDB, ανεξάρτητα από το αν ξέρετε να το τρέχετε.",
+    "Cassandra για σιγουριά."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το operational κόστος & η expertise μετράνε. Το Postgres JSONB δίνει ευέλικτα schema-less πεδία μέσα σε ACID/σχεσιακό περιβάλλον που η ομάδα ήδη κατέχει. Νέο store προσθέτεις όταν το JSONB όντως δεν φτάνει."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«Design the data layer for [a product].»
+
+> I start from access patterns, not from a database I like: read or write-heavy, lookups by key versus ad-hoc queries, relationships, consistency needs. Then I match each to a store — relational for transactional, related data; key-value like Redis for sessions and caching; document for flexible nested data, though often Postgres with JSONB covers that; wide-column for huge write volume; search engines for full-text. Real systems are polyglot: an e-commerce app might use Postgres for orders and payments, Redis for carts and sessions, and Elasticsearch for product search — each where it shines. But I weigh operational cost, not just fit: every new store means backups, monitoring, and expertise, so a team that knows Postgres well often wins with Postgres plus JSONB over a MongoDB nobody can run in production. I default to relational and add a store only when a pattern genuinely demands it.
+
+<Flashcards
+  title="Choosing a store — interview drills"
+  cards={[
+    {
+      question: "Η διαδικασία επιλογής store;",
+      answer: "Access patterns → ACID/σχέσεις; (relational) → σταθερά patterns+κλίμακα; (kv/wide-column) → ευέλικτο schema; (document/JSONB) → consistency needs → operational κόστος/expertise. Default: relational."
+    },
+    {
+      question: "Τι είναι polyglot persistence;",
+      answer: "Πολλαπλά stores στο ίδιο σύστημα, καθένα για ό,τι κάνει καλύτερα (Postgres transactions + Redis cache + Elasticsearch search). Trade-off: operational πολυπλοκότητα — πρόσθεσε store μόνο όταν δικαιολογείται."
+    },
+    {
+      question: "Γιατί μετράει το operational κόστος;",
+      answer: "Κάθε store = backups, monitoring, scaling, expertise, on-call. 'Boring technology' που κατέχεις συχνά νικά το 'ιδανικό' που δεν ξέρεις να τρέξεις. Δείχνει ωριμότητα σε interview."
+    },
+    {
+      question: "Quick map access pattern → store;",
+      answer: "Σχέσεις/transactions → Postgres/MySQL. Cache/session → Redis. Ευέλικτα documents → MongoDB/JSONB. Write-heavy/time-series → Cassandra. Σχέσεις-first → Neo4j. Full-text → Elasticsearch."
+    },
+    {
+      question: "Τι προσέχεις σε migration store;",
+      answer: "Dual-write + backfill ιστορικών, επαλήθευση consistency πριν cutover, rollback plan, και επανασχεδιασμό data model (SQL→NoSQL δεν είναι export/import)."
+    },
+    {
+      question: "Πότε Postgres JSONB αντί για MongoDB;",
+      answer: "Όταν θες ευέλικτα/nested πεδία αλλά και ACID/σχέσεις, και η ομάδα ξέρει Postgres. Αποφεύγεις νέο store & operational κόστος. MongoDB όταν το document model είναι κυρίαρχο και το JSONB δεν φτάνει."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Διάλεξε stores για multi-feature product"
+  scenario="Σχεδίασε το data layer ενός product (π.χ. social marketplace) με πολλά διαφορετικά access patterns."
+  outcomes={[
+    "Να αντιστοιχίζεις access patterns σε stores.",
+    "Να σχεδιάζεις polyglot persistence με κριτήριο.",
+    "Να σταθμίζεις operational κόστος."
+  ]}
+  steps={[
+    "Κατέγραψε 5-6 features με τα access patterns τους.",
+    "Αντιστοίχισε καθένα σε τύπο store με μία πρόταση 'γιατί'.",
+    "Σχεδίασε πού θα ήταν polyglot και πού ένα store αρκεί.",
+    "Σημείωσε το operational κόστος κάθε επιπλέον store.",
+    "Διάλεξε τι θα ξεκινούσες (MVP) και τι θα πρόσθετες αργότερα."
+  ]}
+  checkpoints={[
+    "Κάθε επιλογή store δικαιολογείται από access pattern.",
+    "Το polyglot δεν παρακάνεται (κάθε store κερδίζει τη θέση του).",
+    "Λαμβάνεις υπόψη expertise/operational κόστος."
+  ]}
+  mistakes={[
+    "Μία βάση για τα πάντα όταν τα patterns διαφέρουν ριζικά.",
+    "Πολλά stores από την αρχή χωρίς λόγο (operational βάρος).",
+    "Επιλογή βάσει hype αντί για access patterns/κόστος.",
+    "Αγνόηση της expertise της ομάδας."
+  ]}
+  mastery="Το μάθημα — και όλο το NoSQL track — πέτυχε όταν σχεδιάζεις data layer διαλέγοντας το σωστό store ανά pattern, με ώριμα operational trade-offs."
+/>

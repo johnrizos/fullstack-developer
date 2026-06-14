@@ -1,0 +1,190 @@
+# ORMs, N+1 & Data Access
+
+Οι περισσότερες εφαρμογές μιλάνε στη βάση μέσω **ORM — Object-Relational Mapping** (Prisma, SQLAlchemy, TypeORM): μια βιβλιοθήκη που αντιστοιχίζει τους πίνακες της βάσης σε objects/classes του κώδικά σου. Ο ORM είναι βολικός αλλά κρύβει το SQL — και μαζί το πιο διάσημο performance bug: το **N+1 problem**. Στα interviews το N+1 είναι σχεδόν σίγουρη ερώτηση.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς τι κάνει ένας ORM και τα trade-offs,
+- να αναγνωρίζεις και να λύνεις το N+1 problem,
+- να ξεχωρίζεις eager από lazy loading,
+- να ξέρεις πότε γράφεις raw SQL,
+- να εξηγείς connection pooling.
+
+## Τι κάνει ένας ORM
+
+Αντιστοιχίζει tables σε objects/classes, ώστε να γράφεις κώδικα αντί για SQL:
+
+```ts
+// Prisma-style
+const user = await prisma.user.findUnique({ where: { id: 1 } });
+const posts = await prisma.post.findMany({ where: { published: true } });
+```
+
+```txt
+Πλεονεκτήματα: type safety, λιγότερο boilerplate, migrations, ταχύτητα ανάπτυξης
+Trade-offs:    κρύβει το SQL → εύκολο να γράψεις αργά queries (N+1) χωρίς να το δεις
+```
+
+## Το N+1 problem
+
+Το πιο συχνό ORM bug. Φέρνεις μια λίστα, και μετά για **κάθε** στοιχείο κάνεις ξεχωριστό query:
+
+```ts
+const posts = await prisma.post.findMany();        // 1 query: φέρε posts
+for (const post of posts) {
+  post.author = await prisma.user.findUnique({     // N queries: ένα ανά post 🐢
+    where: { id: post.authorId },
+  });
+}
+// 100 posts → 1 + 100 = 101 queries!
+```
+
+<PredictOutput
+  title="Πόσα queries;"
+  code={`// 50 orders, καθένα με customer.
+const orders = await db.order.findMany();    // φέρε orders
+for (const order of orders) {
+  const customer = await db.customer.findUnique({
+    where: { id: order.customerId },
+  });
+  console.log(customer.name);
+}
+// Πόσα queries πάνε στη βάση συνολικά;`}
+  options={["51 (1 + 50)", "2", "50", "1"]}
+  correctOptionIndex={0}
+  answer="51 — το N+1"
+  explanation="1 query για τη λίστα (orders) + 50 queries (ένα ανά order για τον customer) = 51. Αυτό είναι το N+1. Λύση: φέρε τους customers μαζί (eager loading/include/join) σε 1-2 queries αντί για 51. Σε production με χιλιάδες rows, το N+1 ρίχνει τη βάση."
+/>
+
+## Λύση: eager loading (include/join)
+
+```ts
+// ✅ Ένα query (ή δύο batched) με join — όχι N+1
+const orders = await db.order.findMany({
+  include: { customer: true },   // φέρε και τον customer μαζί
+});
+
+// ✅ Πολλά parents → φέρε όλα τα children με ένα IN query
+const posts = await db.post.findMany({ include: { author: true } });
+```
+
+Ο ORM μετατρέπει το `include` σε `JOIN` ή σε ένα δεύτερο `WHERE id IN (...)` query — όχι σε N ξεχωριστά.
+
+## Eager vs lazy loading
+
+```txt
+Lazy loading:  τα related δεδομένα φορτώνονται ΟΤΑΝ τα ζητήσεις (συχνά → N+1)
+Eager loading: τα φέρνεις ΜΑΖΙ εκ των προτέρων (include/join) → αποφεύγεις N+1
+```
+
+Default σε πολλά ORMs είναι lazy — γι' αυτό το N+1 κρύβεται. Όταν ξέρεις ότι θα χρειαστείς τα related, ζήτα τα **eager**.
+
+## Πότε raw SQL
+
+Ο ORM δεν είναι πάντα η απάντηση:
+
+```txt
+- Πολύπλοκα analytics queries (window functions, σύνθετα joins/CTEs)
+- Bulk operations / performance-critical paths
+- Database-specific features που δεν εκθέτει ο ORM
+```
+
+Οι περισσότεροι ORMs επιτρέπουν raw SQL escape hatch (`$queryRaw`, `text()`). Χρησιμοποίησέ το συνειδητά — με **parameterized** queries (όχι string concatenation, για να αποφύγεις SQL injection).
+
+## Connection pooling
+
+Το να ανοίγεις νέα σύνδεση ανά request είναι ακριβό. Ένα **connection pool** κρατά ένα σύνολο επαναχρησιμοποιούμενων συνδέσεων:
+
+```txt
+- Επαναχρησιμοποιεί συνδέσεις αντί για open/close κάθε φορά
+- Όριο max connections → προστατεύει τη βάση από εξάντληση
+- Serverless: πρόσεξε — πολλές instances × pool μπορεί να ξεπεράσει το όριο της βάσης
+  (λύση: external pooler, π.χ. PgBouncer)
+```
+
+<Exercise
+  question="Βλέπεις 1 query για τη λίστα και μετά ένα query ανά στοιχείο στα logs. Τι είναι και πώς το λύνεις;"
+  options={[
+    "N+1 problem — λύσε το με eager loading (include/join) ώστε να φέρεις τα related σε 1-2 queries.",
+    "Φυσιολογικό, άσ' το.",
+    "Πρόβλημα index — πρόσθεσε index."
+  ]}
+  correctOptionIndex={0}
+  explanation="1 + N queries = N+1, κλασικό ORM bug από lazy loading. Λύση: ζήτα τα related δεδομένα eager (include/join/prefetch), ώστε ο ORM να κάνει JOIN ή batched IN query αντί για N ξεχωριστά."
+/>
+
+<Exercise
+  question="Πότε φεύγεις από τον ORM σε raw SQL;"
+  options={[
+    "Σε σύνθετα analytics (window functions/CTEs), bulk ops ή db-specific features — με parameterized queries.",
+    "Ποτέ — ο ORM καλύπτει τα πάντα.",
+    "Πάντα — το raw SQL είναι πάντα πιο γρήγορο."
+  ]}
+  correctOptionIndex={0}
+  explanation="Ο ORM είναι ιδανικός για τα συνηθισμένα CRUD. Για πολύπλοκα queries που δεν εκφράζονται καθαρά ή για performance-critical paths, πέφτεις σε raw SQL — πάντα parameterized για ασφάλεια από injection."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«What is the N+1 problem and how do you fix it?»
+
+> An ORM maps tables to objects so I write code instead of SQL — great for type safety and speed, but it hides the SQL, which is how the N+1 problem sneaks in. I fetch a list with one query, then for each row I lazily access a relation, firing one query per row: a hundred posts become a hundred-and-one queries. In production that hammers the database. The fix is eager loading — `include` or a join — so the ORM fetches the related data in one query or a single batched `IN`, not N separate ones. Many ORMs default to lazy loading, which is why it's easy to miss, so I check query logs. I drop to raw, parameterized SQL for complex analytics, bulk operations, or database-specific features the ORM doesn't expose. And I use a connection pool to reuse connections and cap the max, being careful in serverless where many instances can exhaust the database's connection limit.
+
+<Flashcards
+  title="ORMs & N+1 — interview drills"
+  cards={[
+    {
+      question: "Τι είναι το N+1 problem;",
+      answer: "1 query για μια λίστα + N queries (ένα ανά στοιχείο) για related δεδομένα = N+1. Κλασικό ORM bug από lazy loading. Σκοτώνει την performance σε μεγάλες λίστες."
+    },
+    {
+      question: "Πώς λύνεις το N+1;",
+      answer: "Eager loading: include/join/prefetch ώστε ο ORM να φέρει τα related σε 1-2 queries (JOIN ή batched WHERE id IN (...)) αντί για N ξεχωριστά."
+    },
+    {
+      question: "Eager vs lazy loading;",
+      answer: "Lazy: related δεδομένα φορτώνονται όταν τα ζητήσεις (default σε πολλά ORMs → N+1). Eager: τα φέρνεις μαζί εκ των προτέρων. Ζήτα eager όταν ξέρεις ότι θα τα χρειαστείς."
+    },
+    {
+      question: "Πότε raw SQL αντί για ORM;",
+      answer: "Σύνθετα analytics (window functions/CTEs), bulk ops, performance-critical paths, db-specific features. Πάντα parameterized (όχι string concat → SQL injection)."
+    },
+    {
+      question: "Τι είναι connection pooling;",
+      answer: "Σύνολο επαναχρησιμοποιούμενων db συνδέσεων αντί για open/close ανά request. Όριο max connections προστατεύει τη βάση. Serverless: πρόσεξε εξάντληση → external pooler."
+    },
+    {
+      question: "Trade-off του ORM;",
+      answer: "Κερδίζεις type safety/ταχύτητα/migrations· χάνεις ορατότητα στο SQL — εύκολο να γράψεις αργά queries (N+1) χωρίς να το δεις. Έλεγχε τα query logs."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Refactor data layer χωρίς N+1"
+  scenario="Έχεις endpoint που φέρνει orders με customer & items και κάνει δεκάδες queries. Διόρθωσέ το."
+  outcomes={[
+    "Να εντοπίζεις N+1 από τα query logs.",
+    "Να εφαρμόζεις eager loading.",
+    "Να ξέρεις πότε raw SQL & πώς δουλεύει το pool."
+  ]}
+  steps={[
+    "Ενεργοποίησε query logging και μέτρησε πόσα queries γίνονται.",
+    "Εντόπισε τον loop που κάνει ένα query ανά order.",
+    "Αντικατέστησε με include/join (eager) για customer & items.",
+    "Επιβεβαίωσε ότι τα queries έπεσαν σε 1-2.",
+    "Γράψε ένα σύνθετο report ως raw parameterized SQL."
+  ]}
+  checkpoints={[
+    "Τα queries μειώθηκαν δραστικά (όχι 1+N).",
+    "Το raw SQL είναι parameterized.",
+    "Καταλαβαίνεις γιατί το pool αποφεύγει per-request connections."
+  ]}
+  mistakes={[
+    "Lazy access σε loop → N+1.",
+    "String concatenation σε raw SQL (SQL injection).",
+    "Άνοιγμα νέας σύνδεσης ανά request χωρίς pool.",
+    "Eager loading των πάντων (over-fetch) — φέρε μόνο ό,τι χρειάζεσαι."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν εντοπίζεις και εξαλείφεις N+1 και ξέρεις πότε ο ORM δεν φτάνει."
+/>

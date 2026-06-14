@@ -1,0 +1,200 @@
+# Optimization & Production
+
+Το τελευταίο βήμα: τα built-in εργαλεία που κάνουν μια Next.js app γρήγορη και έτοιμη για production — `next/image`, `next/font`, **Proxy** (το πρώην Middleware), env vars και deployment. Στα interviews εξετάζουν γιατί χρησιμοποιείς το `<Image>` αντί για `<img>` και τι κάνει το Proxy.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να βελτιστοποιείς εικόνες με `next/image`,
+- να φορτώνεις fonts χωρίς layout shift με `next/font`,
+- να χρησιμοποιείς Proxy για redirects/headers/rewrites,
+- να χειρίζεσαι env vars (`NEXT_PUBLIC_` boundary),
+- να κάνεις production build & deploy.
+
+## next/image — γρήγορες, σταθερές εικόνες
+
+Το `<Image>` επεκτείνει το `<img>` με: αυτόματο resize & modern formats (WebP), **αποφυγή layout shift**, lazy loading, και on-demand optimization.
+
+```tsx
+import Image from "next/image";
+import profile from "./profile.png";
+
+// Static import → αυτόματα width/height/blur
+<Image src={profile} alt="Author" placeholder="blur" />;
+
+// Local από public/ ή remote → δηλώνεις width/height
+<Image src="/hero.png" alt="Hero" width={1200} height={600} />;
+```
+
+Για **remote** εικόνες πρέπει να δηλώσεις τα επιτρεπτά URL patterns στο `next.config.ts` (ασφάλεια):
+
+```ts
+const config: NextConfig = {
+  images: {
+    remotePatterns: [{ protocol: "https", hostname: "s3.amazonaws.com", pathname: "/my-bucket/**" }],
+  },
+};
+```
+
+<PredictOutput
+  title="Γιατί width & height;"
+  code={`// Ποια διαφορά κάνει το να δηλώσεις width/height
+// (ή static import) στο <Image>;
+<Image src="/hero.png" alt="Hero" width={1200} height={600} />`}
+  options={[
+    "Αποτρέπει layout shift (CLS) κρατώντας χώρο πριν φορτώσει η εικόνα",
+    "Κάνει την εικόνα να φορτώνει πιο γρήγορα στο δίκτυο",
+    "Είναι μόνο για SEO",
+    "Δεν χρειάζεται ποτέ"
+  ]}
+  correctOptionIndex={0}
+  answer="Αποτρέπει layout shift (CLS)"
+  explanation="Τα width/height (ή τα auto-detected από static import) δίνουν στο Next.js το aspect ratio ώστε να κρατήσει τον χώρο της εικόνας πριν φορτώσει — αποφεύγοντας Cumulative Layout Shift, όπου το περιεχόμενο 'πηδάει' καθώς μπαίνουν εικόνες."
+/>
+
+## next/font — fonts χωρίς network request
+
+Το `next/font` κάνει **built-in self-hosting** των fonts (καμία εξωτερική κλήση σε Google Fonts), χωρίς layout shift:
+
+```tsx
+// app/layout.tsx
+import { Geist } from "next/font/google";
+
+const geist = Geist({ subsets: ["latin"] });
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="el" className={geist.className}>
+      <body>{children}</body>
+    </html>
+  );
+}
+```
+
+Τα fonts είναι scoped στο component· για όλη την app, βάλ' τα στο root layout. Υποστηρίζεται και `next/font/local` για δικά σου αρχεία.
+
+## Proxy (πρώην Middleware)
+
+> Από το Next.js 16, το **Middleware μετονομάστηκε σε Proxy** — ίδια λειτουργικότητα. Αρχείο `proxy.ts` στο root (ή στο `src/`).
+
+Τρέχει **πριν** ολοκληρωθεί ένα request· κάνεις redirect/rewrite/headers ή απαντάς απευθείας:
+
+```ts
+// proxy.ts
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+
+export function proxy(request: NextRequest) {
+  const token = request.cookies.get("token")?.value;
+  if (!token) return NextResponse.redirect(new URL("/login", request.url));
+  return NextResponse.next();
+}
+
+export const config = { matcher: "/dashboard/:path*" }; // πού τρέχει
+```
+
+Το Proxy είναι για ελαφριές αποφάσεις (headers, A/B, optimistic redirects) — **όχι** για αργό data fetching ή ως πλήρες auth/session solution. Επίσης τα `fetch` cache options δεν ισχύουν μέσα στο Proxy.
+
+## Env vars & το NEXT_PUBLIC_ boundary
+
+```txt
+DATABASE_URL=...            → server-only (ΔΕΝ φτάνει στον client)
+NEXT_PUBLIC_API_URL=...     → μπαίνει στο client bundle (public)
+```
+
+Μόνο μεταβλητές με πρόθεμα `NEXT_PUBLIC_` εκτίθενται στον browser· οι υπόλοιπες μένουν στον server (secrets ασφαλή). Ποτέ μην βάζεις secret σε `NEXT_PUBLIC_`.
+
+## Production build & deploy
+
+```bash
+next build   # production build (optimized, prerendering)
+next start   # serve το production build
+```
+
+Το `next build` δείχνει ποια routes είναι static (○) και ποια dynamic. Deploy σε Vercel (zero-config) ή οποιοδήποτε Node host· για static export, κατάλληλη ρύθμιση `output`.
+
+<Exercise
+  question="Γιατί <Image> αντί για σκέτο <img>;"
+  options={[
+    "Δίνει αυτόματο resize/WebP, lazy loading και αποτρέπει layout shift με γνωστό aspect ratio.",
+    "Είναι απλώς συντακτικό sugar χωρίς διαφορά.",
+    "Επειδή το <img> δεν δουλεύει στο Next.js."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το <Image> βελτιστοποιεί μέγεθος/format ανά device, κάνει lazy load, και κρατά τον χώρο της εικόνας (CLS prevention). Το <img> δουλεύει αλλά χάνεις όλα αυτά. Για remote, δηλώνεις remotePatterns για ασφάλεια."
+/>
+
+<Exercise
+  question="Θες να κάνεις redirect σε /login όποιον δεν έχει token, πριν φτάσει στο /dashboard. Πού;"
+  options={[
+    "Σε proxy.ts (πρώην middleware) με matcher για /dashboard, ως optimistic check.",
+    "Σε useEffect κάθε σελίδας dashboard.",
+    "Μόνο σε Server Action."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το Proxy τρέχει πριν το request και είναι ιδανικό για optimistic redirects βάσει cookie/headers. Προσοχή: δεν είναι πλήρες auth solution — η ουσιαστική authorization γίνεται και στο data layer (Server Components/actions)."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«What built-in optimizations does Next.js give you?»
+
+> For images I use `next/image` instead of `<img>`: it serves correctly-sized images in modern formats, lazy-loads, and prevents layout shift because the width and height — automatic with a static import — reserve space before the image loads. Remote images need explicit `remotePatterns` in the config for safety. For fonts, `next/font` self-hosts them with no external request and no layout shift, applied via `className`, usually in the root layout. For request-time logic there's Proxy — which is what Middleware was renamed to in Next.js 16 — a `proxy.ts` that runs before a request to redirect, rewrite, or set headers, scoped with a matcher; I keep it lightweight and not as my real auth solution. Env vars are server-only unless prefixed `NEXT_PUBLIC_`, so secrets stay on the server. Then `next build` produces the optimized output, showing which routes are static versus dynamic.
+
+<Flashcards
+  title="Optimization & production — interview drills"
+  cards={[
+    {
+      question: "Τι δίνει το next/image;",
+      answer: "Auto resize & modern formats (WebP), lazy loading, on-demand optimization, και αποφυγή layout shift (CLS) με γνωστό width/height. Remote → remotePatterns στο config."
+    },
+    {
+      question: "Γιατί width/height στο <Image>;",
+      answer: "Δίνουν aspect ratio ώστε το Next.js να κρατήσει τον χώρο πριν φορτώσει η εικόνα → αποφυγή Cumulative Layout Shift. Static import τα βρίσκει αυτόματα."
+    },
+    {
+      question: "Τι κάνει το next/font;",
+      answer: "Self-hosting fonts (καμία εξωτερική κλήση), χωρίς layout shift. Καλείς ως function, βάζεις className. Για όλη την app, στο root layout. next/font/local για δικά σου."
+    },
+    {
+      question: "Τι είναι το Proxy;",
+      answer: "Το πρώην Middleware (μετονομασία στο Next.js 16). proxy.ts στο root, τρέχει πριν το request για redirect/rewrite/headers, με matcher. Όχι για αργό fetch ή πλήρες auth."
+    },
+    {
+      question: "Το NEXT_PUBLIC_ boundary;",
+      answer: "Μόνο env vars με πρόθεμα NEXT_PUBLIC_ εκτίθενται στον client. Όλες οι άλλες μένουν server-only. Ποτέ secret σε NEXT_PUBLIC_."
+    },
+    {
+      question: "Τι δείχνει το next build;",
+      answer: "Παράγει το production build και αναφέρει ποια routes είναι static (○) και ποια dynamic, με prerendering. next start σερβίρει το build."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Production build με optimized assets & proxy"
+  scenario="Πάρε μια app και κάν' τη production-ready: optimized images/fonts, proxy redirect, σωστά env vars."
+  outcomes={[
+    "Να χρησιμοποιείς next/image & next/font σωστά.",
+    "Να γράφεις proxy.ts με matcher.",
+    "Να χειρίζεσαι env vars με ασφάλεια."
+  ]}
+  steps={[
+    "Αντικατέστησε <img> με <Image> (static imports όπου γίνεται).",
+    "Πρόσθεσε remotePatterns για remote εικόνες.",
+    "Φόρτωσε font με next/font στο root layout.",
+    "proxy.ts που κάνει redirect non-authed σε /login με matcher.",
+    "Χώρισε env vars: secrets server-only, public με NEXT_PUBLIC_. Τρέξε next build."
+  ]}
+  checkpoints={[
+    "Καμία εικόνα δεν προκαλεί layout shift.",
+    "Τα fonts είναι self-hosted (χωρίς εξωτερική κλήση).",
+    "Το proxy τρέχει μόνο στα matched paths· secrets δεν διαρρέουν."
+  ]}
+  mistakes={[
+    "<img> αντί για <Image> (χάνεις optimization & CLS prevention).",
+    "Remote εικόνα χωρίς remotePatterns (build/security error).",
+    "Secret σε NEXT_PUBLIC_ env var.",
+    "Proxy ως πλήρες auth/session solution ή για αργό data fetching."
+  ]}
+  mastery="Το μάθημα — και όλο το Next.js track — πέτυχε όταν παραδίδεις production build με optimized assets, σωστό proxy και ασφαλή env vars."
+/>

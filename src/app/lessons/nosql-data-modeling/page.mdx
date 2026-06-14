@@ -1,0 +1,178 @@
+# NoSQL Data Modeling
+
+Εδώ είναι το πιο δύσκολο mental shift για όποιον έρχεται από SQL: στο NoSQL **δεν** μοντελοποιείς τα δεδομένα και μετά κάνεις queries — μοντελοποιείς γύρω από τα **queries**. Στα interviews, το «σχεδίασε ένα NoSQL schema» αποκαλύπτει αμέσως αν το έχεις καταλάβει.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να σχεδιάζεις από access patterns, όχι από entities,
+- να χρησιμοποιείς denormalization συνειδητά,
+- να εξηγείς single-table design (DynamoDB),
+- να μοντελοποιείς σχέσεις χωρίς joins,
+- να χειρίζεσαι το trade-off duplication vs ενημέρωση.
+
+## SQL vs NoSQL modeling — αντεστραμμένη σειρά
+
+```txt
+SQL:    Entities → normalized tables → όποιο query θες (joins, ad-hoc)
+        "σχεδιάζω τα δεδομένα σωστά, τα queries προκύπτουν"
+
+NoSQL:  Access patterns → model ανά pattern → denormalized
+        "ξέρω ΠΩΣ θα διαβάσω, φτιάχνω το model να το εξυπηρετεί σε 1 read"
+```
+
+Γι' αυτό το πρώτο βήμα σε NoSQL design **δεν** είναι «τι entities έχω;» αλλά **«ποια queries θα τρέχω;»**.
+
+## Denormalization — σκόπιμη επανάληψη
+
+Στο NoSQL, η επανάληψη δεδομένων είναι **εργαλείο**, όχι λάθος. Αντί για join, κρατάς τα δεδομένα μαζί:
+
+```js
+// Αντί για orders + users (join), κρατάς ό,τι χρειάζεται το read μαζί:
+{
+  orderId: "1001",
+  userId: "42",
+  userName: "Ana",        // ← αντιγραμμένο από τον user (denormalized)
+  items: [...],
+  total: 49.90
+}
+```
+
+Το read «δείξε την παραγγελία με όνομα πελάτη» γίνεται **ένα** lookup, χωρίς join. Το κόστος: αν αλλάξει το `userName`, πρέπει να ενημερώσεις πολλά orders (ή να το αφήσεις ως snapshot).
+
+<PredictOutput
+  title="Το κόστος του denormalization"
+  code={`// Document store: κάθε order κρατά αντιγραμμένο το userName.
+// Ο user "Ana" έχει 500 orders και αλλάζει όνομα σε "Anna".
+// Τι πρέπει να συμβεί;`}
+  options={[
+    "Ενημέρωση userName σε 500 orders (ή το αφήνεις ως snapshot)",
+    "Τίποτα — ενημερώνεται αυτόματα",
+    "Η βάση κάνει join αυτόματα",
+    "Διαγράφονται τα orders"
+  ]}
+  correctOptionIndex={0}
+  answer="Ενημέρωση 500 orders (ή snapshot)"
+  explanation="Το denormalized userName δεν ενημερώνεται μόνο του — δεν υπάρχει join/FK. Είτε κάνεις batch update στα 500 orders, είτε (συχνά σωστότερο) το αφήνεις ως SNAPSHOT της στιγμής (το όνομα πελάτη τη στιγμή της παραγγελίας). Η απόφαση εξαρτάται από το αν τα δεδομένα είναι 'τρέχουσα κατάσταση' ή 'ιστορικό γεγονός'."
+/>
+
+## Σχέσεις χωρίς joins
+
+```txt
+1-1, 1-N (bounded)    → embed μέσα στο parent document
+1-N (unbounded)       → reference (id) + ξεχωριστή collection/πίνακας
+N-N                   → references και στις δύο πλευρές, ή denormalized copies
+                        ανά access pattern
+```
+
+Όταν χρειάζεσαι «join», έχεις 3 επιλογές: (1) denormalize ώστε να μη χρειάζεται, (2) δεύτερο query στον app («application-side join»), (3) αναθεώρησε αν το NoSQL είναι σωστό για αυτό.
+
+## Single-table design (DynamoDB)
+
+Το πιο προχωρημένο NoSQL pattern: **όλες οι οντότητες σε έναν πίνακα**, διαφοροποιημένες από το key schema. Στόχος: να φέρνεις σχετιζόμενα δεδομένα διαφορετικών τύπων σε **ένα** query.
+
+```txt
+PK            SK              attributes
+USER#42       PROFILE         name, email
+USER#42       ORDER#1001      total, date
+USER#42       ORDER#1002      total, date
+ORDER#1001    ITEM#1          product, qty
+```
+
+Query `PK = USER#42` → προφίλ + όλες οι παραγγελίες του χρήστη, **μαζί**, σε ένα round-trip. Είναι ισχυρό αλλά δύσκολο: απαιτεί να ξέρεις **όλα** τα access patterns εκ των προτέρων.
+
+## Πότε σταματάς το denormalization
+
+Denormalize για reads, αλλά **όχι ατελείωτα**:
+
+```txt
+- Αν τα δεδομένα αλλάζουν συχνά & αντιγράφονται σε πολλά μέρη → πόνος ενημέρωσης
+- Αν αρχίζεις να συντηρείς δεκάδες copies → ίσως ήθελες relational
+- Snapshot data (τιμή/όνομα τη στιγμή του γεγονότος) → denormalize ελεύθερα
+```
+
+<Exercise
+  question="Ποιο είναι το ΠΡΩΤΟ βήμα σε NoSQL data modeling;"
+  options={[
+    "Να γράψεις τα access patterns (ποια queries θα τρέχουν) — το model τα ακολουθεί.",
+    "Να κάνεις normalize τα δεδομένα σε entities.",
+    "Να διαλέξεις indexes."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σε αντίθεση με το SQL (entities πρώτα), στο NoSQL ξεκινάς από τα access patterns. Το model σχεδιάζεται ώστε κάθε query να είναι γρήγορο lookup — συχνά με denormalization. Χωρίς γνωστά patterns, δεν μπορείς να σχεδιάσεις σωστά."
+/>
+
+<Exercise
+  question="Αποθηκεύεις userName μέσα σε κάθε order (denormalized). Πότε είναι αυτό ΣΩΣΤΟ, όχι bug;"
+  options={[
+    "Όταν θες snapshot της στιγμής (το όνομα όπως ήταν στην παραγγελία) ή όταν το read 'order + πελάτη' πρέπει να είναι ένα lookup.",
+    "Ποτέ — είναι πάντα λάθος.",
+    "Μόνο σε relational βάσεις."
+  ]}
+  correctOptionIndex={0}
+  explanation="Denormalization είναι εργαλείο: εξυπηρετεί reads χωρίς join, και ως snapshot κρατά ιστορική ακρίβεια (το όνομα/τιμή τη στιγμή του γεγονότος). Γίνεται πρόβλημα μόνο όταν είναι 'τρέχουσα κατάσταση' που αλλάζει και πρέπει να συγχρονιστεί σε πολλά μέρη."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How is data modeling different in NoSQL?»
+
+> The order is reversed. In SQL I model entities into normalized tables and then run whatever queries I want, leaning on joins. In NoSQL I start from the access patterns — how will I read this? — and design the model so each query is a single fast lookup, which usually means denormalizing. Duplication is a tool, not a mistake: I copy a user's name into an order so reading "order with customer name" is one lookup with no join, and often that copy is a deliberate snapshot of the value at that moment. Relationships are handled by embedding bounded data, referencing unbounded data, or doing an application-side join. The advanced version is single-table design in DynamoDB, where all entities share one table and the key schema lets me fetch related items of different types in one query — powerful, but it demands knowing every access pattern up front. I stop denormalizing when frequently-changing data starts living in too many places.
+
+<Flashcards
+  title="NoSQL data modeling — interview drills"
+  cards={[
+    {
+      question: "SQL vs NoSQL modeling — η βασική διαφορά;",
+      answer: "SQL: entities → normalized tables → όποιο query. NoSQL: access patterns πρώτα → model ανά pattern → denormalized. Ξεκινάς από το 'πώς θα διαβάσω', όχι από τα δεδομένα."
+    },
+    {
+      question: "Γιατί denormalization στο NoSQL;",
+      answer: "Για να εξυπηρετήσεις reads σε ένα lookup χωρίς join (δεν υπάρχουν joins). Είναι σχεδιαστικό εργαλείο, όχι λάθος. Κόστος: ενημέρωση σε πολλά μέρη αν αλλάξουν τα δεδομένα."
+    },
+    {
+      question: "Denormalization ως snapshot;",
+      answer: "Αντιγράφεις τιμή/όνομα τη στιγμή του γεγονότος (π.χ. όνομα πελάτη στην παραγγελία). Είναι σωστό — ιστορική ακρίβεια. Δεν χρειάζεται sync γιατί είναι 'τι ίσχυε τότε', όχι 'τρέχουσα κατάσταση'."
+    },
+    {
+      question: "Πώς μοντελοποιείς σχέσεις χωρίς joins;",
+      answer: "Bounded 1-N → embed. Unbounded → reference (id) + application-side join. N-N → references ή denormalized copies ανά access pattern. Αν χρειάζεσαι πολλά joins, ίσως θες relational."
+    },
+    {
+      question: "Τι είναι το single-table design;",
+      answer: "DynamoDB pattern: όλες οι οντότητες σε έναν πίνακα, διαχωρισμένες από key schema (PK/SK), ώστε ένα query να φέρνει σχετιζόμενα δεδομένα διαφορετικών τύπων. Ισχυρό αλλά απαιτεί γνωστά access patterns."
+    },
+    {
+      question: "Πότε σταματάς το denormalization;",
+      answer: "Όταν συχνά μεταβαλλόμενα δεδομένα αντιγράφονται σε πολλά μέρη και η ενημέρωση γίνεται πόνος, ή όταν συντηρείς δεκάδες copies — σημάδι ότι ίσως ήθελες relational."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Single-table design με πολλά access patterns"
+  scenario="Μοντελοποίησε ένα app (users, orders, items) σε NoSQL ξεκινώντας από τα access patterns — ιδανικά ως single-table design."
+  outcomes={[
+    "Να σχεδιάζεις από access patterns.",
+    "Να χρησιμοποιείς denormalization & snapshots συνειδητά.",
+    "Να μοντελοποιείς σχέσεις χωρίς joins."
+  ]}
+  steps={[
+    "Γράψε 4-5 access patterns (π.χ. 'προφίλ + παραγγελίες χρήστη').",
+    "Σχεδίασε key schema (PK/SK) που εξυπηρετεί κάθε pattern.",
+    "Αποφάσισε τι denormalize (snapshot vs τρέχουσα κατάσταση).",
+    "Δείξε πώς ένα query φέρνει σχετιζόμενα δεδομένα μαζί.",
+    "Σημείωσε ποια δεδομένα θα πονέσουν αν αλλάξουν (sync cost)."
+  ]}
+  checkpoints={[
+    "Κάθε access pattern εξυπηρετείται από το key schema.",
+    "Το denormalization δικαιολογείται (read perf ή snapshot).",
+    "Δεν υπάρχει εξάρτηση από joins."
+  ]}
+  mistakes={[
+    "Να σχεδιάζεις normalized σαν SQL.",
+    "Denormalization τρέχουσας κατάστασης που απαιτεί sync σε πολλά μέρη.",
+    "Single-table design χωρίς να ξέρεις όλα τα access patterns.",
+    "Να ξεκινάς από entities αντί από queries."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μπορείς να πάρεις access patterns και να φτιάξεις NoSQL model όπου κάθε query είναι ένα γρήγορο lookup."
+/>

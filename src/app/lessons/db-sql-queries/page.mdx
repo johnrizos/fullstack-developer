@@ -1,0 +1,194 @@
+# SQL Queries & Joins
+
+Το SQL είναι **declarative**: λες _τι_ θες, όχι _πώς_ να το φέρει. Στα interviews γράφεις queries στον πίνακα και εξηγείς joins, aggregations και subqueries. Είναι από τα πιο εξεταζόμενα πρακτικά skills.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να γράφεις SELECT με WHERE, ORDER BY, LIMIT,
+- να ξεχωρίζεις INNER/LEFT/RIGHT/FULL JOIN,
+- να κάνεις GROUP BY με aggregations και HAVING,
+- να γράφεις subqueries και CTEs,
+- να καταλαβαίνεις τη σειρά εκτέλεσης ενός query.
+
+## SELECT — τα βασικά
+
+```sql
+SELECT id, email, created_at
+FROM users
+WHERE created_at >= '2026-01-01'
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+## JOIN types — η καρδιά του relational
+
+```sql
+-- INNER: μόνο rows που ταιριάζουν ΚΑΙ στους δύο πίνακες
+SELECT o.id, u.email
+FROM orders o
+INNER JOIN users u ON u.id = o.user_id;
+
+-- LEFT: ΟΛΑ τα orders, + user αν υπάρχει (αλλιώς NULL στις στήλες του user)
+SELECT o.id, u.email
+FROM orders o
+LEFT JOIN users u ON u.id = o.user_id;
+```
+
+```txt
+INNER JOIN  → τομή: rows που ταιριάζουν και στους δύο
+LEFT JOIN   → όλα τα αριστερά + ταιριάσματα δεξιά (NULL αν δεν υπάρχει)
+RIGHT JOIN  → όλα τα δεξιά + ταιριάσματα αριστερά
+FULL JOIN   → όλα από παντού, NULL όπου δεν ταιριάζει
+```
+
+<PredictOutput
+  title="INNER vs LEFT JOIN"
+  code={`-- 10 users, εκ των οποίων 3 ΔΕΝ έχουν κανένα order.
+SELECT u.id
+FROM users u
+LEFT JOIN orders o ON o.user_id = u.id
+WHERE o.id IS NULL;
+-- Τι επιστρέφει αυτό το query;`}
+  options={[
+    "Τους 3 users χωρίς orders",
+    "Τους 7 users με orders",
+    "Και τους 10",
+    "Κανέναν"
+  ]}
+  correctOptionIndex={0}
+  answer="Τους 3 users χωρίς orders"
+  explanation="Το LEFT JOIN κρατά όλους τους users· για όσους δεν έχουν order, οι στήλες του orders είναι NULL. Το WHERE o.id IS NULL φιλτράρει ακριβώς αυτούς → τους 3 χωρίς orders. Είναι το κλασικό 'anti-join' pattern (βρες records χωρίς ταίριασμα)."
+/>
+
+## GROUP BY & aggregations
+
+Aggregation functions (`COUNT`, `SUM`, `AVG`, `MIN`, `MAX`) μαζί με `GROUP BY` συνοψίζουν δεδομένα:
+
+```sql
+SELECT u.id, COUNT(o.id) AS order_count, SUM(o.total) AS lifetime_value
+FROM users u
+LEFT JOIN orders o ON o.user_id = u.id
+GROUP BY u.id
+HAVING COUNT(o.id) >= 5      -- φίλτρο ΜΕΤΑ το grouping
+ORDER BY lifetime_value DESC;
+```
+
+**`WHERE` vs `HAVING`**: το `WHERE` φιλτράρει rows _πριν_ το grouping· το `HAVING` φιλτράρει groups _μετά_ (πάνω σε aggregates).
+
+## Subqueries & CTEs
+
+```sql
+-- Subquery: users με total πάνω από τον μέσο όρο
+SELECT id, email FROM users
+WHERE id IN (
+  SELECT user_id FROM orders GROUP BY user_id HAVING SUM(total) > 1000
+);
+
+-- CTE (Common Table Expression): πιο ευανάγνωστο, βήμα-βήμα
+WITH big_spenders AS (
+  SELECT user_id, SUM(total) AS spent
+  FROM orders GROUP BY user_id
+  HAVING SUM(total) > 1000
+)
+SELECT u.email, b.spent
+FROM big_spenders b
+JOIN users u ON u.id = b.user_id;
+```
+
+Τα CTEs (`WITH`) κάνουν πολύπλοκα queries αναγνώσιμα, σπάζοντάς τα σε λογικά βήματα.
+
+## Σειρά εκτέλεσης (όχι σειρά γραφής!)
+
+```txt
+Γράφεις:    SELECT → FROM → WHERE → GROUP BY → HAVING → ORDER BY → LIMIT
+Εκτελείται: FROM → WHERE → GROUP BY → HAVING → SELECT → ORDER BY → LIMIT
+```
+
+Γι' αυτό δεν μπορείς να χρησιμοποιήσεις alias του `SELECT` μέσα στο `WHERE` (το WHERE τρέχει πριν το SELECT), αλλά μπορείς στο `ORDER BY`.
+
+<Exercise
+  question="Θες όλους τους πελάτες ΚΑΙ το πλήθος orders τους, ακόμα κι αν έχουν 0 orders. Ποιο join;"
+  options={[
+    "LEFT JOIN από users προς orders, με COUNT(orders.id) — δίνει 0 για όσους δεν έχουν.",
+    "INNER JOIN — αρκεί.",
+    "FULL JOIN πάντα."
+  ]}
+  correctOptionIndex={0}
+  explanation="INNER JOIN θα έκοβε τους πελάτες χωρίς orders. LEFT JOIN τους κρατά, και το COUNT(orders.id) μετράει NULLs ως 0 (COUNT αγνοεί NULL). Προσοχή: COUNT(*) θα μετρούσε 1 — χρησιμοποίησε COUNT(στήλη του right πίνακα)."
+/>
+
+<Exercise
+  question="Θες groups με SUM(total) > 1000. WHERE ή HAVING;"
+  options={[
+    "HAVING — φιλτράρει groups μετά το GROUP BY, πάνω σε aggregate.",
+    "WHERE SUM(total) > 1000.",
+    "Και τα δύο κάνουν το ίδιο."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το WHERE τρέχει πριν το grouping και δεν 'βλέπει' aggregates. Φίλτρα πάνω σε aggregate (SUM/COUNT) πάνε σε HAVING, που εφαρμόζεται μετά το GROUP BY."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«Walk me through joins and aggregation in SQL.»
+
+> SQL is declarative — I describe the result I want. Joins combine tables: an inner join keeps only matching rows on both sides, while a left join keeps every row from the left and fills the right with NULLs when there's no match, which lets me do anti-joins like "users with no orders" by filtering `WHERE right.id IS NULL`. For summaries I use aggregations with `GROUP BY`, and I'm careful about `WHERE` versus `HAVING`: `WHERE` filters rows before grouping, `HAVING` filters groups afterward on aggregates. When logic gets nested I prefer CTEs over deep subqueries because they read as sequential steps. And I keep the logical execution order in mind — `FROM`, `WHERE`, `GROUP BY`, `HAVING`, `SELECT`, `ORDER BY` — which is why a SELECT alias works in `ORDER BY` but not in `WHERE`.
+
+<Flashcards
+  title="SQL queries & joins — interview drills"
+  cards={[
+    {
+      question: "INNER vs LEFT JOIN;",
+      answer: "INNER: μόνο rows που ταιριάζουν και στους δύο. LEFT: όλα τα αριστερά + ταιριάσματα δεξιά (NULL όπου δεν υπάρχει). LEFT + WHERE right.id IS NULL = anti-join."
+    },
+    {
+      question: "WHERE vs HAVING;",
+      answer: "WHERE: φιλτράρει rows ΠΡΙΝ το grouping (όχι aggregates). HAVING: φιλτράρει groups ΜΕΤΑ το GROUP BY, πάνω σε aggregate (SUM/COUNT)."
+    },
+    {
+      question: "COUNT(*) vs COUNT(column);",
+      answer: "COUNT(*) μετράει όλα τα rows. COUNT(column) αγνοεί NULLs. Σε LEFT JOIN, COUNT(right.id) δίνει 0 για non-matches· COUNT(*) θα έδινε 1."
+    },
+    {
+      question: "Τι είναι CTE;",
+      answer: "Common Table Expression (WITH ... AS): named προσωρινό result set που κάνει σύνθετα queries αναγνώσιμα, σπάζοντάς τα σε βήματα. Εναλλακτική σε ένθετα subqueries."
+    },
+    {
+      question: "Σειρά λογικής εκτέλεσης;",
+      answer: "FROM → WHERE → GROUP BY → HAVING → SELECT → ORDER BY → LIMIT. Γι' αυτό SELECT alias δουλεύει σε ORDER BY αλλά όχι σε WHERE."
+    },
+    {
+      question: "Πώς βρίσκεις records χωρίς ταίριασμα;",
+      answer: "Anti-join: LEFT JOIN + WHERE right_table.key IS NULL. Ή NOT EXISTS / NOT IN (με προσοχή στα NULLs στο NOT IN)."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Analytics queries"
+  scenario="Γράψε queries πάνω σε users/orders/order_items: top customers, χωρίς orders, revenue ανά μήνα."
+  outcomes={[
+    "Να συνδυάζεις joins με aggregations.",
+    "Να διαλέγεις σωστό join type.",
+    "Να χρησιμοποιείς CTEs για ευαναγνωσία."
+  ]}
+  steps={[
+    "Top 10 customers κατά lifetime value (JOIN + SUM + ORDER BY + LIMIT).",
+    "Users χωρίς κανένα order (LEFT JOIN + IS NULL).",
+    "Πλήθος orders ανά user, συμπεριλαμβανομένων των μηδενικών.",
+    "Revenue ανά μήνα (GROUP BY date_trunc).",
+    "Ξαναγράψε ένα από αυτά με CTE για ευκρίνεια."
+  ]}
+  checkpoints={[
+    "Σωστή χρήση LEFT JOIN όπου χρειάζονται non-matches.",
+    "Aggregate φίλτρα σε HAVING, row φίλτρα σε WHERE.",
+    "COUNT στη σωστή στήλη (όχι * όπου θες μηδενικά)."
+  ]}
+  mistakes={[
+    "INNER JOIN εκεί που χρειάζεσαι όλους (χάνεις τα non-matches).",
+    "Φίλτρο aggregate σε WHERE αντί για HAVING.",
+    "COUNT(*) σε LEFT JOIN δίνει 1 αντί για 0.",
+    "Βαθιά nested subqueries εκεί που ένα CTE θα ήταν ευανάγνωστο."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν γράφεις queries με joins/aggregations με άνεση και εξηγείς το join type που διάλεξες."
+/>

@@ -48,7 +48,7 @@ socket.addEventListener("close", () => {
 | **SSE** (Server-Sent Events) | Μονόδρομο stream server → client πάνω από HTTP | Progress logs, AI token streaming, live feeds |
 | **WebSocket** | Αμφίδρομη persistent σύνδεση | Chat, presence, collaboration, multiplayer |
 
-Το **SSE** αξίζει ειδική μνεία γιατί συχνά είναι η σωστή απάντηση και οι υποψήφιοι το ξεχνούν: απλό HTTP (περνάει από proxies/CDN εύκολα), αυτόματο reconnect από τον browser, ιδανικό όταν η ροή είναι **μόνο προς τον client** — έτσι κάνουν streaming τα ChatGPT-style UIs.
+Το **SSE** αξίζει ειδική μνεία γιατί συχνά είναι η σωστή απάντηση και οι υποψήφιοι το ξεχνούν: απλό HTTP (περνάει εύκολα από proxies/CDN — Content Delivery Network), αυτόματο reconnect από τον browser, ιδανικό όταν η ροή είναι **μόνο προς τον client** — έτσι κάνουν streaming τα ChatGPT-style UIs.
 
 Η ερώτηση-φίλτρο πριν διαλέξεις: **«Χρειάζεται ο server να σπρώξει update στον client αμέσως; Και χρειάζεται ο client να στέλνει συχνά προς τα πίσω;»**
 

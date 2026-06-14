@@ -172,6 +172,39 @@ Login endpoints χωρίς rate limit = δωρεάν password guessing. Βασι
   explanation="Το query param καθρεφτίζεται αυτούσιο στο HTML response — το script του attacker εκτελείται στον browser του θύματος που πάτησε το link. Fix: HTML-escape το q πριν μπει στο template (ή template engine με auto-escaping) + CSP ως δεύτερη γραμμή."
 />
 
+## Σε πραγματικό project: threat modeling ενός feature
+
+Στην πράξη, το security δεν είναι ξεχωριστή φάση — το κάνεις **όταν σχεδιάζεις το feature**. Δες πώς μια ομάδα «επιτίθεται» στο δικό της feature πριν το χτίσει.
+
+Feature: **«ο χρήστης αφήνει σχόλιο σε μια αγγελία, ορατό σε όλους»**. Πριν γραφτεί κώδικας, στο σχεδιασμό, κάποιος ρωτά _«πώς θα το έσπαγα;»_ — και για κάθε απάντηση υπάρχει συγκεκριμένη άμυνα:
+
+```txt
+Επίθεση που σκέφτεσαι           →  Άμυνα στο feature
+──────────────────────────────────────────────────────────────
+"Βάζω <script> στο σχόλιο"      →  React escaping by default· ΟΧΙ
+  (Stored XSS — χτυπά κάθε         dangerouslySetInnerHTML χωρίς DOMPurify
+   επισκέπτη)                      + CSP ως δεύτερη γραμμή
+
+"Στέλνω { isAdmin: true } στο   →  Zod schema με ρητά allowed fields·
+  body" (mass assignment)          ΠΟΤΕ db.create(req.body) ολόκληρο
+
+"Σβήνω σχόλιο άλλου αλλάζοντας  →  ownership check στο query:
+  το /comments/43" (IDOR)          where { id, userId: currentUser.id }
+
+"Postάρω 10.000 σχόλια με       →  rate limit στο POST /comments
+  script" (spam/abuse)             (π.χ. 5/λεπτό ανά user)
+
+"Βάζω ' OR 1=1 -- στο search"   →  parameterized queries (ORM) —
+  (SQL injection)                   τα δεδομένα δεν γίνονται ποτέ κώδικας
+
+"Από evil.com αυτο-submitάρω    →  SameSite=Lax cookie (+ CSRF token
+  POST στο API σου" (CSRF)         αν χρειάζεται)
+```
+
+Αυτό λέγεται **threat modeling** και είναι πραγματική πρακτική: για κάθε feature γράφεις 4-6 «abuse cases» **πριν** το υλοποιήσεις. Πρόσεξε ότι όλες οι άμυνες είναι **server-side** — γιατί ο attacker δεν χρησιμοποιεί το UI σου, στέλνει raw requests με curl.
+
+Σε code review, το ίδιο feature ελέγχεται με αυτή τη λίστα: _«Πού γίνεται validation; Γίνεται escape το output; Υπάρχει ownership check; Είναι parameterized το query;»_. Αν λείπει έστω ένα, το PR δεν περνά.
+
 ## Mini project: secure form handling
 
 Πάρε ένα contact/comment form και θωράκισέ το:

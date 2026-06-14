@@ -1,0 +1,182 @@
+# Transactions, ACID & Isolation
+
+Όταν πολλοί χρήστες γράφουν ταυτόχρονα, χωρίς transactions η βάση καταλήγει σε **ασυνεπή κατάσταση** (χαμένα λεφτά, διπλές κρατήσεις). Στα interviews εξετάζουν τι σημαίνει ACID, τα isolation levels, και πώς λύνεις race conditions.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς ACID με παραδείγματα,
+- να γράφεις transactions (`BEGIN`/`COMMIT`/`ROLLBACK`),
+- να ξεχωρίζεις τα isolation levels και τι ανωμαλίες λύνουν,
+- να αναγνωρίζεις race conditions σε concurrent writes,
+- να χειρίζεσαι deadlocks και lost updates.
+
+## Τι είναι transaction
+
+Μια ομάδα operations που εκτελούνται **ως μία αδιαίρετη μονάδα**: ή όλα ή τίποτα.
+
+```sql
+BEGIN;
+  UPDATE accounts SET balance = balance - 100 WHERE id = 1;  -- χρέωση
+  UPDATE accounts SET balance = balance + 100 WHERE id = 2;  -- πίστωση
+COMMIT;  -- αν κάτι αποτύχει ενδιάμεσα → ROLLBACK, καμία αλλαγή
+```
+
+Χωρίς transaction, αν ο server κρασάρει μετά την πρώτη γραμμή, τα 100 «εξαφανίζονται».
+
+## ACID
+
+```txt
+Atomicity   → όλα ή τίποτα. Αποτυχία ⇒ rollback σε όλο το transaction.
+Consistency → η βάση πάει από έγκυρη κατάσταση σε έγκυρη (constraints τηρούνται).
+Isolation   → concurrent transactions δεν «βλέπουν» η μία τα μισοτελειωμένα της άλλης.
+Durability  → μετά το COMMIT, τα δεδομένα επιβιώνουν ακόμα και σε crash.
+```
+
+## Isolation levels & ανωμαλίες
+
+Όσο πιο αυστηρό το isolation, τόσο λιγότερες ανωμαλίες — αλλά λιγότερο concurrency:
+
+```txt
+READ UNCOMMITTED → επιτρέπει dirty reads (διαβάζεις uncommitted αλλαγές)
+READ COMMITTED   → όχι dirty reads· αλλά non-repeatable reads (default σε Postgres)
+REPEATABLE READ  → ίδιο read δίνει ίδιο αποτέλεσμα· αλλά (κλασικά) phantom rows
+SERIALIZABLE     → σαν να έτρεξαν σειριακά· καμία ανωμαλία, μέγιστο κόστος
+```
+
+```txt
+Ανωμαλίες:
+- Dirty read       → διαβάζεις αλλαγή που μπορεί να γίνει rollback
+- Non-repeatable   → ίδιο SELECT, διαφορετικό αποτέλεσμα (κάποιος έκανε commit ενδιάμεσα)
+- Phantom          → νέα rows εμφανίζονται σε επανάληψη range query
+- Lost update      → δύο reads-modify-writes, η μία πατάει την άλλη
+```
+
+## Το lost update — race condition
+
+<PredictOutput
+  title="Δύο ταυτόχρονες αγορές"
+  code={`-- stock = 1. Δύο χρήστες αγοράζουν ταυτόχρονα:
+-- Και οι δύο εκτελούν:
+SELECT stock FROM products WHERE id = 1;   -- και οι δύο διαβάζουν 1
+-- (app: 1 > 0, οκ)
+UPDATE products SET stock = stock - 1 WHERE id = 1;
+-- Τι stock μένει και τι πρόβλημα;`}
+  options={[
+    "stock = -1 ή 0 με 2 πωλήσεις για 1 τεμάχιο — oversell (lost update / race)",
+    "stock = 1, καμία πώληση",
+    "Η βάση το μπλοκάρει αυτόματα πάντα",
+    "Error και στους δύο"
+  ]}
+  correctOptionIndex={0}
+  answer="Oversell — race condition"
+  explanation="Και οι δύο διάβασαν stock=1 πριν προλάβει ο άλλος να γράψει, οπότε και οι δύο 'πέρασαν' τον έλεγχο και πούλησαν — πούλησες 2 ενώ είχες 1. Λύσεις: atomic update με condition (UPDATE ... SET stock = stock - 1 WHERE id=1 AND stock > 0), SELECT ... FOR UPDATE (row lock), ή υψηλότερο isolation level."
+/>
+
+## Λύσεις σε race conditions
+
+```sql
+-- (α) Atomic conditional update — η βάση κάνει check+write μαζί
+UPDATE products SET stock = stock - 1
+WHERE id = 1 AND stock > 0;   -- 0 affected rows = sold out
+
+-- (β) Pessimistic lock — κλείδωσε το row μέχρι το COMMIT
+BEGIN;
+  SELECT stock FROM products WHERE id = 1 FOR UPDATE;  -- άλλοι περιμένουν
+  UPDATE products SET stock = stock - 1 WHERE id = 1;
+COMMIT;
+
+-- (γ) Optimistic locking — version column
+UPDATE products SET stock = stock - 1, version = version + 1
+WHERE id = 1 AND version = 7;  -- αν κάποιος άλλαξε, version != 7 → retry
+```
+
+## Deadlocks
+
+Δύο transactions περιμένουν locks το ένα του άλλου → κανένα δεν προχωρά. Η βάση συνήθως ανιχνεύει deadlock και κάνει abort το ένα. Πρόληψη: **απόκτησε locks με σταθερή σειρά** (π.χ. πάντα account με μικρότερο id πρώτα), κράτα τα transactions μικρά.
+
+<Exercise
+  question="Δύο χρήστες αγοράζουν το τελευταίο τεμάχιο ταυτόχρονα και πουλάς 2. Πώς το λύνεις;"
+  options={[
+    "Atomic conditional update (WHERE stock > 0) ή SELECT ... FOR UPDATE — η βάση σειριοποιεί το check+write.",
+    "Βάζεις setTimeout στον δεύτερο χρήστη.",
+    "Κάνεις δύο ξεχωριστά SELECT και ένα UPDATE."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το lost update λύνεται κάνοντας το check-and-decrement ατομικό: είτε με conditional UPDATE (WHERE stock > 0, και ελέγχεις affected rows), είτε με FOR UPDATE row lock, είτε με optimistic version. Ο διαχωρισμός read-then-write στον app κώδικα είναι ακριβώς το πρόβλημα."
+/>
+
+<Exercise
+  question="Τι εγγυάται το 'D' (Durability) στο ACID;"
+  options={[
+    "Μετά το COMMIT, τα δεδομένα επιβιώνουν ακόμα και σε crash/power loss.",
+    "Ότι τα transactions τρέχουν σειριακά.",
+    "Ότι δεν υπάρχουν duplicate rows."
+  ]}
+  correctOptionIndex={0}
+  explanation="Durability: μόλις γίνει commit, η αλλαγή είναι μόνιμη και επιβιώνει crashes (μέσω write-ahead log/persistence). Το 'σειριακά' αφορά το Isolation (SERIALIZABLE)· τα duplicates αφορούν constraints."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do transactions and isolation prevent concurrency bugs?»
+
+> A transaction groups operations into an all-or-nothing unit, and ACID describes the guarantees: atomicity rolls everything back on failure, consistency keeps constraints valid, isolation stops concurrent transactions from seeing each other's half-done work, and durability means a committed change survives a crash. Isolation levels trade safety for concurrency — read committed avoids dirty reads, repeatable read stabilizes rows you've read, serializable behaves as if transactions ran one at a time. The classic bug is a lost update: two requests read the same stock of 1, both pass the check, and both decrement, so I oversell. I fix it by making the check-and-write atomic — a conditional `UPDATE ... WHERE stock > 0` and checking affected rows, a `SELECT ... FOR UPDATE` row lock, or optimistic locking with a version column. For deadlocks I acquire locks in a consistent order and keep transactions short.
+
+<Flashcards
+  title="Transactions & isolation — interview drills"
+  cards={[
+    {
+      question: "Τι σημαίνει ACID;",
+      answer: "Atomicity (όλα ή τίποτα), Consistency (έγκυρη→έγκυρη κατάσταση), Isolation (concurrent txns δεν βλέπουν μισοτελειωμένα), Durability (μετά commit επιβιώνει σε crash)."
+    },
+    {
+      question: "Τι είναι το lost update;",
+      answer: "Δύο read-modify-write ταυτόχρονα: και οι δύο διαβάζουν την ίδια τιμή, η μία πατάει την αλλαγή της άλλης. Π.χ. oversell. Λύση: ατομικό check+write."
+    },
+    {
+      question: "Πώς λύνεις race condition σε write;",
+      answer: "(α) Atomic conditional UPDATE (WHERE stock>0). (β) Pessimistic lock SELECT ... FOR UPDATE. (γ) Optimistic locking με version column + retry."
+    },
+    {
+      question: "READ COMMITTED vs SERIALIZABLE;",
+      answer: "READ COMMITTED: όχι dirty reads, αλλά non-repeatable/phantoms (default Postgres). SERIALIZABLE: σαν σειριακή εκτέλεση, καμία ανωμαλία, μέγιστο κόστος/contention."
+    },
+    {
+      question: "Τι είναι deadlock & πώς το αποφεύγεις;",
+      answer: "Δύο txns περιμένουν locks το ένα του άλλου. Η βάση κάνει abort το ένα. Πρόληψη: σταθερή σειρά απόκτησης locks, μικρά transactions."
+    },
+    {
+      question: "Dirty vs non-repeatable vs phantom read;",
+      answer: "Dirty: διαβάζεις uncommitted (μπορεί rollback). Non-repeatable: ίδιο row, διαφορετική τιμή σε επανάληψη. Phantom: νέα rows εμφανίζονται σε επανάληψη range query."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Money transfer που αντέχει concurrency"
+  scenario="Υλοποίησε μεταφορά χρημάτων και αγορά τελευταίου τεμαχίου, ασφαλή σε ταυτόχρονα requests."
+  outcomes={[
+    "Να γράφεις transactions με σωστό rollback.",
+    "Να λύνεις lost updates.",
+    "Να αποφεύγεις deadlocks."
+  ]}
+  steps={[
+    "Transfer με BEGIN/χρέωση/πίστωση/COMMIT και CHECK balance >= 0.",
+    "Δοκίμασε αποτυχία ενδιάμεσα και επιβεβαίωσε rollback.",
+    "Αγορά stock με atomic conditional UPDATE (WHERE stock > 0).",
+    "Δοκίμασε δύο ταυτόχρονες αγορές — όχι oversell.",
+    "Σε multi-account transfer, κλείδωσε accounts με σταθερή σειρά (κατά id)."
+  ]}
+  checkpoints={[
+    "Αποτυχία ⇒ καμία μερική αλλαγή (atomicity).",
+    "Δύο ταυτόχρονες αγορές δεν oversell-ουν.",
+    "Τα locks αποκτώνται με σταθερή σειρά (no deadlock)."
+  ]}
+  mistakes={[
+    "Read-then-write στον app χωρίς ατομικότητα → lost update.",
+    "Καθόλου transaction σε multi-step write.",
+    "Τυχαία σειρά locks → deadlocks.",
+    "Μεγάλα transactions που κρατούν locks πολλή ώρα."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν γράφεις writes που παραμένουν σωστά κάτω από ταυτόχρονη πρόσβαση."
+/>

@@ -1,0 +1,183 @@
+# Choosing a Database Engine
+
+Αφού μάθεις τις έννοιες (SQL, NoSQL, indexing, transactions), έρχεται η πρακτική ερώτηση: **ποιο συγκεκριμένο engine;** PostgreSQL, MySQL, SQLite ή MongoDB; Στα interviews εξετάζουν αν ξέρεις τις πραγματικές διαφορές — όχι preferences, αλλά πότε ποιο και γιατί.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να ξεχωρίζεις embedded από server databases,
+- να εξηγείς πότε SQLite, πότε PostgreSQL/MySQL,
+- να ξέρεις τις βασικές διαφορές PostgreSQL vs MySQL,
+- να τοποθετείς το MongoDB σωστά,
+- να διαλέγεις engine με βάση το project, όχι το hype.
+
+## Embedded vs Server
+
+Η πρώτη μεγάλη διάκριση:
+
+```txt
+EMBEDDED (SQLite)      → η βάση είναι ΕΝΑ ΑΡΧΕΙΟ, τρέχει μέσα στην app σου.
+                         Καμία εγκατάσταση/server. Zero-config.
+
+SERVER (Postgres/MySQL)→ ξεχωριστή διεργασία/μηχάνημα. Πολλοί clients,
+                         concurrency, network access, users/permissions.
+                         MongoDB είναι επίσης server (document).
+```
+
+## SQLite — πότε ένα αρχείο αρκεί
+
+```txt
+✅ Τέλειο για:
+   - Mobile apps (το πιο διαδεδομένο db στον κόσμο — σε κάθε τηλέφωνο)
+   - Desktop apps, CLI tools, embedded devices
+   - Tests / local dev (γρήγορο, χωρίς setup)
+   - Μικρά sites με κυρίως reads / λίγους concurrent writers
+
+❌ Όχι για:
+   - Πολλούς ταυτόχρονους writers (single-writer lock στο write)
+   - Πολλά app servers που μοιράζονται μία βάση μέσω δικτύου
+   - Μεγάλη κλίμακα / high write concurrency
+```
+
+<PredictOutput
+  title="SQLite ή Postgres;"
+  code={`// Web app με 50.000 ταυτόχρονους χρήστες που γράφουν συχνά,
+// πολλά app servers πίσω από load balancer.
+// SQLite ή Postgres;`}
+  options={[
+    "Postgres — server db για concurrency & πολλούς clients",
+    "SQLite — είναι πιο γρήγορο πάντα",
+    "SQLite — λιγότερο setup",
+    "Δεν έχει σημασία"
+  ]}
+  correctOptionIndex={0}
+  answer="Postgres (server, concurrency)"
+  explanation="Το SQLite είναι ένα αρχείο με single-writer lock — δεν είναι φτιαγμένο για πολλούς ταυτόχρονους writers ούτε για πολλά app servers που το μοιράζονται μέσω δικτύου. Για concurrent web app θες server database (Postgres/MySQL). Το SQLite λάμπει σε mobile/desktop/embedded/tests, όχι σε high-concurrency web backend."
+/>
+
+## PostgreSQL vs MySQL
+
+Και τα δύο είναι ώριμα, open-source, relational servers. Οι κύριες διαφορές:
+
+```txt
+PostgreSQL                          MySQL
+- Πιο "feature-rich" & standards     - Ιστορικά πιο απλό/γρήγορο σε reads
+- Άριστο JSONB (document μέσα σε SQL)- JSON support υπάρχει αλλά λιγότερο ισχυρό
+- Advanced types, CTEs, window fns,  - Πολύ διαδεδομένο, τεράστιο ecosystem
+  full-text, extensions (PostGIS)      (WordPress, LAMP stack)
+- Αυστηρότερο σε data integrity      - Replication ώριμο & εύκολο
+- Default επιλογή για νέα projects    - Καλό όταν η ομάδα/stack το ξέρει ήδη
+```
+
+Πρακτικά: για **νέο** project, το PostgreSQL είναι η συνηθισμένη default (ευελιξία + JSONB + standards). Το MySQL όταν το ecosystem/η ομάδα το επιβάλλει ή υπάρχει legacy.
+
+## MongoDB — πότε το προϊόν, όχι μόνο το μοντέλο
+
+Το MongoDB είναι document server. Διάλεξέ το όταν:
+
+```txt
+✅ Το document model ταιριάζει φυσικά (nested, ευέλικτο schema, evolving)
+✅ Access patterns δεμένα με aggregates που διαβάζονται μαζί
+✅ Θες οριζόντια κλίμακα με sharding out of the box
+
+⚠️ Αλλά: για σχεσιακά δεδομένα με transactions/joins, ένα relational
+   engine (ή Postgres+JSONB) είναι συχνά καλύτερη επιλογή.
+```
+
+Συχνό λάθος: επιλογή MongoDB «επειδή είναι μοντέρνο» για δεδομένα που είναι ξεκάθαρα σχεσιακά → καταλήγεις να κάνεις application-side joins που το relational θα έκανε καλύτερα.
+
+## Ο πρακτικός κανόνας
+
+```txt
+Default νέο web app        → PostgreSQL
+Mobile / desktop / tests   → SQLite
+Legacy / LAMP / ομάδα ξέρει → MySQL
+Document-first / ευέλικτο  → MongoDB (ή Postgres JSONB πρώτα)
++ Redis δίπλα για cache/sessions σχεδόν πάντα
+```
+
+<Exercise
+  question="Φτιάχνεις CLI tool που αποθηκεύει δεδομένα τοπικά, χωρίς server. Ποιο engine;"
+  options={[
+    "SQLite — embedded, ένα αρχείο, zero-config, ιδανικό για local/single-user.",
+    "PostgreSQL — χρειάζεσαι server για όλα.",
+    "MongoDB — για κάθε δεδομένο."
+  ]}
+  correctOptionIndex={0}
+  explanation="Για local, single-user, χωρίς server, το SQLite είναι ιδανικό: μια βάση-αρχείο μέσα στην app, χωρίς εγκατάσταση. Server db (Postgres/MySQL/Mongo) θα ήταν περιττή πολυπλοκότητα εδώ."
+/>
+
+<Exercise
+  question="Νέο web app, ομάδα χωρίς προτίμηση, χρειάζεστε σχεσιακά δεδομένα + μερικά ευέλικτα JSON πεδία. Default;"
+  options={[
+    "PostgreSQL — relational + άριστο JSONB για τα ευέλικτα πεδία, standards, ευελιξία.",
+    "SQLite — δεν αντέχει web concurrency.",
+    "MongoDB — αλλά τα σχεσιακά δεδομένα θα γίνουν application-side joins."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το PostgreSQL καλύπτει και τα σχεσιακά (ACID, joins) και τα ευέλικτα πεδία (JSONB) σε ένα engine — η συνηθισμένη default για νέα projects. SQLite δεν είναι για web concurrency· MongoDB θα δυσκόλευε τα σχεσιακά κομμάτια."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«PostgreSQL, MySQL, SQLite, or MongoDB — how do you choose?»
+
+> First, embedded versus server: SQLite is a single file running inside the app — perfect for mobile, desktop, CLI tools, and tests, but it has a single-writer lock, so it's not for high-concurrency web backends or many app servers sharing it. For a concurrent web app I want a server database. Between PostgreSQL and MySQL, both are mature relational servers; I default to PostgreSQL for new projects because of its richer features, standards compliance, and excellent JSONB, which covers flexible fields without leaving SQL — MySQL when the ecosystem or team already lives there. MongoDB I pick when the document model genuinely fits — nested, evolving data read as aggregates — but for clearly relational data with joins and transactions, a relational engine or Postgres with JSONB is usually better than doing application-side joins. And almost always there's Redis alongside for caching and sessions. The choice follows the project, not the hype.
+
+<Flashcards
+  title="Database engines — interview drills"
+  cards={[
+    {
+      question: "Embedded vs server database;",
+      answer: "Embedded (SQLite): ένα αρχείο μέσα στην app, zero-config, single-user/local. Server (Postgres/MySQL/Mongo): ξεχωριστή διεργασία, πολλοί clients, concurrency, network, users/permissions."
+    },
+    {
+      question: "Πότε SQLite;",
+      answer: "Mobile/desktop/CLI/embedded, tests, local dev, μικρά read-heavy sites. ΟΧΙ για πολλούς ταυτόχρονους writers ή πολλά app servers (single-writer lock)."
+    },
+    {
+      question: "PostgreSQL vs MySQL;",
+      answer: "Postgres: feature-rich, standards, άριστο JSONB, advanced types/CTEs/extensions — default για νέα projects. MySQL: απλό, τεράστιο ecosystem (LAMP/WordPress), ώριμο replication — όταν το stack/ομάδα το ξέρει."
+    },
+    {
+      question: "Πότε MongoDB (το προϊόν);",
+      answer: "Όταν το document model ταιριάζει φυσικά (nested, ευέλικτο, evolving schema), aggregates που διαβάζονται μαζί, sharding out of the box. ΟΧΙ για ξεκάθαρα σχεσιακά δεδομένα με joins/transactions."
+    },
+    {
+      question: "Ο πρακτικός default κανόνας;",
+      answer: "Νέο web app → PostgreSQL. Mobile/desktop/tests → SQLite. Legacy/LAMP → MySQL. Document-first → MongoDB (ή Postgres JSONB πρώτα). + Redis δίπλα για cache/sessions."
+    },
+    {
+      question: "Συχνό λάθος επιλογής engine;",
+      answer: "MongoDB 'επειδή είναι μοντέρνο' για σχεσιακά δεδομένα → application-side joins που το relational θα έκανε καλύτερα. Διάλεξε με βάση access patterns & operational κόστος, όχι hype."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Διάλεξε engine για 3 διαφορετικά apps"
+  scenario="Δίνονται 3 projects: ένα mobile note-taking app, ένα high-traffic SaaS, ένα content site με ευέλικτα δεδομένα. Διάλεξε & δικαιολόγησε engine για κάθε ένα."
+  outcomes={[
+    "Να διακρίνεις embedded από server use cases.",
+    "Να διαλέγεις engine με βάση concurrency & access patterns.",
+    "Να σταθμίζεις operational κόστος & expertise."
+  ]}
+  steps={[
+    "Mobile note app: ποιο engine και γιατί (single-user, local).",
+    "High-traffic SaaS: server db — Postgres ή MySQL; δικαιολόγησε.",
+    "Content site με nested/ευέλικτα δεδομένα: MongoDB ή Postgres JSONB;",
+    "Για κάθε ένα, σημείωσε αν χρειάζεται Redis δίπλα.",
+    "Γράψε σε μία πρόταση το 'γιατί' κάθε επιλογής, σαν σε interview."
+  ]}
+  checkpoints={[
+    "Το mobile app διαλέγει SQLite (embedded).",
+    "Το SaaS διαλέγει server db με σαφή λόγο.",
+    "Κάθε επιλογή δικαιολογείται με access patterns, όχι preference."
+  ]}
+  mistakes={[
+    "SQLite για high-concurrency web backend.",
+    "MongoDB για ξεκάθαρα σχεσιακά δεδομένα.",
+    "Επιλογή engine βάσει hype αντί για ανάγκες.",
+    "Αγνόηση του Redis για cache/sessions όπου χρειάζεται."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν διαλέγεις συγκεκριμένο engine για κάθε project και το υπερασπίζεσαι με concurrency, access patterns και operational κόστος."
+/>

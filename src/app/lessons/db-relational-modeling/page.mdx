@@ -1,0 +1,204 @@
+# Relational Modeling & Normalization
+
+Πριν γράψεις ένα query, πρέπει να **σχεδιάσεις σωστά το schema**. Ένα κακό data model το πληρώνεις για χρόνια. Στα interviews το data modeling είναι από τα πιο συχνά: «πώς θα μοντελοποιούσες ένα e-shop;», «1-N vs N-N;», «πότε denormalize;».
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να ορίζεις tables με primary keys και σωστούς τύπους,
+- να μοντελοποιείς σχέσεις 1-1, 1-N, N-N με foreign keys,
+- να εξηγείς normalization (1NF/2NF/3NF) με απλά λόγια,
+- να ξέρεις πότε συνειδητά denormalize,
+- να επιβάλλεις ακεραιότητα με constraints.
+
+## Tables, keys & types
+
+Κάθε row χρειάζεται μοναδική ταυτότητα — το **primary key**:
+
+```sql
+CREATE TABLE users (
+  id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  email       TEXT NOT NULL UNIQUE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+Διάλεξε σωστούς τύπους (`TIMESTAMPTZ` όχι string για ημερομηνίες), βάλε `NOT NULL` όπου το πεδίο είναι υποχρεωτικό, και `UNIQUE` όπου δεν πρέπει να υπάρχουν διπλά (email).
+
+## Σχέσεις με foreign keys
+
+**1-N** (ένας user έχει πολλά orders) — το foreign key μπαίνει στην «πολλά» πλευρά:
+
+```sql
+CREATE TABLE orders (
+  id        BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id   BIGINT NOT NULL REFERENCES users(id),  -- FK → 1 user, N orders
+  total     NUMERIC(10,2) NOT NULL
+);
+```
+
+**N-N** (ένα order έχει πολλά products, ένα product σε πολλά orders) — χρειάζεσαι **join table**:
+
+```sql
+CREATE TABLE order_items (
+  order_id    BIGINT NOT NULL REFERENCES orders(id),
+  product_id  BIGINT NOT NULL REFERENCES products(id),
+  quantity    INT NOT NULL CHECK (quantity > 0),
+  PRIMARY KEY (order_id, product_id)  -- composite key
+);
+```
+
+Το join table είναι το κλειδί για N-N και συχνά κρατά extra δεδομένα της σχέσης (π.χ. `quantity`).
+
+## Normalization — μία αλήθεια, ένα μέρος
+
+Normalization σημαίνει: **μην αποθηκεύεις το ίδιο δεδομένο σε πολλά μέρη**.
+
+Γίνεται σε «επίπεδα» που λέγονται **Normal Forms** (κανονικές μορφές) — το **NF** σημαίνει **Normal Form**. Κάθε επόμενο επίπεδο προσθέτει έναν κανόνα πάνω στο προηγούμενο. Στην πράξη φτάνεις μέχρι το 3NF:
+
+```txt
+1NF (First Normal Form):  κάθε cell έχει μία ατομική τιμή
+   ❌ tags = "red,blue,green"  σε ένα πεδίο
+   ✅ ξεχωριστές γραμμές/πίνακας για τα tags
+
+2NF (Second Normal Form): κάθε non-key στήλη εξαρτάται από ΟΛΟ το (σύνθετο) key,
+                          όχι από μέρος του
+   ❌ σε πίνακα με key (order_id, product_id), το product_name εξαρτάται
+      μόνο από το product_id (μέρος του key)
+   ✅ το product_name πάει σε ξεχωριστό πίνακα products
+
+3NF (Third Normal Form):  καμία non-key στήλη δεν εξαρτάται από άλλη non-key στήλη
+   ❌ orders(id, customer_id, customer_email) — το email εξαρτάται από
+      το customer_id (non-key), όχι από το order id
+   ✅ το customer_email πάει στον πίνακα customers
+```
+
+Πρακτικός κανόνας χωρίς θεωρία: **αν βλέπεις το ίδιο δεδομένο να επαναλαμβάνεται σε πολλές γραμμές, μάλλον θέλει δικό του πίνακα + foreign key.** Αυτό σε φέρνει φυσικά στο 3NF.
+
+<PredictOutput
+  title="Πού είναι το πρόβλημα;"
+  code={`-- Πίνακας orders με ΕΝΣΩΜΑΤΩΜΕΝΑ στοιχεία πελάτη
+orders(
+  id, product, customer_name, customer_email, customer_address
+)
+-- Ο ίδιος πελάτης κάνει 50 παραγγελίες.
+-- Αλλάζει email. Τι πρόβλημα δημιουργείται;`}
+  options={[
+    "Πρέπει να ενημερώσεις 50 rows — update anomaly & κίνδυνος ασυνέπειας",
+    "Κανένα, είναι πιο γρήγορο",
+    "Το email δεν μπορεί να αλλάξει",
+    "Χρειάζεται index"
+  ]}
+  correctOptionIndex={0}
+  answer="Update anomaly — 50 rows"
+  explanation="Τα στοιχεία πελάτη επαναλαμβάνονται σε κάθε order (denormalized). Αλλαγή email απαιτεί update σε όλα τα rows· αν ξεχάσεις ένα, υπάρχει ασυνέπεια. Λύση: ξεχωριστός πίνακας customers και FK customer_id στο orders. Αυτό λύνει η normalization (update/insert/delete anomalies)."
+/>
+
+## Πότε denormalize (συνειδητά)
+
+Normalization = ακεραιότητα· denormalization = ταχύτητα reads (λιγότερα joins). Denormalize **συνειδητά** όταν:
+
+```txt
+- Έχεις read-heavy workload και τα joins είναι bottleneck (μετρημένο)
+- Κρατάς υπολογισμένα/snapshot δεδομένα (π.χ. order_total τη στιγμή αγοράς)
+- Caching/reporting tables που ανανεώνονται ελεγχόμενα
+```
+
+Ο κανόνας: **normalize by default, denormalize when measured**. Το `order_total` ως snapshot είναι θεμιτό — η τιμή του προϊόντος μπορεί να αλλάξει, αλλά η παραγγελία πρέπει να κρατήσει την τιμή της στιγμής.
+
+## Constraints = ακεραιότητα στη βάση
+
+```sql
+CHECK (quantity > 0)              -- κανόνες τιμών
+NOT NULL                          -- υποχρεωτικά πεδία
+UNIQUE (email)                    -- όχι διπλά
+REFERENCES users(id) ON DELETE CASCADE  -- referential integrity
+```
+
+Βάλε τους κανόνες στη **βάση**, όχι μόνο στον application κώδικα — η βάση είναι η τελευταία γραμμή άμυνας ενάντια σε κακά δεδομένα από bugs ή πολλαπλά services.
+
+<Exercise
+  question="Ένα order μπορεί να έχει πολλά products και ένα product μπορεί να είναι σε πολλά orders. Πώς το μοντελοποιείς;"
+  options={[
+    "Join table (π.χ. order_items) με FK προς orders και products, ίσως composite primary key και extra πεδία όπως quantity.",
+    "Βάζεις μια στήλη product_ids ως comma-separated string στο orders.",
+    "Ένα FK product_id στο orders."
+  ]}
+  correctOptionIndex={0}
+  explanation="N-N σχέση → join table. Το comma-separated string σπάει το 1NF (μη ατομικές τιμές, αδύνατα joins/constraints). Ένα μόνο FK θα έκανε τη σχέση 1-N, όχι N-N."
+/>
+
+<Exercise
+  question="Πότε είναι αποδεκτό να αποθηκεύσεις υπολογισμένο/διπλό δεδομένο (denormalization);"
+  options={[
+    "Όταν είναι μετρημένο read bottleneck ή χρειάζεσαι snapshot (π.χ. τιμή τη στιγμή αγοράς), με ελεγχόμενη ενημέρωση.",
+    "Πάντα — είναι πιο γρήγορο.",
+    "Ποτέ — η normalization είναι απόλυτος κανόνας."
+  ]}
+  correctOptionIndex={0}
+  explanation="Normalize by default για ακεραιότητα· denormalize συνειδητά όταν το δικαιολογεί μετρημένη ανάγκη (performance ή snapshot semantics). Όχι ως πρώτο reflex ούτε ποτέ ως απόλυτη απαγόρευση."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you model a new feature's database schema?»
+
+> I start normalized: each entity gets its own table with a primary key, correct column types, and `NOT NULL`/`UNIQUE` where the domain requires it. Relationships go through foreign keys — the FK lives on the "many" side for one-to-many, and many-to-many needs a join table, which often carries attributes of the relationship like quantity. Normalizing to about third normal form means each fact lives in one place, which avoids update, insert, and delete anomalies — if a customer changes their email I update one row, not fifty. I denormalize only deliberately: a measured read bottleneck, or snapshot data like the order total at purchase time that must not change when the product price does. And I push integrity into the database with constraints — checks, uniqueness, referential integrity — because the database is the last line of defense against bad data from bugs or multiple services.
+
+<Flashcards
+  title="Relational modeling — interview drills"
+  cards={[
+    {
+      question: "Πού μπαίνει το FK σε σχέση 1-N;",
+      answer: "Στην 'πολλά' πλευρά. Π.χ. ένας user έχει πολλά orders → orders.user_id REFERENCES users(id). Έτσι κάθε order δείχνει σε έναν user."
+    },
+    {
+      question: "Πώς μοντελοποιείς N-N;",
+      answer: "Με join table που έχει FK προς τους δύο πίνακες (συχνά composite primary key) και τυχόν extra δεδομένα της σχέσης (π.χ. quantity). Όχι comma-separated strings."
+    },
+    {
+      question: "Τι λύνει η normalization;",
+      answer: "Update/insert/delete anomalies: κρατάει κάθε δεδομένο σε ένα μέρος. 1NF (ατομικές τιμές), 2NF (εξάρτηση από όλο το key), 3NF (καμία non-key→non-key εξάρτηση)."
+    },
+    {
+      question: "Πότε denormalize;",
+      answer: "Συνειδητά: μετρημένο read bottleneck (πολλά joins), snapshot δεδομένα (τιμή τη στιγμή αγοράς), reporting/cache tables. Normalize by default, denormalize when measured."
+    },
+    {
+      question: "Γιατί constraints στη βάση και όχι μόνο στον κώδικα;",
+      answer: "Η βάση είναι η τελευταία γραμμή άμυνας: πιάνει κακά δεδομένα από bugs ή πολλαπλά services. CHECK, NOT NULL, UNIQUE, FK referential integrity."
+    },
+    {
+      question: "Τι είναι ON DELETE CASCADE;",
+      answer: "Referential action: όταν διαγράφεται το parent row, διαγράφονται αυτόματα τα children που το αναφέρουν. Εναλλακτικά RESTRICT/SET NULL ανάλογα με τη σημασιολογία."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Σχεδιασμός schema για e-shop"
+  scenario="Μοντελοποίησε users, products, orders και order_items με σωστές σχέσεις και constraints."
+  outcomes={[
+    "Να ορίζεις tables με keys και τύπους.",
+    "Να μοντελοποιείς 1-N και N-N σωστά.",
+    "Να επιβάλλεις ακεραιότητα με constraints."
+  ]}
+  steps={[
+    "users & products με primary keys, NOT NULL, UNIQUE email.",
+    "orders με FK user_id (1-N).",
+    "order_items join table (N-N) με quantity & composite key.",
+    "Πρόσθεσε CHECK (quantity > 0) και ON DELETE συμπεριφορά.",
+    "Αποφάσισε ποια πεδία είναι snapshots (π.χ. price_at_purchase) και γιατί."
+  ]}
+  checkpoints={[
+    "Η N-N σχέση λύνεται με join table, όχι list σε στήλη.",
+    "Τα υποχρεωτικά/μοναδικά πεδία έχουν constraints.",
+    "Τα snapshot πεδία δικαιολογούνται (όχι τυχαία denormalization)."
+  ]}
+  mistakes={[
+    "Comma-separated values σε ένα πεδίο (σπάει 1NF).",
+    "Επανάληψη στοιχείων πελάτη σε κάθε order (update anomaly).",
+    "Validation μόνο στον κώδικα, χωρίς db constraints.",
+    "Τυφλή denormalization 'για ταχύτητα' χωρίς μέτρηση."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν σχεδιάζεις normalized schema με σωστές σχέσεις και ξέρεις να δικαιολογήσεις κάθε denormalization."
+/>

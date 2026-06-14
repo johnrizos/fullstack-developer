@@ -1,0 +1,212 @@
+# Hooks in Depth
+
+Πέρα από `useState` και `useEffect`, τα υπόλοιπα hooks ξεχωρίζουν τον junior από τον mid/senior. Στα interviews ρωτάνε: «`useRef` vs state;», «πότε `useReducer`;», «τι κάνει το `useCallback`;», «γιατί υπάρχουν οι κανόνες των hooks;».
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να ξεχωρίζεις `useRef` από state,
+- να διαλέγεις `useReducer` όταν το state γίνεται σύνθετο,
+- να εξηγείς `useMemo` vs `useCallback`,
+- να γράφεις custom hooks που επαναχρησιμοποιούν λογική,
+- να εξηγείς γιατί τα hooks καλούνται πάντα top-level.
+
+## Οι κανόνες των hooks — και το γιατί
+
+```tsx
+// ✅ πάντα top-level, ίδια σειρά κάθε render
+const [a, setA] = useState(0);
+const [b, setB] = useState(0);
+
+// ❌ ποτέ μέσα σε if/loop/condition
+if (loggedIn) {
+  const [name, setName] = useState(""); // σπάει τη σειρά
+}
+```
+
+Το React αντιστοιχίζει hooks με τη **σειρά κλήσης** τους, όχι με όνομα. Hook μέσα σε `if` αλλάζει τη σειρά μεταξύ renders → το React δίνει το state του ενός hook σε άλλο. Γι' αυτό: top-level, μόνο σε components/custom hooks.
+
+## useRef — τιμή που επιβιώνει χωρίς re-render
+
+Το `useRef` κρατά μια mutable τιμή που **δεν** προκαλεί re-render όταν αλλάζει. Δύο χρήσεις: (1) πρόσβαση σε DOM element, (2) «instance variable» (timer id, προηγούμενη τιμή).
+
+```tsx
+const inputRef = useRef<HTMLInputElement>(null);
+const renderCount = useRef(0);
+
+renderCount.current += 1; // αλλαγή χωρίς re-render
+inputRef.current?.focus(); // DOM access
+
+<input ref={inputRef} />;
+```
+
+<PredictOutput
+  title="useRef vs useState"
+  code={`function Timer() {
+  const [count, setCount] = useState(0);
+  const intervalRef = useRef<number>(0);
+
+  function start() {
+    intervalRef.current = setInterval(() => {
+      setCount((c) => c + 1);
+    }, 1000);
+  }
+
+  function stop() {
+    clearInterval(intervalRef.current);
+  }
+  // Γιατί το interval id πάει σε ref και όχι σε state;
+}`}
+  options={[
+    "Γιατί η αλλαγή του δεν πρέπει να προκαλεί re-render",
+    "Γιατί τα refs είναι πιο γρήγορα από state",
+    "Γιατί το setInterval επιστρέφει string",
+    "Δεν υπάρχει διαφορά"
+  ]}
+  correctOptionIndex={0}
+  answer="Δεν θέλουμε re-render"
+  explanation="Το interval id είναι 'instance variable' — το χρειαζόμαστε για να κάνουμε clearInterval, αλλά η τιμή του δεν επηρεάζει το UI. Αν το βάζαμε σε state, κάθε ανάθεση θα προκαλούσε περιττό re-render. Κανόνας: αν δεν renderάρεται, πάει σε ref."
+/>
+
+## useReducer — όταν το state γίνεται σύνθετο
+
+Όταν έχεις πολλά συσχετισμένα κομμάτια state ή σύνθετες μεταβάσεις, το `useReducer` κεντρικοποιεί τη λογική σε μία pure function.
+
+```tsx
+type State = { count: number; step: number };
+type Action = { type: "inc" } | { type: "dec" } | { type: "setStep"; step: number };
+
+function reducer(state: State, action: Action): State {
+  switch (action.type) {
+    case "inc": return { ...state, count: state.count + state.step };
+    case "dec": return { ...state, count: state.count - state.step };
+    case "setStep": return { ...state, step: action.step };
+  }
+}
+
+const [state, dispatch] = useReducer(reducer, { count: 0, step: 1 });
+dispatch({ type: "inc" });
+```
+
+Πλεονέκτημα: όλες οι μεταβάσεις σε ένα σημείο, testable χωρίς React (καθαρή function), προβλέψιμες. Διάλεξέ το όταν τα `useState` πολλαπλασιάζονται και αλληλεξαρτώνται.
+
+## useMemo vs useCallback
+
+```tsx
+// useMemo: cache-άρει το ΑΠΟΤΕΛΕΣΜΑ ακριβού υπολογισμού
+const sorted = useMemo(() => items.slice().sort(compare), [items]);
+
+// useCallback: cache-άρει την ΙΔΙΑ τη function reference
+const handleClick = useCallback(() => onSelect(id), [onSelect, id]);
+```
+
+`useCallback(fn, deps)` είναι ισοδύναμο με `useMemo(() => fn, deps)`. Χρησιμεύουν (1) για να αποφύγεις ακριβό recompute, (2) για σταθερές references όταν περνάς props σε `React.memo` children ή σε dependency arrays. Δεν τα βάζεις παντού — έχουν δικό τους κόστος.
+
+## Custom hooks — επαναχρησιμοποίηση λογικής
+
+Ένα custom hook είναι μια function που ξεκινά με `use` και καλεί άλλα hooks. Βγάζει stateful λογική έξω από το component.
+
+```tsx
+function useToggle(initial = false) {
+  const [on, setOn] = useState(initial);
+  const toggle = useCallback(() => setOn((v) => !v), []);
+  return [on, toggle] as const;
+}
+
+function useDebounce<T>(value: T, ms: number) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), ms);
+    return () => clearTimeout(id);
+  }, [value, ms]);
+  return debounced;
+}
+```
+
+Τα custom hooks μοιράζονται **λογική**, όχι state — κάθε χρήση έχει το δικό της ανεξάρτητο state.
+
+<Exercise
+  question="Πότε διαλέγεις useReducer αντί για useState;"
+  options={[
+    "Όταν το state έχει πολλά αλληλοεξαρτώμενα κομμάτια ή σύνθετες μεταβάσεις — ο reducer τα κεντρικοποιεί σε μια testable pure function.",
+    "Πάντα — το useReducer είναι πιο γρήγορο.",
+    "Μόνο όταν χρησιμοποιείς Redux."
+  ]}
+  correctOptionIndex={0}
+  explanation="useReducer λάμπει όταν οι μεταβάσεις του state είναι σύνθετες ή συσχετισμένες: όλη η λογική σε ένα switch, εύκολα testable, προβλέψιμη. Για απλό ανεξάρτητο state, το useState είναι αρκετό."
+/>
+
+<Exercise
+  question="Γιατί δεν καλείς hooks μέσα σε if;"
+  options={[
+    "Το React ταιριάζει hooks με τη σειρά κλήσης· condition αλλάζει τη σειρά μεταξύ renders και το state πάει σε λάθος hook.",
+    "Επειδή το if κάνει τον κώδικα πιο αργό.",
+    "Επειδή τα hooks δεν επιτρέπουν boolean."
+  ]}
+  correctOptionIndex={0}
+  explanation="Τα hooks ταυτοποιούνται με τη θέση/σειρά τους ανά render. Αν ένα hook μπει σε if, μερικά renders το καλούν και άλλα όχι → η σειρά αλλάζει → το React αντιστοιχίζει λάθος state. Πάντα top-level."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«useRef vs state, and why the rules of hooks?»
+
+> State drives rendering — changing it triggers a re-render. A ref holds a mutable value that survives across renders but does not cause a re-render, so I use it for things the UI doesn't display: a DOM node to focus, a timer id, the previous value. The rules of hooks exist because React identifies each hook by call order, not by name. If a hook sits inside a condition, some renders call it and some don't, the order shifts, and React hands one hook's state to another — that's why hooks must be called unconditionally at the top level. When state becomes several interdependent pieces with complex transitions, I reach for `useReducer` to centralize them in a pure, testable function, and I extract reusable stateful logic into custom hooks, which share logic, not state.
+
+<Flashcards
+  title="Hooks in depth — interview drills"
+  cards={[
+    {
+      question: "useRef vs useState;",
+      answer: "State: αλλαγή → re-render, οδηγεί το UI. Ref: mutable τιμή που επιβιώνει χωρίς re-render — για DOM access ή instance variables (timer id, previous value). Αν δεν renderάρεται, πάει σε ref."
+    },
+    {
+      question: "Πότε useReducer;",
+      answer: "Όταν το state έχει πολλά αλληλοεξαρτώμενα κομμάτια ή σύνθετες μεταβάσεις. Κεντρικοποιεί τη λογική σε pure reducer function — testable, προβλέψιμη, όλες οι μεταβάσεις σε ένα σημείο."
+    },
+    {
+      question: "useMemo vs useCallback;",
+      answer: "useMemo(fn, deps): cache-άρει το ΑΠΟΤΕΛΕΣΜΑ. useCallback(fn, deps): cache-άρει την ίδια τη function (= useMemo(() => fn)). Για ακριβούς υπολογισμούς και σταθερές references σε memo children/deps."
+    },
+    {
+      question: "Τι είναι custom hook;",
+      answer: "Function που ξεκινά με 'use' και καλεί άλλα hooks, για να επαναχρησιμοποιήσεις stateful λογική (useToggle, useDebounce, useFetch). Μοιράζεται λογική, όχι state — κάθε χρήση έχει δικό της state."
+    },
+    {
+      question: "Οι κανόνες των hooks;",
+      answer: "(1) Μόνο top-level — ποτέ σε if/loop/nested function. (2) Μόνο μέσα σε React components ή custom hooks. Γιατί: το React τα ταιριάζει με τη σειρά κλήσης."
+    },
+    {
+      question: "useLayoutEffect vs useEffect;",
+      answer: "useEffect: τρέχει async μετά το paint. useLayoutEffect: τρέχει sync πριν το paint (για μετρήσεις DOM/αποφυγή flicker). Default useEffect· useLayoutEffect μόνο όταν χρειάζεσαι συγχρονισμό πριν ζωγραφίσει ο browser."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Custom hooks toolkit"
+  scenario="Φτιάξε useToggle, useDebounce και useFetch, και ένα reducer-based counter με step."
+  outcomes={[
+    "Να εξάγεις stateful λογική σε custom hooks.",
+    "Να χρησιμοποιείς useRef για instance variables.",
+    "Να μοντελοποιείς σύνθετο state με reducer."
+  ]}
+  steps={[
+    "useToggle(initial) → [on, toggle] με useCallback.",
+    "useDebounce(value, ms) με cleanup του timer.",
+    "useFetch(url) με loading/error/data και abort.",
+    "Reducer counter με actions inc/dec/setStep.",
+    "Χρησιμοποίησε useRef για να μετρήσεις πόσες φορές έγινε render."
+  ]}
+  checkpoints={[
+    "Κανένα hook δεν καλείται μέσα σε condition.",
+    "Το useFetch ακυρώνει το προηγούμενο request.",
+    "Ο reducer είναι pure και testable χωρίς React."
+  ]}
+  mistakes={[
+    "Hook μέσα σε if/loop.",
+    "Βάζεις σε state κάτι που δεν renderάρεται (πάει σε ref).",
+    "useCallback/useMemo παντού χωρίς λόγο (overhead χωρίς όφελος).",
+    "Custom hook που δεν ξεκινά με 'use' (χάνεται το lint/σύμβαση)."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν εξάγεις επαναχρησιμοποιήσιμη λογική σε custom hooks και διαλέγεις σωστά ref/state/reducer."
+/>

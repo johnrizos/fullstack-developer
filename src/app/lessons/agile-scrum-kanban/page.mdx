@@ -1,217 +1,256 @@
 # Agile, Scrum & Kanban
 
-Οι περισσότερες εταιρείες δεν δουλεύουν απλώς με “πάρε ένα task και γράψε κώδικα”. Δουλεύουν με board, tickets, priorities, reviews, standups και releases.
+Οι ορισμοί («Scrum είναι framework με sprints») δεν σε βοηθούν την πρώτη μέρα στη δουλειά. Αυτό που χρειάζεσαι είναι να **δεις ένα πραγματικό feature να ταξιδεύει** από «ιδέα» μέχρι «σε production». Γι' αυτό όλο αυτό το μάθημα παρακολουθεί **μία ομάδα, ένα feature, ένα sprint** — μέρα με τη μέρα. Τους ορισμούς θα τους μάθεις στην πορεία, μέσα από το παράδειγμα.
 
-Δεν χρειάζεται να γίνεις project manager. Χρειάζεται όμως να καταλαβαίνεις πώς κινείται η δουλειά μέσα σε μια ομάδα.
-
-## Agile
-
-Agile είναι τρόπος σκέψης: μικρά βήματα, συχνό feedback, προσαρμογή όταν αλλάζουν οι ανάγκες.
-
-Στην πράξη σημαίνει:
-
-- σπάμε τη δουλειά σε μικρότερα κομμάτια,
-- παραδίδουμε συχνά,
-- παίρνουμε feedback νωρίς,
-- διορθώνουμε πορεία αντί να περιμένουμε μήνες.
-
-Agile δεν σημαίνει “χωρίς πλάνο”. Σημαίνει ότι το πλάνο αλλάζει με βάση πραγματική πληροφορία.
-
-## Scrum
-
-Scrum είναι πιο structured framework. Συνήθως δουλεύει με sprints, π.χ. 1 ή 2 εβδομάδες.
-
-Συχνά Scrum events:
-
-- **Sprint planning**: τι θα δουλέψουμε στο sprint.
-- **Daily standup**: σύντομο sync για πρόοδο και blockers.
-- **Sprint review**: τι παραδόθηκε.
-- **Retrospective**: τι πήγε καλά και τι βελτιώνουμε.
-
-Συχνά roles:
-
-- **Product Owner**: προτεραιότητες και product direction.
-- **Scrum Master**: βοηθά τη διαδικασία και αφαιρεί blockers.
-- **Developers**: χτίζουν, τεστάρουν και παραδίδουν το increment.
-
-## Kanban
-
-Kanban είναι πιο flow-based. Η δουλειά κινείται σε columns όπως:
+## Η σκηνή: μια αληθινή ομάδα
 
 ```txt
-Backlog -> Ready -> In Progress -> Code Review -> Testing -> Done
+Προϊόν:   "JobBoard" — site αγγελιών εργασίας
+Ομάδα:    Maria (Product Owner), Kostas (Scrum Master / senior),
+          Εσύ (junior dev), Lena (dev), Nikos (QA)
+Ρυθμός:   2-week sprints, board στο Jira/Linear
+Εργαλείο: GitHub για PRs, Slack για επικοινωνία
 ```
 
-Το βασικό concept είναι το **WIP limit**: Work In Progress limit. Αν όλοι ανοίγουν 5 tasks ταυτόχρονα, πολλά ξεκινάνε και λίγα τελειώνουν.
+Το feature αυτού του sprint: **«ο χρήστης αποθηκεύει μια αναζήτηση και ειδοποιείται για νέες αγγελίες»**. Δες πώς γίνεται πραγματικότητα.
 
-Καλό Kanban board δείχνει:
+## Βήμα 0 — Από «ιδέα» σε «ticket» (backlog refinement)
 
-- τι είναι έτοιμο για δουλειά,
-- τι δουλεύεται τώρα,
-- τι είναι blocked,
-- τι περιμένει review,
-- τι έχει ολοκληρωθεί.
-
-## User stories
-
-Πολλά tickets γράφονται σαν user stories:
+Η Maria (PO) έχει στο **backlog** μια γραμμή: _«saved searches με notifications»_. Είναι πολύ μεγάλο για να το πιάσει ένας dev — λέγεται **epic**. Σε ένα μισάωρο meeting (**refinement/grooming**) η ομάδα το σπάει σε μικρότερα **user stories**:
 
 ```txt
-As a user,
-I want to reset my password,
-so that I can regain access to my account.
+EPIC: Saved searches
+├─ Story 1: User αποθηκεύει μια αναζήτηση  ← το παίρνεις ΕΣΥ
+├─ Story 2: User βλέπει & σβήνει saved searches
+└─ Story 3: Nightly job στέλνει email για νέα matches
 ```
 
-Αυτό βοηθά να βλέπεις τη δουλειά από την πλευρά του χρήστη, όχι μόνο σαν τεχνική λίστα.
-
-## Acceptance criteria
-
-Acceptance criteria είναι το checklist που λέει πότε ένα ticket θεωρείται done.
-
-Παράδειγμα:
+Κάθε story γράφεται από την οπτική του **χρήστη**, όχι σαν τεχνική εντολή:
 
 ```txt
-Ticket: Add password reset form
+TICKET JOB-142
+Story: As a job seeker, I want to save my current search filters,
+       so that I don't have to re-enter them every visit.
 
 Acceptance criteria:
-- User can enter email.
-- Invalid email shows validation error.
-- Submit calls the password reset endpoint.
-- Success state appears after valid request.
-- Loading state disables the submit button.
+  ✓ "Save search" button εμφανίζεται όταν υπάρχουν ενεργά filters
+  ✓ Click → η αναζήτηση αποθηκεύεται για τον logged-in user
+  ✓ Μη logged-in user → prompt για login
+  ✓ Επιτυχία δείχνει confirmation· διπλό save δεν δημιουργεί duplicate
+  ✓ Λάθος/σφάλμα δείχνει error message, όχι σιωπή
+
+Out of scope: το email notification (Story 3), η σελίδα διαχείρισης (Story 2)
+Estimate: 3 points
 ```
 
-Αν δεν υπάρχουν acceptance criteria, ρώτα πριν ξεκινήσεις. Αλλιώς μπορεί να φτιάξεις κάτι σωστό τεχνικά αλλά λάθος για το product.
+Τα **acceptance criteria** είναι το συμβόλαιό σου: όταν ισχύουν όλα, το ticket είναι «done». Το **out of scope** σε προστατεύει από το να φτιάξεις μισό feature που δεν ζητήθηκε.
 
-## Definition of done
+> **Story points**: σχετική εκτίμηση δυσκολίας (όχι ώρες). 1 = τετριμμένο, 3 = μέτριο, 8 = «πρέπει να το σπάσουμε». Η ομάδα ψηφίζει — αν εσύ λες 2 και η Lena 8, η συζήτηση **γιατί** αποκαλύπτει κρυμμένη πολυπλοκότητα.
 
-Definition of done είναι team agreement. Για ένα ticket μπορεί να σημαίνει:
+## Βήμα 1 — Sprint planning (Δευτέρα, εβδομάδα 1)
 
-- ο κώδικας έγινε implement,
-- πέρασαν lint/tests/build,
-- έγινε code review,
-- προστέθηκαν basic tests,
-- ενημερώθηκε documentation αν χρειάζεται,
-- έγινε deploy ή είναι ready για deploy.
+Στο **sprint planning** η ομάδα διαλέγει από το backlog τι **χωράει** σε 2 εβδομάδες (το **capacity** της). Δεν παίρνεις ό,τι θες — δεσμεύεσαι σε ένα ρεαλιστικό σύνολο:
 
-Το “δούλεψε στο laptop μου” δεν είναι definition of done.
+```txt
+SPRINT 24 — Commitment (σύνολο 18 points για 4 devs)
+  JOB-142  Save a search           3pts  → Εσύ
+  JOB-143  Manage saved searches   5pts  → Lena
+  JOB-150  Fix pagination bug      2pts  → Εσύ
+  JOB-138  Nightly email job       8pts  → Kostas
+```
 
-## Πώς δουλεύεις σαν developer
+Το **sprint goal** σε μία πρόταση: _«Ο χρήστης μπορεί να αποθηκεύει και να βλέπει saved searches»_. Το Story 3 (email) μπορεί να γλιστρήσει στο επόμενο sprint — γι' αυτό σπάσαμε το epic.
 
-Όταν πάρεις ticket:
+## Βήμα 2 — Η ζωή του JOB-142 στο board, μέρα με τη μέρα
 
-1. Διάβασε user story και acceptance criteria.
-2. Εντόπισε ανοιχτές ερωτήσεις.
-3. Σπάσε τη δουλειά σε μικρά βήματα.
-4. Κράτα το PR focused.
-5. Γράψε τι άλλαξες και τι έλεγξες.
-6. Μετακίνησε σωστά το ticket στο board.
+Το board έχει στήλες· το ticket κινείται από αριστερά προς τα δεξιά. Παρακολούθησε:
 
-Αν κολλήσεις, μη μένεις σιωπηλός. Στο standup πες καθαρά blocker και τι χρειάζεσαι.
+```txt
+Backlog | To Do | In Progress | Code Review | QA | Done
+```
 
-## Common mistakes
+**Δευτέρα απόγευμα** — Παίρνεις το JOB-142, το σέρνεις σε **In Progress**. Πρώτα διαβάζεις ξανά τα acceptance criteria και εντοπίζεις μια **ανοιχτή ερώτηση**: «τι ακριβώς αποθηκεύουμε — τα filters ή το URL;». Δεν μαντεύεις — ρωτάς τη Maria στο Slack. Απαντά: «τα filters ως JSON». Τώρα ξέρεις τι χτίζεις.
 
-- Ξεκινάς ticket χωρίς να καταλάβεις το expected behavior.
-- Ανοίγεις πολλά tasks ταυτόχρονα και δεν τελειώνεις κανένα.
-- Λες “done” πριν περάσουν checks/review.
-- Δεν ενημερώνεις το board, άρα η ομάδα δεν ξέρει την πραγματική κατάσταση.
-- Φτιάχνεις implementation που δεν καλύπτει acceptance criteria.
+**Τρίτη** — Φτιάχνεις το migration (πίνακας `saved_searches`), το API endpoint και το κουμπί. Στο μέσο της μέρας **κολλάς**: το endpoint χρειάζεται τον current user, αλλά δεν ξέρεις πώς η ομάδα παίρνει το session. Αυτό είναι **blocker**.
 
-## Mini project: task board workflow
+**Τετάρτη, 10:00 — Daily standup** (15 λεπτά, όρθιοι). Κάθε άτομο λέει 3 πράγματα. Πραγματικός διάλογος:
 
-Φτιάξε ένα μικρό Kanban board για το capstone project σου με columns:
+```txt
+Lena:   "Χθες τελείωσα το UI του JOB-143. Σήμερα ξεκινάω το delete flow.
+         Κανένα blocker."
+Εσύ:    "Χθες έφτιαξα το migration και το κουμπί του JOB-142. ΜΠΛΟΚΑΡΩ:
+         δεν ξέρω πώς παίρνουμε τον current user στο API layer."
+Kostas: "Έχουμε ένα getCurrentUser() helper στο lib/auth. Δείξε μου
+         μετά το standup, 2 λεπτά."
+Nikos:  "Σήμερα ετοιμάζω test cases για το saved-search flow."
+```
 
-1. Backlog.
-2. Ready.
-3. In Progress.
-4. Code Review.
-5. Done.
+Πρόσεξε: το standup **δεν** είναι report στον manager. Είναι sync για να **βγουν τα blockers στην επιφάνεια**. Το δικό σου blocker λύθηκε σε 2 λεπτά αντί να χαθεί μισή μέρα. Αυτό είναι όλο το νόημα.
 
-Γράψε 5 tickets:
+**Τετάρτη μεσημέρι** — Ξεμπλοκάρεις, τελειώνεις τη λογική, γράφεις 2 tests. Ανοίγεις **Pull Request** και σέρνεις το ticket στο **Code Review**:
 
-- Login page.
-- Project list.
-- Create project form.
-- Task status filter.
-- Deployment checklist.
+```txt
+PR #341: Add "save search" feature (JOB-142)
 
-Για κάθε ticket γράψε 2-4 acceptance criteria.
+What & why:
+  Logged-in users can save current filters. Closes JOB-142.
 
-## Interview answer template
+How it maps to acceptance criteria:
+  ✓ Button shows only with active filters (SearchBar.tsx)
+  ✓ POST /api/saved-searches με ownership (userId from session)
+  ✓ Unique constraint (user_id, filters_hash) → no duplicates
+  ✓ 401 για guests → frontend δείχνει login prompt
+  ✓ Error toast σε failure
 
-> I am comfortable working with Scrum or Kanban boards. I read acceptance criteria, ask clarifying questions early, keep work in progress limited, open focused pull requests, and use standups to surface blockers rather than just report activity.
+Testing: unit για το dedup, manual για το guest flow
+Screenshots: [confirmation toast]
+```
+
+Πρόσεξε ότι το PR **απαντά ένα-ένα στα acceptance criteria** — έτσι ο reviewer ξέρει ότι κάλυψες το ticket, όχι κάτι άλλο.
+
+**Πέμπτη** — Ο Kostas κάνει review. Σχόλιο: «το filters_hash είναι καλό, αλλά τι γίνεται αν αλλάξει η σειρά των filters;». Σωστή παρατήρηση — κάνεις normalize πριν το hash, push, ο Kostas approve-άρει. Merge. Το ticket πάει **QA**.
+
+**Παρασκευή** — Ο Nikos (QA) δοκιμάζει: αποθηκεύει, ξανα-αποθηκεύει (no duplicate ✓), δοκιμάζει ως guest (login prompt ✓), προκαλεί error (toast ✓). Όλα τα acceptance criteria περνούν → **Done**. 🎉
+
+## Βήμα 3 — Definition of Done (το ίδιο για ΟΛΑ τα tickets)
+
+Το «Done» δεν είναι «δουλεύει στο laptop μου». Είναι **team agreement** που ισχύει για κάθε ticket:
+
+```txt
+✓ Acceptance criteria όλα ισχύουν
+✓ Code review approved
+✓ lint + tests + build περνούν (CI πράσινο)
+✓ Merged στο main
+✓ QA verified
+✓ Deployed (ή ready to deploy)
+```
+
+Το JOB-142 πέρασε όλα αυτά. Αν είχε μείνει κάτι (π.χ. κόκκινο CI), θα γυρνούσε πίσω — όχι στο Done.
+
+## Βήμα 4 — Τέλος sprint: review & retrospective
+
+**Sprint review** (Παρασκευή εβδομάδα 2): η ομάδα **δείχνει** τι παραδόθηκε σε PO/stakeholders. Demo του saved-search flow live. Το JOB-138 (email) δεν πρόλαβε — μεταφέρεται στο επόμενο sprint. Αυτό είναι φυσιολογικό, όχι αποτυχία.
+
+**Retrospective** (μετά το review): η ομάδα κοιτά **τη διαδικασία**, όχι το προϊόν. Με συγκεκριμένα action items:
+
+```txt
+✅ Πήγε καλά:  τα blockers βγήκαν γρήγορα στα standups
+⚠️ Βελτίωση:   2 tickets κόλλησαν στο Code Review 2 μέρες
+🎯 Action:     "Όποιος ανοίγει PR, ζητά review μέσα σε 1 ώρα στο Slack"
+               (owner: Kostas, από επόμενο sprint)
+```
+
+Χωρίς action item, το retro είναι απλώς παράπονα. Το νόημα είναι η ομάδα να **βελτιώνεται κάθε sprint**.
+
+## Scrum ή Kanban; — μέσα από το παράδειγμα
+
+Η ομάδα του JobBoard δούλεψε **Scrum**: σταθερά 2-week sprints, commitment, planning/review/retro. Καλό όταν θες ρυθμό και προβλεψιμότητα σε feature work.
+
+Αν η ίδια ομάδα ήταν **support/ops team** (συνεχής ροή από επείγοντα bugs που δεν περιμένουν το επόμενο sprint), θα προτιμούσε **Kanban**: χωρίς sprints, συνεχής ροή, με **WIP limits**.
+
+```txt
+To Do | In Progress (max 2) | Code Review (max 3) | Done
+                  ↑ WIP limit: κανείς δεν ανοίγει 3ο ticket
+                    πριν τελειώσει ένα — "stop starting, start finishing"
+```
+
+Το **WIP limit** είναι η καρδιά του Kanban: αν όλοι ανοίγουν 5 tasks ταυτόχρονα, πολλά ξεκινούν και λίγα τελειώνουν. Όταν το «In Progress» γεμίσει, σταματάς και **τελειώνεις** πριν ξεκινήσεις νέο. Αν το «Code Review» γεμίζει συνέχεια, είναι ορατό σήμα ότι η ομάδα πρέπει να κάνει reviews αντί να ανοίγει νέα δουλειά.
+
+## Πώς δουλεύεις ΕΣΥ ως junior σε αυτό
+
+Η ροή που είδες, σε 6 κανόνες που εφαρμόζεις από μέρα 1:
+
+```txt
+1. Πριν ξεκινήσεις: διάβασε acceptance criteria, βρες ανοιχτές ερωτήσεις, ΡΩΤΑ.
+2. Σύρε το ticket στο σωστό column — η ομάδα βλέπει την κατάσταση από το board.
+3. Κράτα ένα ticket σε In Progress τη φορά (μην ανοίγεις 5).
+4. Κολλημένος; Πες το στο standup ΑΜΕΣΩΣ — blocker, όχι σιωπή.
+5. PR focused, που εξηγεί τι άλλαξες και πώς καλύπτει τα acceptance criteria.
+6. "Done" μόνο όταν περνά το Definition of Done — όχι "δούλεψε σε μένα".
+```
 
 <Exercise
-  question="Τι είναι acceptance criteria;"
+  question="Στο standup έχεις κολλήσει σε ένα blocker εδώ και μισή μέρα. Τι κάνεις;"
   options={[
-    "Συγκεκριμένα κριτήρια που δείχνουν πότε ένα ticket θεωρείται ολοκληρωμένο.",
-    "CSS κανόνες για το χρώμα του board.",
-    "Git command για να κάνεις push."
+    "Το λες καθαρά ως blocker και τι χρειάζεσαι — το standup υπάρχει ακριβώς για να βγαίνουν τα blockers γρήγορα.",
+    "Λες 'όλα καλά' για να μη φανείς ότι δυσκολεύεσαι, και συνεχίζεις μόνος.",
+    "Περιμένεις το sprint review για να το αναφέρεις."
   ]}
   correctOptionIndex={0}
-  explanation="Σωστά. Τα acceptance criteria είναι το πρακτικό checklist του ticket."
+  explanation="Το standup ΔΕΝ είναι αξιολόγηση — είναι ο μηχανισμός να ξεμπλοκάρεις γρήγορα. Το να κρύβεις blocker κοστίζει στην ομάδα χρόνο και delivery. Στο παράδειγμα, το blocker σου λύθηκε σε 2 λεπτά επειδή το είπες."
 />
 
 <Exercise
-  question="Ποια είναι βασική ιδέα του Kanban;"
+  question="Γιατί η ομάδα έσπασε το epic 'saved searches' σε 3 μικρότερα stories;"
   options={[
-    "Να βλέπεις τη ροή της δουλειάς σε board και να περιορίζεις το work in progress.",
-    "Να γράφεις μόνο backend κώδικα.",
-    "Να μη γίνονται ποτέ code reviews."
+    "Για να μπορεί κάθε story να ολοκληρωθεί ανεξάρτητα μέσα σε ένα sprint και να παραδίδεται αξία σταδιακά.",
+    "Για να φαίνεται ότι έγινε περισσότερη δουλειά στο board.",
+    "Επειδή το Scrum απαγορεύει tickets πάνω από 3 points."
   ]}
   correctOptionIndex={0}
-  explanation="Σωστά. Το Kanban κάνει τη ροή ορατή και βοηθά την ομάδα να τελειώνει δουλειά."
+  explanation="Μεγάλα epics δεν χωρούν/τελειώνουν σε ένα sprint. Σπάζοντάς τα σε μικρά, ανεξάρτητα stories, η ομάδα παραδίδει αξία σταδιακά (το 'save' βγαίνει τώρα, το 'email' αργότερα) και μειώνει το ρίσκο."
 />
 
 <Flashcards
-  title="Agile — interview drills"
+  title="Agile σε πραγματικό project — interview drills"
   cards={[
     {
-      question: "Scrum vs Kanban σε δύο προτάσεις;",
-      answer: "Scrum: δουλειά σε σταθερά sprints (1-2 εβδομάδες) με δέσμευση, planning, review και retro — ρυθμός και προβλεψιμότητα. Kanban: συνεχής ροή χωρίς sprints, με WIP limits — ευελιξία για ομάδες με συνεχείς εισροές (support, ops)."
+      question: "Πες μου πώς ένα feature πάει από ιδέα σε production.",
+      answer: "Epic στο backlog → refinement το σπάει σε user stories με acceptance criteria → sprint planning διαλέγει τι χωράει → ticket κινείται στο board (To Do→In Progress→Review→QA→Done) → PR + code review → CI → QA verify → deploy. Standups ξεμπλοκάρουν, retro βελτιώνει τη διαδικασία."
     },
     {
-      question: "Τι είναι τα acceptance criteria και γιατί σε νοιάζουν ως developer;",
-      answer: "Η λίστα 'πότε το ticket θεωρείται τελειωμένο' — συγκεκριμένα, ελέγξιμα σενάρια. Σε προστατεύουν από scope creep και ασάφεια: αν δεν υπάρχουν, τα ζητάς ΠΡΙΝ ξεκινήσεις, όχι στο review."
+      question: "Σε τι χρησιμεύει το standup — και σε τι ΟΧΙ;",
+      answer: "Σύντομος συγχρονισμός: τι έγινε, τι ακολουθεί, ΤΙ ΣΕ ΜΠΛΟΚΑΡΕΙ (το πιο σημαντικό). ΔΕΝ είναι status report στον manager ούτε technical deep dive — αυτά γίνονται offline με τους εμπλεκόμενους."
     },
     {
-      question: "Σε τι χρησιμεύει το standup — και σε τι ΔΕΝ;",
-      answer: "Σύντομος συγχρονισμός: τι έγινε, τι ακολουθεί, ΤΙ ΣΕ ΜΠΛΟΚΑΡΕΙ — το τελευταίο είναι το πιο σημαντικό. ΔΕΝ είναι status report στον manager ούτε χώρος για technical deep dives — αυτά πάνε offline με τους εμπλεκόμενους."
+      question: "Τι είναι acceptance criteria & definition of done;",
+      answer: "Acceptance criteria: ανά ticket — τα συγκεκριμένα σενάρια που το κάνουν 'σωστό' (διαφέρουν κάθε φορά). Definition of done: σταθερό για ΟΛΑ τα tickets — review + CI + tests + merged + QA + deployable."
     },
     {
-      question: "Τι είναι το WIP limit στο Kanban;",
-      answer: "Μέγιστος αριθμός tickets σε εξέλιξη ταυτόχρονα ανά στήλη. Αναγκάζει την ομάδα να ΤΕΛΕΙΩΝΕΙ πριν ξεκινήσει νέα — λιγότερο context switching, εμφανή bottlenecks: αν το 'In Review' γεμίζει, η ομάδα κάνει reviews αντί να ανοίγει νέα."
+      question: "Scrum vs Kanban — πότε ποιο;",
+      answer: "Scrum: σταθερά sprints με commitment/planning/review/retro — ρυθμός & προβλεψιμότητα για feature work. Kanban: συνεχής ροή χωρίς sprints, με WIP limits — ευελιξία για ομάδες με συνεχείς εισροές (support/ops)."
     },
     {
-      question: "Τι είναι το retrospective;",
-      answer: "Συνάντηση στο τέλος του sprint: τι πήγε καλά, τι όχι, τι αλλάζουμε — με ΣΥΓΚΕΚΡΙΜΕΝΑ action items, όχι γενικές διαπιστώσεις. Είναι ο μηχανισμός αυτοβελτίωσης της ομάδας· χωρίς action items είναι απλώς παράπονα."
+      question: "Τι είναι το WIP limit και τι πρόβλημα λύνει;",
+      answer: "Μέγιστα ταυτόχρονα tickets ανά στήλη. Αναγκάζει 'stop starting, start finishing': λιγότερο context switching, και κάνει ορατά τα bottlenecks (αν γεμίζει το Review, κάνε reviews αντί να ανοίγεις νέα)."
+    },
+    {
+      question: "Τι κάνει ένα retrospective χρήσιμο;",
+      answer: "Κοιτά τη ΔΙΑΔΙΚΑΣΙΑ (όχι το προϊόν) και βγάζει ΣΥΓΚΕΚΡΙΜΕΝΑ action items με owner — π.χ. 'review request μέσα σε 1 ώρα'. Χωρίς action items είναι απλώς παράπονα."
+    },
+    {
+      question: "Τι είναι τα story points;",
+      answer: "Σχετική εκτίμηση δυσκολίας (όχι ώρες): 1 τετριμμένο, 3 μέτριο, 8 'σπάσ' το'. Η διαφωνία στην εκτίμηση αποκαλύπτει κρυμμένη πολυπλοκότητα — γι' αυτό η ομάδα ψηφίζει μαζί."
     }
   ]}
 />
 
 <TrainingLab
-  title="Μετέτρεψε ιδέα σε ticket"
-  scenario="Πάρε feature 'ο χρήστης φιλτράρει tasks' και κάν' το μικρό, υλοποιήσιμο ticket με acceptance criteria και definition of done."
+  title="Τρέξε ένα feature μέσα από ένα sprint"
+  scenario="Πάρε ένα feature του capstone σου (π.χ. 'ο χρήστης φιλτράρει tasks') και πέρασέ το από όλη τη ροή, σαν να δουλεύεις στην ομάδα του JobBoard."
   outcomes={[
-    "Να σπας vague feature σε μικρά tickets.",
+    "Να μετατρέπεις ένα epic σε μικρά, ανεξάρτητα stories.",
     "Να γράφεις acceptance criteria που ελέγχονται.",
-    "Να ξεχωρίζεις scope από nice-to-have."
+    "Να κινείς δουλειά σε board με σωστό Definition of Done."
   ]}
   steps={[
-    "Γράψε user story με ρόλο, ανάγκη και αποτέλεσμα.",
-    "Γράψε 3-5 acceptance criteria.",
-    "Ορισμός out-of-scope για πράγματα που δεν θα γίνουν τώρα.",
-    "Πρόσθεσε testing notes και edge cases."
+    "Γράψε το feature ως epic και σπάσ' το σε 2-3 user stories.",
+    "Για το πρώτο story γράψε user story + 4-5 acceptance criteria + out of scope.",
+    "Φτιάξε board (To Do→In Progress→Review→Done) και πέρνα το ticket βήμα-βήμα.",
+    "Γράψε ένα PR description που χαρτογραφεί τα acceptance criteria.",
+    "Όρισε το Definition of Done της 'ομάδας' σου και τσέκαρέ το πριν πεις 'done'.",
+    "Γράψε ένα retro action item: τι θα έκανες διαφορετικά την επόμενη φορά."
   ]}
   checkpoints={[
-    "Το ticket μπορεί να ολοκληρωθεί σε μικρό PR.",
-    "Τα criteria μπορούν να γίνουν manual ή automated checks.",
-    "Δεν υπάρχουν ασαφείς λέξεις όπως 'καλό' χωρίς μέτρο."
+    "Κάθε story ολοκληρώνεται ανεξάρτητα σε μικρό PR.",
+    "Τα acceptance criteria είναι ελέγξιμα (manual ή automated).",
+    "Το ticket φτάνει στο Done μόνο αφού περάσει το Definition of Done."
   ]}
   mistakes={[
-    "Να γράφεις ticket σαν γενική ιδέα.",
-    "Να βάζεις πολλά features σε ένα ticket.",
-    "Να μην ορίζεις πώς θα ξέρουμε ότι τελείωσε."
+    "Να ξεκινάς να κωδικοποιείς χωρίς να διαβάσεις/ρωτήσεις τα acceptance criteria.",
+    "Να ανοίγεις πολλά tickets ταυτόχρονα και να μην τελειώνεις κανένα.",
+    "Να κρύβεις blocker αντί να το πεις στο standup.",
+    "Να λες 'done' πριν περάσουν review/CI/QA."
   ]}
-  mastery="Το μάθημα έχει πετύχει όταν μπορείς να πάρεις ένα μεγάλο feature και να το χωρίσεις σε tickets που μπορούν να υλοποιηθούν ανεξάρτητα."
+  mastery="Το μάθημα πέτυχε όταν μπορείς να πάρεις οποιοδήποτε feature και να περιγράψεις βήμα-βήμα πώς θα ταξιδέψει μέχρι το production μέσα σε μια ομάδα."
 />

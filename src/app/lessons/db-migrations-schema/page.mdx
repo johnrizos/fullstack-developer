@@ -1,0 +1,176 @@
+# Schema Migrations & Evolution
+
+Το schema **αλλάζει** συνέχεια: νέα πεδία, renames, νέοι πίνακες. Σε production με ζωντανούς χρήστες, μια λάθος migration ρίχνει το app ή κλειδώνει τη βάση. Στα interviews εξετάζουν πώς κάνεις αλλαγές **χωρίς downtime** και χωρίς data loss.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς τι είναι migrations και γιατί version-controlled,
+- να γράφεις forward & rollback migrations,
+- να κάνεις zero-downtime αλλαγές (expand/contract),
+- να χειρίζεσαι backfills σε μεγάλους πίνακες,
+- να αποφεύγεις migrations που κλειδώνουν τη βάση.
+
+## Τι είναι migration
+
+Ένα migration είναι ένα **versioned, επαναλήψιμο** βήμα αλλαγής του schema, μέρος του κώδικα (git):
+
+```sql
+-- migrations/0007_add_phone_to_users.sql
+ALTER TABLE users ADD COLUMN phone TEXT;
+```
+
+Τα migration tools (Prisma Migrate, Alembic, Flyway) κρατούν ποια migrations έχουν τρέξει, ώστε κάθε environment (dev/staging/prod) να φτάνει στην ίδια κατάσταση **ντετερμινιστικά**. Ποτέ δεν αλλάζεις το schema «με το χέρι» στην παραγωγή.
+
+## Forward & rollback
+
+```sql
+-- up (forward)
+ALTER TABLE users ADD COLUMN phone TEXT;
+
+-- down (rollback) — πώς αναιρείς αν κάτι πάει στραβά
+ALTER TABLE users DROP COLUMN phone;
+```
+
+Κάθε migration ιδανικά έχει και rollback. Προσοχή: destructive rollbacks (DROP COLUMN) χάνουν δεδομένα — σχεδίασε με προσοχή.
+
+## Zero-downtime: expand / contract
+
+Το κρίσιμο pattern. Ο παλιός και ο νέος κώδικας τρέχουν **ταυτόχρονα** κατά το deploy, οπότε το schema πρέπει να είναι συμβατό και με τους δύο. Σπας μια «επικίνδυνη» αλλαγή σε βήματα:
+
+```txt
+Παράδειγμα: rename στήλης name → full_name (χωρίς downtime)
+
+1. EXPAND:  ADD COLUMN full_name (nullable). Κώδικας γράφει ΚΑΙ στα δύο.
+2. BACKFILL: αντίγραψε name → full_name σε batches.
+3. MIGRATE: ο νέος κώδικας διαβάζει full_name. Deploy.
+4. CONTRACT: όταν κανείς δεν χρησιμοποιεί name → DROP COLUMN name.
+```
+
+<PredictOutput
+  title="Γιατί όχι rename κατευθείαν;"
+  code={`-- Migration: ALTER TABLE users RENAME COLUMN name TO full_name;
+-- Deploy αυτό + νέο κώδικα ταυτόχρονα σε ζωντανό app.
+-- Κατά το rolling deploy, ο ΠΑΛΙΟΣ κώδικας τρέχει ακόμα.
+-- Τι συμβαίνει;`}
+  options={[
+    "Ο παλιός κώδικας ψάχνει τη στήλη name που δεν υπάρχει πια → errors/downtime",
+    "Τίποτα, δουλεύει τέλεια",
+    "Η βάση κρατά και τα δύο ονόματα αυτόματα",
+    "Μόνο πιο αργό"
+  ]}
+  correctOptionIndex={0}
+  answer="Παλιός κώδικας σπάει — downtime"
+  explanation="Σε rolling deploy, για λίγο τρέχουν ΚΑΙ ο παλιός (ψάχνει name) ΚΑΙ ο νέος (ψάχνει full_name). Ένα άμεσο rename σπάει τον παλιό → errors. Γι' αυτό expand/contract: πρόσθεσε νέα στήλη, backfill, μετάβαση, και μόνο αφού φύγει ο παλιός κώδικας κάνεις drop την παλιά."
+/>
+
+## Backfills σε μεγάλους πίνακες
+
+Γέμισμα νέας στήλης σε εκατομμύρια rows με ένα `UPDATE` **κλειδώνει** τον πίνακα και ρίχνει το app. Κάνε το σε **batches**:
+
+```sql
+-- ❌ Κλειδώνει τα πάντα
+UPDATE users SET full_name = name;
+
+-- ✅ Batched (loop στον app/script), μικρά chunks, με παύσεις
+UPDATE users SET full_name = name
+WHERE id BETWEEN 1 AND 10000 AND full_name IS NULL;
+-- επανάλαβε για τα επόμενα ranges
+```
+
+## Migrations που κλειδώνουν — απόφυγέ τα
+
+```txt
+- ADD COLUMN με NON-NULL default σε παλιές βάσεις → rewrite όλου του πίνακα (lock)
+  → πρόσθεσε nullable, backfill, μετά set NOT NULL
+- CREATE INDEX (blocking) σε μεγάλο πίνακα → χρησιμοποίησε CREATE INDEX CONCURRENTLY
+- Μεγάλο UPDATE/ALTER σε ένα transaction → batches
+```
+
+Γενικός κανόνας: **additive & nullable** αλλαγές πρώτα· destructive αλλαγές τελευταίες, αφού σιγουρευτείς ότι τίποτα δεν τις χρειάζεται.
+
+<Exercise
+  question="Θες να μετονομάσεις μια στήλη σε ζωντανό app χωρίς downtime. Πώς;"
+  options={[
+    "Expand/contract: πρόσθεσε νέα στήλη, γράψε και στις δύο, backfill, μετάβασε reads, και μετά drop την παλιά.",
+    "ALTER TABLE RENAME COLUMN σε ένα βήμα μαζί με το deploy.",
+    "Δημιούργησε νέο πίνακα και αντίγραψε τα πάντα με downtime."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σε rolling deploy συνυπάρχουν παλιός & νέος κώδικας. Το expand/contract κρατά το schema συμβατό και με τους δύο σε κάθε βήμα, ώστε κανένας κώδικας να μη σπάσει. Το άμεσο rename σπάει τον παλιό κώδικα."
+/>
+
+<Exercise
+  question="Πρέπει να γεμίσεις μια νέα στήλη σε 50M rows. Πώς αποφεύγεις να ρίξεις το app;"
+  options={[
+    "Backfill σε batches (μικρά ranges, με παύσεις), όχι ένα τεράστιο UPDATE που κλειδώνει τον πίνακα.",
+    "Ένα UPDATE για όλα — είναι πιο γρήγορο.",
+    "Διαγράφεις και ξαναφτιάχνεις τον πίνακα."
+  ]}
+  correctOptionIndex={0}
+  explanation="Ένα τεράστιο UPDATE κλειδώνει rows/πίνακα και μπλοκάρει το app. Σπάσε το σε μικρά batches (π.χ. 10k rows) με παύσεις, ελέγχοντας πρόοδο. Έτσι η βάση παραμένει διαθέσιμη."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you change a database schema without downtime?»
+
+> Schema changes are versioned migrations checked into git and applied by a tool, so every environment converges deterministically — I never hand-edit production. The key constraint is that during a rolling deploy the old and new code run at the same time, so the schema has to be compatible with both. That's why I never rename or drop directly; I use expand/contract. To rename a column I add the new one nullable, have the code write to both, backfill the old values, switch reads to the new column, and only after the old code is gone do I drop the old column. Backfills on big tables go in small batches, never one giant `UPDATE` that locks the table. I also avoid lock-heavy operations — a non-null default on a huge table or a blocking `CREATE INDEX` — by adding nullable first then setting not-null, and using `CREATE INDEX CONCURRENTLY`. Additive changes first, destructive ones last.
+
+<Flashcards
+  title="Schema migrations — interview drills"
+  cards={[
+    {
+      question: "Τι είναι migration & γιατί version-controlled;",
+      answer: "Versioned, επαναλήψιμο βήμα αλλαγής schema, μέρος του κώδικα (git). Το tool κρατά ποια έχουν τρέξει, ώστε κάθε environment να φτάνει ντετερμινιστικά στην ίδια κατάσταση. Ποτέ χειροκίνητα στην παραγωγή."
+    },
+    {
+      question: "Τι είναι expand/contract;",
+      answer: "Zero-downtime pattern: πρόσθεσε νέο (expand), γράψε & στα δύο, backfill, μετάβασε reads, και μόνο αφού φύγει ο παλιός κώδικας αφαίρεσε το παλιό (contract). Κρατά το schema συμβατό με παλιό & νέο κώδικα."
+    },
+    {
+      question: "Γιατί όχι άμεσο RENAME/DROP σε ζωντανό app;",
+      answer: "Σε rolling deploy τρέχουν ταυτόχρονα παλιός & νέος κώδικας. Άμεσο rename/drop σπάει τον παλιό (ψάχνει στήλη που δεν υπάρχει) → errors/downtime."
+    },
+    {
+      question: "Πώς κάνεις backfill σε μεγάλο πίνακα;",
+      answer: "Σε batches (μικρά ranges, με παύσεις), όχι ένα τεράστιο UPDATE που κλειδώνει τον πίνακα και μπλοκάρει το app."
+    },
+    {
+      question: "Migrations που κλειδώνουν & πώς τα αποφεύγεις;",
+      answer: "NON-NULL default → πρόσθεσε nullable + backfill + set NOT NULL. Blocking CREATE INDEX → CONCURRENTLY. Μεγάλα UPDATE/ALTER → batches."
+    },
+    {
+      question: "Σειρά ασφαλών αλλαγών;",
+      answer: "Additive & nullable πρώτα· destructive (DROP) τελευταία, αφού σιγουρευτείς ότι κανείς (κώδικας/query) δεν τα χρειάζεται. Κάθε migration με rollback όπου γίνεται."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Zero-downtime schema change"
+  scenario="Μετονόμασε μια στήλη και πρόσθεσε ένα NOT NULL πεδίο σε ζωντανό πίνακα με εκατομμύρια rows."
+  outcomes={[
+    "Να εφαρμόζεις expand/contract.",
+    "Να κάνεις batched backfill.",
+    "Να αποφεύγεις locking migrations."
+  ]}
+  steps={[
+    "Expand: πρόσθεσε τη νέα στήλη nullable.",
+    "Κώδικας: γράψε ταυτόχρονα σε παλιά & νέα στήλη.",
+    "Backfill σε batches (10k rows τη φορά).",
+    "Μετάβασε τα reads στη νέα στήλη και deploy.",
+    "Contract: set NOT NULL (μετά το backfill) και drop την παλιά στήλη."
+  ]}
+  checkpoints={[
+    "Σε κάθε βήμα, παλιός & νέος κώδικας δουλεύουν.",
+    "Το backfill δεν κλειδώνει τον πίνακα.",
+    "Το DROP γίνεται τελευταίο, αφού κανείς δεν χρησιμοποιεί την παλιά στήλη."
+  ]}
+  mistakes={[
+    "Άμεσο RENAME/DROP σε ζωντανό app (σπάει τον παλιό κώδικα).",
+    "Ένα τεράστιο UPDATE για backfill (lock).",
+    "ADD COLUMN NOT NULL με default σε τεράστιο πίνακα (rewrite/lock).",
+    "Χειροκίνητη αλλαγή schema στην παραγωγή, εκτός migrations."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν εξελίσσεις schema σε production χωρίς downtime ούτε data loss."
+/>

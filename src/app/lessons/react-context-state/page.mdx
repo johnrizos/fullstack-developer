@@ -1,0 +1,189 @@
+# Context & State Management
+
+Καθώς μεγαλώνει η εφαρμογή, το «πέρνα props πέντε επίπεδα κάτω» γίνεται πόνος (prop drilling). Το Context το λύνει — αλλά έχει παγίδες performance. Στα interviews: «πότε Context;», «ποιο είναι το re-render trap;», «πότε χρειάζεσαι external store;».
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να αναγνωρίζεις prop drilling και πότε αξίζει Context,
+- να φτιάχνεις typed Context με provider,
+- να εξηγείς γιατί το Context μπορεί να προκαλέσει περιττά re-renders,
+- να ξεχωρίζεις «server state» από «UI/client state»,
+- να ξέρεις πότε φεύγεις σε Zustand/Redux.
+
+## Prop drilling — το πρόβλημα
+
+```tsx
+// theme περνά μέσα από components που δεν το χρειάζονται
+<App theme={theme}>
+  <Layout theme={theme}>
+    <Sidebar theme={theme}>
+      <UserMenu theme={theme} /> {/* μόνο εδώ χρειάζεται */}
+```
+
+Όταν ένα δεδομένο χρειάζεται «παντού» (theme, locale, current user), το prop drilling το κάνει θόρυβο. Το Context σου επιτρέπει να το διαβάσεις απευθείας όπου χρειάζεται.
+
+## Typed Context + provider
+
+```tsx
+type Theme = "light" | "dark";
+type ThemeContextValue = { theme: Theme; toggle: () => void };
+
+const ThemeContext = createContext<ThemeContextValue | null>(null);
+
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setTheme] = useState<Theme>("light");
+  const value = useMemo(
+    () => ({ theme, toggle: () => setTheme((t) => (t === "light" ? "dark" : "light")) }),
+    [theme],
+  );
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+}
+
+export function useTheme() {
+  const ctx = useContext(ThemeContext);
+  if (!ctx) throw new Error("useTheme must be used inside ThemeProvider");
+  return ctx;
+}
+```
+
+Το custom `useTheme` hook με το null check είναι το production pattern: type-safe και ρίχνει καθαρό error αν ξεχάσεις τον provider.
+
+## Το re-render trap
+
+<PredictOutput
+  title="Γιατί το useMemo στο value;"
+  code={`function Provider({ children }) {
+  const [user, setUser] = useState(null);
+
+  // value = ΝΕΟ object σε ΚΑΘΕ render του Provider
+  return (
+    <AuthContext.Provider value={{ user, setUser }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+// Ο Provider ξανα-renderάρει για άσχετο λόγο. Τι παθαίνουν οι consumers;`}
+  options={[
+    "Ξανα-renderάρουν όλοι, γιατί το value είναι νέο object κάθε φορά",
+    "Τίποτα, το React το βελτιστοποιεί αυτόματα",
+    "Μόνο όσοι χρησιμοποιούν user",
+    "Πετάει error"
+  ]}
+  correctOptionIndex={0}
+  answer="Ξανα-renderάρουν όλοι οι consumers"
+  explanation="Το context value εδώ είναι νέο object reference σε κάθε render → όλοι οι consumers ξανα-renderάρουν, ακόμα κι αν τα δεδομένα δεν άλλαξαν. Fix: useMemo στο value (με σωστά deps). Είναι το πιο συχνό Context performance bug."
+/>
+
+Όλοι οι consumers ενός Context ξανα-renderάρουν όταν αλλάζει το value. Δύο τεχνικές: (1) `useMemo` στο value, (2) σπάσε σε πολλά contexts ώστε το «συχνά μεταβαλλόμενο» να μην επηρεάζει όσους θέλουν μόνο το «σταθερό».
+
+## Server state ≠ client state
+
+Το πιο σημαντικό mental shift. Δεν είναι όλα ίδιο «state»:
+
+```txt
+Client/UI state   → modal open, selected tab, form input, theme
+                    → useState / useReducer / Context / Zustand
+
+Server state      → users, products, posts (ζουν σε database)
+                    → React Query / SWR (caching, refetch, dedup)
+```
+
+Συχνό λάθος: να βάζεις server data σε global store και να γράφεις μόνος σου caching, loading, refetch. Αυτό το λύνουν εργαλεία server-state (επόμενο μάθημα). Το Context/Redux είναι για **client** state.
+
+## Πότε external store (Zustand/Redux)
+
+```txt
+Context αρκεί:    λίγα global values, σπάνιες αλλαγές (theme, user, locale)
+Zustand/Redux:    πολύ shared client state, συχνές αλλαγές, χρειάζεσαι
+                  selectors (re-render μόνο όσοι διαβάζουν το συγκεκριμένο slice),
+                  middleware, devtools, predictable updates
+```
+
+Μην ξεκινάς από Redux. Ξεκίνα τοπικό state → lift up → Context → external store μόνο όταν το Context πονάει (performance, πολυπλοκότητα). Τα modern stores (Zustand) δίνουν selectors που αποφεύγουν το re-render trap του Context.
+
+<Exercise
+  question="Όλοι οι consumers ενός Context ξανα-renderάρουν συνέχεια χωρίς λόγο. Πιο πιθανή αιτία;"
+  options={[
+    "Το context value είναι νέο object/array σε κάθε render του provider — τύλιξέ το σε useMemo (ή σπάσε σε πολλά contexts).",
+    "Έχεις πολλούς consumers — μείωσέ τους.",
+    "Το Context δεν υποστηρίζει objects."
+  ]}
+  correctOptionIndex={0}
+  explanation="Νέο value reference σε κάθε render σημαίνει 'άλλαξε' για κάθε consumer. useMemo στο value (με σωστά deps) σταθεροποιεί τη reference. Επιπλέον, χώρισε σταθερά από συχνά-μεταβαλλόμενα δεδομένα σε ξεχωριστά contexts."
+/>
+
+<Exercise
+  question="Πρέπει να βάλεις τη λίστα χρηστών (από API) σε Redux/Context;"
+  options={[
+    "Όχι — είναι server state. Χρησιμοποίησε React Query/SWR που δίνει caching, refetch, dedup έτοιμα.",
+    "Ναι, όλο το data πάει σε global store.",
+    "Ναι, αλλιώς δεν γίνεται share."
+  ]}
+  correctOptionIndex={0}
+  explanation="Server state (δεδομένα που ζουν σε database) έχει διαφορετικές ανάγκες: caching, invalidation, refetch, dedup. Τα server-state libraries τα λύνουν. Context/Redux είναι για client/UI state."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«When do you use Context, and what's the catch?»
+
+> Context solves prop drilling for values that many components need — theme, locale, current user. I type it and expose a custom hook that throws if used outside the provider. The catch is performance: every consumer re-renders when the context value changes, and a classic bug is passing a fresh object as `value` on every render, which makes all consumers re-render even when the data didn't change — I fix that with `useMemo` on the value, or by splitting frequently-changing data into a separate context. The bigger distinction I make is server state versus client state: data that lives in a database belongs in a server-state library like React Query, which gives me caching and refetching, while Context and stores like Zustand or Redux are for client state. I only reach for an external store when shared client state gets large or changes often and I need selectors to avoid Context's re-render problem.
+
+<Flashcards
+  title="Context & state management — interview drills"
+  cards={[
+    {
+      question: "Πότε Context;",
+      answer: "Για λίγα global values που χρειάζονται 'παντού' και αλλάζουν σπάνια (theme, locale, current user), ώστε να αποφύγεις prop drilling. Όχι ως πρώτο reflex για κάθε shared state."
+    },
+    {
+      question: "Το Context re-render trap;",
+      answer: "Όλοι οι consumers ξανα-renderάρουν όταν αλλάζει το value. Αν περνάς νέο object κάθε render, ξανα-renderάρουν χωρίς λόγο. Fix: useMemo στο value + split σε πολλά contexts."
+    },
+    {
+      question: "Server state vs client state;",
+      answer: "Client/UI state (modals, tabs, theme) → useState/Context/Zustand. Server state (data από DB) → React Query/SWR με caching/refetch/dedup. Μην βάζεις server data σε Redux με χειροκίνητο caching."
+    },
+    {
+      question: "Πότε Zustand/Redux αντί για Context;",
+      answer: "Όταν το shared client state είναι μεγάλο/συχνά μεταβαλλόμενο και χρειάζεσαι selectors (re-render μόνο όσοι διαβάζουν το slice), middleware, devtools. Το Context δεν έχει selective subscription out of the box."
+    },
+    {
+      question: "Το custom-hook pattern για Context;",
+      answer: "useTheme() που κάνει useContext και ρίχνει error αν είναι null (εκτός provider). Type-safe και καθαρό μήνυμα λάθους αντί για σιωπηλό undefined."
+    },
+    {
+      question: "Πώς μειώνεις τα Context re-renders;",
+      answer: "useMemo στο value, split contexts (σταθερά vs συχνά μεταβαλλόμενα), μετακίνηση του provider χαμηλότερα στο δέντρο, ή external store με selectors."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Theme + auth context χωρίς περιττά re-renders"
+  scenario="Φτιάξε ThemeProvider και AuthProvider με typed context, custom hooks και memoized values."
+  outcomes={[
+    "Να φτιάχνεις typed Context με provider + custom hook.",
+    "Να αποφεύγεις το re-render trap με useMemo/split.",
+    "Να ξεχωρίζεις client από server state."
+  ]}
+  steps={[
+    "ThemeContext με theme + toggle, value σε useMemo.",
+    "useTheme hook με null check που ρίχνει error.",
+    "AuthContext με user + login/logout.",
+    "Δοκίμασε χωρίς useMemo και παρατήρησε τα περιττά re-renders consumers.",
+    "Σκέψου ποια δεδομένα της app ΔΕΝ ανήκουν εδώ (server state)."
+  ]}
+  checkpoints={[
+    "Τα context values είναι memoized.",
+    "Τα custom hooks ρίχνουν error εκτός provider.",
+    "Δεν έβαλες API data στο context (αυτό πάει σε server-state lib)."
+  ]}
+  mistakes={[
+    "Νέο object ως value κάθε render → re-render όλων των consumers.",
+    "Ένα τεράστιο context για τα πάντα.",
+    "Server data σε Context/Redux με χειροκίνητο caching.",
+    "Redux από την αρχή για κάτι που λύνει το τοπικό state."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν σχεδιάζεις context που δεν προκαλεί περιττά re-renders και ξέρεις τι ΔΕΝ ανήκει σε αυτό."
+/>

@@ -1,0 +1,179 @@
+# Performance & Optimization
+
+«Το React είναι αργό» σχεδόν ποτέ δεν ισχύει — αργά είναι τα **περιττά re-renders** και η δουλειά μέσα τους. Στα interviews εξετάζουν αν ξέρεις να μετράς πριν βελτιστοποιήσεις, τι κάνει το `React.memo`, και πότε `useMemo`/`useCallback` βοηθούν πραγματικά.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εντοπίζεις την αιτία ενός περιττού re-render,
+- να χρησιμοποιείς `React.memo` σωστά (και να ξέρεις πότε δεν βοηθά),
+- να εξηγείς πότε `useMemo`/`useCallback` έχουν νόημα,
+- να βελτιστοποιείς μεγάλες λίστες (virtualization),
+- να μετράς με το Profiler αντί να μαντεύεις.
+
+## Πρώτα μέτρα, μετά βελτιστοποίησε
+
+Ο νούμερο ένα κανόνας: μην βελτιστοποιείς στα τυφλά. Το React DevTools **Profiler** δείχνει ποια components renderάρουν, πόσο συχνά και γιατί. Premature `memo` παντού προσθέτει πολυπλοκότητα και κόστος χωρίς όφελος.
+
+```txt
+1. Μέτρησε με Profiler / "Highlight updates"
+2. Βρες ποιο component renderάρει περιττά ή κάνει ακριβή δουλειά
+3. Βελτιστοποίησε ΜΟΝΟ αυτό
+4. Ξαναμέτρα ότι όντως βελτιώθηκε
+```
+
+## Γιατί renderάρει ένα component
+
+```txt
+- άλλαξε το state του
+- ξανα-renderάρισε ο parent  ← η πιο συχνή αιτία περιττών renders
+- άλλαξε context που καταναλώνει
+```
+
+Όταν renderάρει ο parent, renderάρουν **όλα** τα παιδιά by default — ακόμα κι αν τα props τους δεν άλλαξαν. Αυτό συνήθως είναι φθηνό· γίνεται πρόβλημα μόνο όταν το child είναι ακριβό ή η λίστα μεγάλη.
+
+## React.memo — skip render αν τα props είναι ίδια
+
+```tsx
+const TodoItem = React.memo(function TodoItem({ todo, onToggle }: Props) {
+  return <li>{todo.title}</li>;
+});
+```
+
+Το `memo` κάνει shallow compare τα props· αν είναι ίδια (`Object.is`), παρακάμπτει το render. **Αλλά** σπάει αν περνάς νέα reference κάθε φορά:
+
+<PredictOutput
+  title="Γιατί το memo 'δεν δουλεύει';"
+  code={`const Child = React.memo(({ onClick }) => {
+  console.log("Child render");
+  return <button onClick={onClick}>Click</button>;
+});
+
+function Parent() {
+  const [count, setCount] = useState(0);
+
+  // ΝΕΑ function reference σε κάθε render του Parent
+  const handleClick = () => console.log("clicked");
+
+  return (
+    <>
+      <button onClick={() => setCount(count + 1)}>{count}</button>
+      <Child onClick={handleClick} />
+    </>
+  );
+}
+// Πατάς το count κουμπί. Renderάρει το Child;`}
+  options={["Όχι, το memo το αποτρέπει", "Ναι, γιατί το onClick είναι νέα function κάθε φορά", "Μόνο την πρώτη φορά", "Πετάει error"]}
+  correctOptionIndex={1}
+  answer="Ναι — νέα function reference"
+  explanation="Το handleClick δημιουργείται ξανά σε κάθε render του Parent, άρα το prop 'άλλαξε' (διαφορετική reference) και το memo δεν βοηθά. Fix: useCallback(handleClick, []) ώστε η reference να μένει σταθερή. Το memo + useCallback δουλεύουν μαζί."
+/>
+
+## useMemo / useCallback — πότε όντως βοηθούν
+
+```tsx
+// 1) Ακριβός υπολογισμός που δεν θες να ξανατρέχει σε κάθε render
+const sorted = useMemo(() => bigList.slice().sort(compare), [bigList]);
+
+// 2) Σταθερή reference για memoized child ή dependency array
+const handleSelect = useCallback((id: string) => setSelected(id), []);
+```
+
+Δεν τα βάζεις παντού: έχουν κόστος (memory + σύγκριση deps). Αξίζουν όταν (α) ο υπολογισμός είναι μετρήσιμα ακριβός, ή (β) η σταθερή reference αποτρέπει re-render σε `memo` child ή ξαναεκτέλεση effect.
+
+## Μεγάλες λίστες — virtualization
+
+Render 10.000 rows = 10.000 DOM nodes = αργό. **Windowing/virtualization** renderάρει μόνο τα ορατά rows (π.χ. με `react-window`/`@tanstack/react-virtual`):
+
+```tsx
+// Αντί για 10.000 <Row>, renderάρεις ~20 (όσα χωράνε στην οθόνη)
+// και τα ανακυκλώνεις καθώς ο χρήστης κάνει scroll.
+```
+
+Πριν φτάσεις εκεί: σωστά `key`s, `memo` στο Row, και αποφυγή ακριβών υπολογισμών ανά row.
+
+<Exercise
+  question="Βάζεις React.memo σε ένα child αλλά συνεχίζει να renderάρει. Πιο πιθανή αιτία;"
+  options={[
+    "Περνάς prop με νέα reference κάθε render (inline function/object/array) — σταθεροποίησέ τη με useCallback/useMemo.",
+    "Το memo δεν δουλεύει με TypeScript.",
+    "Πρέπει να βάλεις memo και στον parent."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το memo κάνει shallow compare props. Inline () => {}, {…} ή […] είναι νέα reference κάθε φορά → 'άλλαξαν' τα props → render. Σταθεροποίησε τις references (useCallback/useMemo) ή απόφυγε inline objects."
+/>
+
+<Exercise
+  question="Ποια είναι η σωστή σειρά για performance work;"
+  options={[
+    "Μέτρα με Profiler → βρες την πραγματική αιτία → βελτιστοποίησε στοχευμένα → ξαναμέτρα.",
+    "Βάλε useMemo/useCallback/memo παντού προληπτικά.",
+    "Ανέβασε το state όσο πιο ψηλά γίνεται."
+  ]}
+  correctOptionIndex={0}
+  explanation="Premature optimization προσθέτει πολυπλοκότητα και μερικές φορές κάνει τα πράγματα χειρότερα. Πρώτα μέτρα (Profiler), εντόπισε το πραγματικό bottleneck, βελτιστοποίησε μόνο εκεί, και επιβεβαίωσε με νέα μέτρηση."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you optimize React performance?»
+
+> First I measure — the React Profiler shows which components render, how often, and why, so I don't optimize blindly. Most performance problems are unnecessary re-renders: when a parent renders, all children render by default, which is cheap until a child is expensive or a list is large. For those I wrap the child in `React.memo` so it skips rendering when props are shallow-equal, but that only works if I keep prop references stable — an inline function or object is a new reference every render and defeats memo, so I pair it with `useCallback`/`useMemo`. I reserve `useMemo` for genuinely expensive computations, not everything, because memoization has its own cost. For very large lists I use windowing so only the visible rows are in the DOM. Then I re-measure to confirm it actually helped.
+
+<Flashcards
+  title="Performance — interview drills"
+  cards={[
+    {
+      question: "Πρώτο βήμα σε performance issue;",
+      answer: "Μέτρησε με React Profiler / Highlight updates. Βρες ποιο component renderάρει περιττά ή κάνει ακριβή δουλειά. Ποτέ optimization στα τυφλά."
+    },
+    {
+      question: "Τι κάνει το React.memo;",
+      answer: "Κάνει shallow compare τα props· αν είναι ίδια (Object.is), παρακάμπτει το render του component. Χρήσιμο για ακριβά children που renderάρουν επειδή renderάρει ο parent."
+    },
+    {
+      question: "Γιατί το memo 'δεν δουλεύει' συχνά;",
+      answer: "Επειδή περνάς νέα reference κάθε render (inline function/object/array). Το shallow compare τα βλέπει 'αλλαγμένα'. Fix: useCallback/useMemo για σταθερές references."
+    },
+    {
+      question: "Πότε useMemo/useCallback;",
+      answer: "useMemo: ακριβός υπολογισμός που δεν θες να επαναλαμβάνεται. useCallback: σταθερή function reference για memo children ή deps. Όχι παντού — έχουν δικό τους κόστος."
+    },
+    {
+      question: "Πώς χειρίζεσαι λίστα 10.000 στοιχείων;",
+      answer: "Virtualization/windowing (react-window, react-virtual): renderάρεις μόνο τα ορατά rows και τα ανακυκλώνεις στο scroll. Συν σωστά keys και memo στο Row."
+    },
+    {
+      question: "Γιατί renderάρει ένα child χωρίς να άλλαξαν τα props του;",
+      answer: "Γιατί renderάρισε ο parent — by default όλα τα παιδιά renderάρουν. Συνήθως φθηνό· πρόβλημα μόνο αν το child είναι ακριβό. Τότε React.memo + σταθερές prop references."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Profile & optimize αργή λίστα"
+  scenario="Έχεις λίστα που 'κολλάει' στο typing ενός φίλτρου. Βρες και διόρθωσε το bottleneck με μετρήσεις."
+  outcomes={[
+    "Να εντοπίζεις την αιτία περιττών re-renders.",
+    "Να εφαρμόζεις memo + stable references σωστά.",
+    "Να μετράς πριν και μετά."
+  ]}
+  steps={[
+    "Άνοιξε το Profiler και κατέγραψε render ενώ πληκτρολογείς στο φίλτρο.",
+    "Εντόπισε αν renderάρουν όλα τα rows σε κάθε keystroke.",
+    "Βάλε React.memo στο Row και useCallback στα handlers.",
+    "Μετάφερε ακριβό υπολογισμό σε useMemo.",
+    "Αν η λίστα είναι τεράστια, πρόσθεσε virtualization. Ξαναμέτρα."
+  ]}
+  checkpoints={[
+    "Στο typing renderάρουν μόνο όσα rows χρειάζεται.",
+    "Το memo όντως κόβει renders (σταθερές prop references).",
+    "Η μέτρηση 'μετά' είναι καλύτερη από το 'πριν'."
+  ]}
+  mistakes={[
+    "memo/useMemo/useCallback παντού χωρίς μέτρηση.",
+    "memo που σπάει από inline function/object props.",
+    "Render όλων των rows αντί για virtualization σε τεράστιες λίστες.",
+    "Optimization χωρίς να επιβεβαιώσεις ότι βελτίωσε κάτι."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μπορείς να δείξεις με Profiler ότι μια στοχευμένη αλλαγή μείωσε μετρήσιμα τα renders."
+/>

@@ -1,0 +1,227 @@
+# Server Actions & Mutations
+
+Τα **Server Actions** σου επιτρέπουν να αλλάζεις δεδομένα στον server **χωρίς να γράψεις χειροκίνητα API endpoint** — τα καλείς απευθείας από forms ή event handlers. Στα interviews εξετάζουν τι είναι το `'use server'`, πώς δείχνεις pending state, και πώς κάνεις revalidate/redirect μετά τη mutation.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να ορίζεις Server Functions/Actions με `'use server'`,
+- να τις καλείς από `<form action={...}>`,
+- να δείχνεις pending state με `useActionState`,
+- να χειρίζεσαι expected errors ως return values,
+- να κάνεις `revalidatePath`/`revalidateTag` και `redirect`.
+
+## Τι είναι Server Action
+
+Είναι async function που τρέχει **στον server** και την καλείς από τον client μέσω network request (γι' αυτό async). Σε context φόρμας/mutation λέγεται Server Action. Από κάτω χρησιμοποιεί `POST`.
+
+```ts
+// app/actions.ts
+"use server";
+import { auth } from "@/lib/auth";
+
+export async function createPost(formData: FormData) {
+  const session = await auth();
+  if (!session?.user) throw new Error("Unauthorized"); // ΠΑΝΤΑ auth check
+
+  const title = formData.get("title");
+  // mutate data + revalidate cache
+}
+```
+
+> ⚠️ Τα Server Actions είναι προσβάσιμα με απευθείας POST, όχι μόνο μέσω του UI σου. **Πάντα** κάνε authentication/authorization μέσα σε κάθε action.
+
+## Κλήση από form
+
+Το React επεκτείνει το `<form>` ώστε να δέχεται Server Action στο `action` prop. Η function παίρνει αυτόματα το `FormData`:
+
+```tsx
+import { createPost } from "@/app/actions";
+
+export function Form() {
+  return (
+    <form action={createPost}>
+      <input name="title" />
+      <button type="submit">Create</button>
+    </form>
+  );
+}
+```
+
+Σε Server Components αυτό δουλεύει με **progressive enhancement** — η φόρμα υποβάλλεται ακόμα κι αν δεν έχει φορτώσει η JavaScript.
+
+## Pending state & expected errors με useActionState
+
+Για loading indicator και error μηνύματα, χρησιμοποιείς το `useActionState`. **Τα expected errors τα μοντελοποιείς ως return values**, όχι throw:
+
+```ts
+// app/actions.ts
+"use server";
+export async function createPost(prevState: { message: string }, formData: FormData) {
+  const res = await fetch("https://api.example.com/posts", {
+    method: "POST",
+    body: JSON.stringify({ title: formData.get("title") }),
+  });
+  if (!res.ok) return { message: "Failed to create post" }; // return, όχι throw
+  return { message: "" };
+}
+```
+
+```tsx
+// app/ui/form.tsx
+"use client";
+import { useActionState } from "react";
+import { createPost } from "@/app/actions";
+
+export function Form() {
+  const [state, formAction, pending] = useActionState(createPost, { message: "" });
+  return (
+    <form action={formAction}>
+      <input name="title" required />
+      {state.message && <p aria-live="polite">{state.message}</p>}
+      <button disabled={pending}>{pending ? "Saving…" : "Create Post"}</button>
+    </form>
+  );
+}
+```
+
+<PredictOutput
+  title="Expected error: throw ή return;"
+  code={`"use server";
+export async function subscribe(prev, formData) {
+  const email = formData.get("email");
+  if (!email.includes("@")) {
+    // Θες να δείξεις φιλικό μήνυμα στη φόρμα.
+    // Επιλογή A: throw new Error("Invalid email")
+    // Επιλογή B: return { message: "Invalid email" }
+  }
+}
+// Ποια επιλογή για expected validation error;`}
+  options={["A — throw", "B — return value", "Καμία διαφορά", "Και τα δύο μαζί"]}
+  correctOptionIndex={1}
+  answer="B — return value"
+  explanation="Τα expected errors (validation, failed request) τα μοντελοποιείς ως return values και τα διαβάζεις με useActionState — όχι throw. Το throw το κρατάς για unexpected exceptions που πιάνει το error boundary (error.tsx). Έτσι ο χρήστης βλέπει καθαρό μήνυμα αντί για crash."
+/>
+
+## Revalidate & redirect μετά τη mutation
+
+Μετά την αλλαγή δεδομένων, ανανεώνεις το cache ώστε το UI να δείξει τα νέα δεδομένα:
+
+```ts
+"use server";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+
+export async function createPost(formData: FormData) {
+  // ... mutate
+  revalidatePath("/posts");  // ανανεώνει το cache του /posts
+  redirect("/posts");        // πηγαίνει στη σελίδα (throw control-flow — ό,τι είναι μετά ΔΕΝ τρέχει)
+}
+```
+
+- `revalidatePath(path)` / `revalidateTag(tag)` — λήγει στοχευμένα το cache.
+- `updateTag(tag)` — άμεση λήξη tagged data· `refresh()` — ανανεώνει τον client router (όχι tagged data).
+- `redirect()` ρίχνει framework exception — βάλε το revalidate **πριν** το redirect.
+
+## Από event handler (Client Component)
+
+```tsx
+"use client";
+import { incrementLike } from "./actions";
+import { useState } from "react";
+
+export default function LikeButton({ initialLikes }: { initialLikes: number }) {
+  const [likes, setLikes] = useState(initialLikes);
+  return (
+    <button onClick={async () => setLikes(await incrementLike())}>
+      {likes}
+    </button>
+  );
+}
+```
+
+<Exercise
+  question="Πού βάζεις τον έλεγχο authentication σε ένα Server Action;"
+  options={[
+    "Μέσα στο ίδιο το action, σε κάθε action — γιατί είναι προσβάσιμα με απευθείας POST, όχι μόνο μέσω του UI.",
+    "Μόνο στο form component που το καλεί.",
+    "Σε ένα Proxy, ποτέ στο action."
+  ]}
+  correctOptionIndex={0}
+  explanation="Τα Server Actions εκτίθενται ως POST endpoints. Ένας επιτιθέμενος μπορεί να τα καλέσει απευθείας, παρακάμπτοντας το UI σου. Γι' αυτό auth/authz μέσα σε κάθε action, όχι μόνο στο frontend."
+/>
+
+<Exercise
+  question="Μετά από επιτυχημένο createPost θες το /posts να δείχνει το νέο post και να πας τον χρήστη εκεί. Σειρά;"
+  options={[
+    "revalidatePath('/posts') ΠΡΙΝ, μετά redirect('/posts').",
+    "redirect('/posts') πρώτα, μετά revalidatePath.",
+    "Μόνο redirect — ανανεώνεται μόνο του."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το redirect() ρίχνει control-flow exception, οπότε ό,τι είναι μετά δεν εκτελείται. Βάζεις revalidatePath/Tag πριν, ώστε να λήξει το cache, και μετά redirect."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do mutations work with Server Actions?»
+
+> A Server Action is an async function marked `'use server'` that runs on the server and is callable from the client — from a `<form action={...}>`, which auto-passes `FormData`, or from an event handler. In Server Components forms get progressive enhancement, so they work before JS loads. Because actions are exposed as POST endpoints reachable directly, I authenticate and authorize inside every action, not just in the UI. For UX I use `useActionState` to get a `pending` flag and to surface expected errors — validation or failed requests I model as return values rather than throwing, reserving throws for unexpected exceptions that the `error.tsx` boundary catches. After mutating I call `revalidatePath` or `revalidateTag` to refresh the cache, and if I redirect I do it after revalidating, since `redirect` throws a control-flow exception that stops the rest of the function.
+
+<Flashcards
+  title="Server Actions — interview drills"
+  cards={[
+    {
+      question: "Τι είναι Server Action;",
+      answer: "async function με 'use server' που τρέχει στον server και καλείται από τον client (form action ή event handler). Χρησιμοποιεί POST. Δεν γράφεις χειροκίνητο API endpoint."
+    },
+    {
+      question: "Γιατί auth check μέσα σε κάθε action;",
+      answer: "Τα actions εκτίθενται ως POST endpoints, προσβάσιμα με απευθείας request — όχι μόνο μέσω του UI. Χωρίς auth/authz μέσα στο action, παρακάμπτονται."
+    },
+    {
+      question: "Πώς δείχνεις pending state;",
+      answer: "useActionState(action, initialState) → [state, formAction, pending]. Το pending boolean για disable/spinner· το state για error μηνύματα."
+    },
+    {
+      question: "Expected errors: throw ή return;",
+      answer: "Return values (μοντελοποίησέ τα και διάβασέ τα με useActionState). Throw κρατάς για unexpected exceptions που πιάνει το error boundary (error.tsx)."
+    },
+    {
+      question: "Πώς ανανεώνεις δεδομένα μετά τη mutation;",
+      answer: "revalidatePath(path)/revalidateTag(tag) λήγει το cache· updateTag άμεση λήξη tagged· refresh() ανανεώνει τον client router. Redirect μετά το revalidate."
+    },
+    {
+      question: "Τι κάνει το redirect() σε action;",
+      answer: "Ρίχνει framework control-flow exception — ό,τι κώδικας είναι μετά ΔΕΝ τρέχει. Γι' αυτό κάνεις revalidate ΠΡΙΝ το redirect."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Form mutation με validation & revalidation"
+  scenario="Φτιάξε φόρμα δημιουργίας post με auth, validation, pending state, revalidation και redirect."
+  outcomes={[
+    "Να ορίζεις και να καλείς Server Actions.",
+    "Να χειρίζεσαι pending & expected errors.",
+    "Να κάνεις revalidate/redirect σωστά."
+  ]}
+  steps={[
+    "actions.ts με 'use server' και auth check.",
+    "Validation που επιστρέφει { message } σε expected error.",
+    "Form με useActionState για pending + error μήνυμα.",
+    "revalidatePath('/posts') μετά την επιτυχία.",
+    "redirect('/posts') μετά το revalidate."
+  ]}
+  checkpoints={[
+    "Auth ελέγχεται μέσα στο action.",
+    "Τα validation errors εμφανίζονται χωρίς crash.",
+    "Το /posts δείχνει το νέο post μετά τη mutation."
+  ]}
+  mistakes={[
+    "Auth μόνο στο UI, όχι στο action.",
+    "throw για expected validation error αντί για return value.",
+    "redirect πριν το revalidate (ή κώδικας μετά το redirect).",
+    "Ξεχασμένο revalidate → stale UI μετά τη mutation."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν χτίζεις mutation flow με σωστό auth, pending/error UX και revalidation χωρίς χειροκίνητο API."
+/>

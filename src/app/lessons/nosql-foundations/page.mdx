@@ -1,0 +1,174 @@
+# NoSQL Foundations
+
+Το «NoSQL» δεν είναι ένα πράγμα — είναι μια οικογένεια από databases με διαφορετικά data models, που γεννήθηκαν όταν το relational δεν κάλυπτε συγκεκριμένες ανάγκες (κλίμακα, ευελιξία, throughput). Στα interviews εξετάζουν αν ξέρεις **ποιον τύπο** και **πότε** — όχι «NoSQL» ως γενική απάντηση.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να ονομάζεις τους 4 τύπους NoSQL και τι λύνει ο καθένας,
+- να εξηγείς SQL vs NoSQL με βάση ανάγκες, όχι hype,
+- να ξεχωρίζεις ACID από BASE,
+- να εξηγείς το CAP theorem,
+- να ξέρεις τι θυσιάζεις φεύγοντας από relational.
+
+## Οι 4 τύποι NoSQL
+
+```txt
+Document    (MongoDB, Firestore)   → JSON-like documents, ευέλικτο schema
+Key-Value   (Redis, DynamoDB)      → απλό get/set σε key, πανγρήγορο
+Wide-Column (Cassandra, Bigtable)  → τεράστια κλίμακα writes, column families
+Graph       (Neo4j)                → nodes & edges, σχέσεις first-class
+```
+
+Καθένας λύνει διαφορετικό πρόβλημα. Στο υπόλοιπο track εμβαθύνουμε σε document, key-value και wide-column (οι πιο συχνοί στο fullstack). Το graph το αναφέρεις όταν το domain είναι κυρίως σχέσεις (social, recommendations, fraud).
+
+## SQL vs NoSQL — πότε τι
+
+```txt
+Διάλεξε RELATIONAL (SQL) όταν:
+- Τα δεδομένα έχουν σχέσεις & χρειάζεσαι joins
+- Χρειάζεσαι ACID transactions (πληρωμές, αποθέματα)
+- Τα access patterns αλλάζουν / ad-hoc queries
+- Ακεραιότητα/constraints είναι κρίσιμα
+
+Διάλεξε NoSQL όταν:
+- Γνωστά, σταθερά access patterns με ανάγκη για κλίμακα
+- Ευέλικτο/εξελισσόμενο schema (document)
+- Πολύ υψηλό write/read throughput, horizontal scaling
+- key-value/caching/session/event data
+```
+
+Σημαντικό: σύγχρονες relational βάσεις (Postgres) έχουν `JSONB`, που καλύπτει πολλές «document» ανάγκες χωρίς να φύγεις από SQL. Default: **ξεκίνα relational· πήγαινε NoSQL όταν ένα συγκεκριμένο pattern το απαιτεί**.
+
+## ACID vs BASE
+
+Το relational εγγυάται **ACID**. Πολλά NoSQL ανταλλάσσουν αυστηρότητα για κλίμακα/διαθεσιμότητα — το μοντέλο τους λέγεται **BASE**:
+
+```txt
+ACID  → Atomicity, Consistency, Isolation, Durability
+        "πάντα σωστό, ακόμα κι αν αργήσει ή μπλοκάρει"
+
+BASE  → Basically Available, Soft state, Eventually consistent
+        "πάντα διαθέσιμο, συγκλίνει στο σωστό με τον χρόνο"
+```
+
+Δεν είναι «καλό vs κακό» — είναι trade-off. Ένα banking ledger θέλει ACID. Ένα «likes counter» ή feed αντέχει eventual consistency για να είναι πάντα γρήγορο/διαθέσιμο.
+
+## CAP theorem
+
+Σε ένα **distributed** σύστημα, κατά τη διάρκεια ενός **network partition** (P, αναπόφευκτο), διαλέγεις:
+
+```txt
+C (Consistency)  → όλοι βλέπουν τα ίδια δεδομένα· άρνηση αν δεν γίνεται
+A (Availability) → πάντα απαντάς, ακόμα κι αν τα δεδομένα είναι stale
+```
+
+Δεν μπορείς να έχεις πλήρως και τα δύο σε partition. Παραδείγματα: παραδοσιακές SQL τείνουν σε **CP**· πολλά NoSQL προσφέρουν **AP** με eventual consistency.
+
+<PredictOutput
+  title="Διάλεξε τον σωστό τύπο"
+  code={`// Session store: get/set ανά session id, εκατομμύρια ops/sec,
+// TTL auto-expiry, ΟΧΙ queries, ΟΧΙ σχέσεις.
+// Ποιος τύπος NoSQL ταιριάζει;`}
+  options={["Document", "Key-Value", "Graph", "Wide-Column"]}
+  correctOptionIndex={1}
+  answer="Key-Value"
+  explanation="Καθαρό get/set ανά key, τεράστιο throughput, TTL — key-value store (Redis/DynamoDB). Document είναι overkill, graph είναι για σχέσεις, wide-column για τεράστια write-heavy analytical δεδομένα. Ο τύπος ακολουθεί το access pattern."
+/>
+
+## Τι θυσιάζεις φεύγοντας από relational
+
+```txt
+- Joins (συχνά τα κάνεις στον app ή με denormalization)
+- ACID transactions across documents (περιορισμένα/πιο αδύναμα σε πολλά)
+- Ad-hoc queries (το model είναι δεμένο με τα γνωστά access patterns)
+- Strong consistency (συχνά eventual)
+```
+
+Σε αντάλλαγμα κερδίζεις: horizontal scale, ευελιξία schema, throughput για **γνωστά** patterns. Αν δεν κερδίζεις κάτι από αυτά, μάλλον θες relational.
+
+<Exercise
+  question="Σε interview λες απλώς 'θα χρησιμοποιήσω NoSQL για scale'. Γιατί είναι αδύναμη απάντηση;"
+  options={[
+    "Γιατί 'NoSQL' είναι οικογένεια — πρέπει να πεις ΠΟΙΟΝ τύπο και ΓΙΑΤΙ, με βάση τα access patterns και τις ανάγκες consistency.",
+    "Γιατί το NoSQL δεν κάνει scale.",
+    "Γιατί το SQL είναι πάντα καλύτερο."
+  ]}
+  correctOptionIndex={0}
+  explanation="Οι interviewers αξιολογούν το σκεπτικό. 'NoSQL για scale' δείχνει έλλειψη κατανόησης — διαφορετικοί τύποι λύνουν διαφορετικά προβλήματα. Πες: 'key-value για session επειδή...', 'document επειδή ευέλικτο schema...'."
+/>
+
+<Exercise
+  question="Ένα feature 'likes counter' σε κοινωνικό app — ACID ή BASE είναι αποδεκτό;"
+  options={[
+    "BASE/eventual consistency είναι αποδεκτό: ένας μετρητής που συγκλίνει σε λίγα ms αξίζει την υψηλή διαθεσιμότητα/ταχύτητα.",
+    "Πρέπει οπωσδήποτε ACID, αλλιώς χάνεις likes.",
+    "Δεν έχει σημασία το consistency model εδώ."
+  ]}
+  correctOptionIndex={0}
+  explanation="Ένας μετρητής likes δεν χρειάζεται strong consistency — αν δείξει 1.204 αντί για 1.205 για 200ms, κανείς δεν νοιάζεται. Η διαθεσιμότητα/ταχύτητα μετράει περισσότερο. Ένα banking balance, αντίθετα, θέλει ACID."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«SQL or NoSQL — how do you choose?»
+
+> NoSQL isn't one thing — it's document, key-value, wide-column, and graph stores, each for a different shape of problem, so I name the specific one and why. I reach for relational when data has relationships I need to join, when I need ACID transactions and integrity, or when queries are ad-hoc. I reach for NoSQL when access patterns are known and stable but need to scale, or for flexible schemas and very high throughput. The deeper trade-off is ACID versus BASE: relational gives strong guarantees, many NoSQL stores choose availability with eventual consistency, which CAP makes explicit — in a partition you pick consistency or availability. Often Postgres with JSONB covers document needs without leaving SQL, so I default to relational and move when a pattern genuinely demands it.
+
+<Flashcards
+  title="NoSQL foundations — interview drills"
+  cards={[
+    {
+      question: "Οι 4 τύποι NoSQL;",
+      answer: "Document (MongoDB), Key-Value (Redis/DynamoDB), Wide-Column (Cassandra), Graph (Neo4j). Καθένας για διαφορετικό πρόβλημα — πες ποιο & γιατί, όχι σκέτο 'NoSQL'."
+    },
+    {
+      question: "Πότε SQL αντί για NoSQL;",
+      answer: "Σχέσεις & joins, ACID transactions, ακεραιότητα/constraints, ad-hoc/εξελισσόμενα queries. NoSQL: γνωστά patterns + κλίμακα, ευέλικτο schema, πολύ υψηλό throughput."
+    },
+    {
+      question: "ACID vs BASE;",
+      answer: "ACID (relational): πάντα σωστό, αυστηρές εγγυήσεις. BASE (πολλά NoSQL): Basically Available, Soft state, Eventually consistent — πάντα διαθέσιμο, συγκλίνει στο σωστό. Trade-off, όχι ποιότητα."
+    },
+    {
+      question: "Τι λέει το CAP theorem;",
+      answer: "Σε network partition διαλέγεις Consistency ή Availability (όχι πλήρως και τα δύο). SQL τείνουν CP· πολλά NoSQL AP με eventual consistency."
+    },
+    {
+      question: "Τι θυσιάζεις φεύγοντας από relational;",
+      answer: "Joins, multi-document ACID, ad-hoc queries, strong consistency (συχνά eventual). Σε αντάλλαγμα: horizontal scale, ευελιξία schema, throughput για γνωστά patterns."
+    },
+    {
+      question: "Τι είναι το Postgres JSONB και γιατί έχει σημασία;",
+      answer: "Τύπος που αποθηκεύει JSON με indexing/queries μέσα στο relational. Καλύπτει πολλές 'document' ανάγκες (ευέλικτα πεδία) χωρίς να εγκαταλείψεις ACID/joins — συχνά κάνει περιττό ένα ξεχωριστό document store."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Χάρτης: ποιος τύπος για ποιο πρόβλημα"
+  scenario="Πάρε 5 features (session store, product catalog, social graph, event log, user profiles) και αντιστοίχισέ τα σε τύπο store με δικαιολόγηση."
+  outcomes={[
+    "Να αναγνωρίζεις τον τύπο NoSQL ανά πρόβλημα.",
+    "Να δικαιολογείς SQL vs NoSQL με ανάγκες.",
+    "Να εξηγείς ACID/BASE/CAP trade-offs."
+  ]}
+  steps={[
+    "Για κάθε feature γράψε τα access patterns και τις ανάγκες consistency.",
+    "Διάλεξε τύπο store και γράψε το 'γιατί' σε μία πρόταση.",
+    "Σημείωσε ποια θέλουν ACID και ποια αντέχουν BASE.",
+    "Βρες ένα feature όπου το Postgres+JSONB θα αρκούσε αντί για NoSQL.",
+    "Εντόπισε ένα όπου SQL θα ήταν λάθος επιλογή και εξήγησε γιατί."
+  ]}
+  checkpoints={[
+    "Κάθε επιλογή store δικαιολογείται με access pattern.",
+    "Ξεχωρίζεις ποια features θέλουν strong vs eventual consistency.",
+    "Δεν διαλέγεις NoSQL χωρίς συγκεκριμένο όφελος."
+  ]}
+  mistakes={[
+    "'NoSQL για scale' χωρίς τύπο/λόγο.",
+    "ACID όπου αρκεί BASE (χάνεις διαθεσιμότητα/ταχύτητα) ή το αντίστροφο.",
+    "Επιλογή store βάσει hype αντί για access patterns.",
+    "Αγνόηση του Postgres JSONB ως ενδιάμεσης λύσης."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν για κάθε feature διαλέγεις τύπο store και υπερασπίζεσαι την επιλογή με access patterns και consistency needs."
+/>

@@ -1,0 +1,181 @@
+# Indexing & Query Performance
+
+Όταν μια βάση «αργεί», 9 στις 10 φορές λείπει ένα index ή ένα query κάνει full table scan. Στα interviews εξετάζουν αν ξέρεις **πώς δουλεύει ένα index**, πώς διαβάζεις ένα query plan, και γιατί τα indexes δεν είναι δωρεάν.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς τι είναι ένα B-tree index και γιατί επιταχύνει,
+- να διαβάζεις `EXPLAIN` (seq scan vs index scan),
+- να φτιάχνεις composite indexes με σωστή σειρά στηλών,
+- να ξέρεις πότε ένα index βλάπτει (writes, χώρος),
+- να αναγνωρίζεις queries που δεν μπορούν να χρησιμοποιήσουν index.
+
+## Τι είναι index
+
+Ένα index είναι μια **ταξινομημένη δομή** (συνήθως B-tree) που επιτρέπει στη βάση να βρει rows χωρίς να σαρώσει όλο τον πίνακα — σαν το ευρετήριο ενός βιβλίου.
+
+```sql
+CREATE INDEX idx_users_email ON users(email);
+-- Τώρα: WHERE email = '...' → index lookup (O(log n)) αντί για full scan (O(n))
+```
+
+Χωρίς index, το `WHERE email = 'x'` διαβάζει **κάθε** row (sequential/table scan). Με index, πηγαίνει κατευθείαν.
+
+## EXPLAIN — δες τι κάνει η βάση
+
+Το `EXPLAIN` (ή `EXPLAIN ANALYZE`) δείχνει το **query plan**:
+
+```sql
+EXPLAIN ANALYZE SELECT * FROM users WHERE email = 'a@b.com';
+```
+
+```txt
+χωρίς index:  Seq Scan on users  (cost=... rows=1000000)   ← σαρώνει τα πάντα 🐢
+με index:     Index Scan using idx_users_email  (cost=... rows=1)  ← στοχευμένο ⚡
+```
+
+Όταν βλέπεις **Seq Scan** σε μεγάλο πίνακα με selective `WHERE`, λείπει index.
+
+## Composite indexes & σειρά στηλών
+
+Index σε πολλές στήλες — η **σειρά μετράει** (left-to-right prefix rule):
+
+```sql
+CREATE INDEX idx_orders_user_created ON orders(user_id, created_at);
+```
+
+```txt
+✅ WHERE user_id = 5                          → χρησιμοποιεί το index
+✅ WHERE user_id = 5 AND created_at > '...'   → χρησιμοποιεί πλήρως
+❌ WHERE created_at > '...'                   → ΔΕΝ χρησιμοποιεί (δεν ξεκινά από user_id)
+```
+
+Κανόνας: το composite index καλύπτει queries που ξεκινούν από το **αριστερό prefix** των στηλών του. Βάλε πρώτη τη στήλη ισότητας (`=`), μετά τη range/sort στήλη.
+
+<PredictOutput
+  title="Γιατί δεν χρησιμοποιείται το index;"
+  code={`CREATE INDEX idx_users_email ON users(email);
+
+SELECT * FROM users WHERE LOWER(email) = 'a@b.com';
+-- Χρησιμοποιεί το idx_users_email;`}
+  options={[
+    "Όχι — η συνάρτηση LOWER(email) εμποδίζει τη χρήση του index στη στήλη",
+    "Ναι, πάντα",
+    "Μόνο σε MySQL",
+    "Ναι, αν ο πίνακας είναι μικρός"
+  ]}
+  correctOptionIndex={0}
+  answer="Όχι — function πάνω στη στήλη"
+  explanation="Το index είναι πάνω στο email, όχι στο LOWER(email). Όταν τυλίγεις τη στήλη σε συνάρτηση (ή κάνεις πράξη πάνω της), η βάση δεν μπορεί να χρησιμοποιήσει το κανονικό index → seq scan. Λύσεις: functional index CREATE INDEX ... ON users(LOWER(email)), ή αποθήκευσε το email κανονικοποιημένο."
+/>
+
+## Πότε ένα index βλάπτει
+
+Τα indexes **δεν είναι δωρεάν**:
+
+```txt
+- Κάθε INSERT/UPDATE/DELETE πρέπει να ενημερώσει ΚΑΙ τα indexes → πιο αργά writes
+- Καταναλώνουν χώρο (disk + memory)
+- Πάρα πολλά/αχρησιμοποίητα indexes = overhead χωρίς όφελος
+- Index σε low-cardinality στήλη (π.χ. boolean) συχνά άχρηστο
+```
+
+Κανόνας: index στις στήλες που χρησιμοποιείς συχνά σε `WHERE`/`JOIN`/`ORDER BY` με υψηλή selectivity — όχι σε ό,τι να 'ναι.
+
+## Queries που δεν μπορούν να χρησιμοποιήσουν index
+
+```sql
+WHERE LOWER(email) = '...'        -- function πάνω στη στήλη
+WHERE email LIKE '%@gmail.com'    -- leading wildcard (% στην αρχή)
+WHERE status != 'active'          -- negation, χαμηλή selectivity
+WHERE created_at + interval '1 day' > now()  -- πράξη πάνω στη στήλη
+```
+
+Γενικά: κράτα τη **στήλη «καθαρή»** στη μία πλευρά της σύγκρισης, και απόφυγε leading wildcards.
+
+<Exercise
+  question="Ένα query WHERE user_id = 5 AND created_at > '2026-01-01' είναι αργό. Ποιο index;"
+  options={[
+    "Composite index (user_id, created_at) — ισότητα πρώτα, μετά range.",
+    "Δύο ξεχωριστά indexes πάντα καλύτερα.",
+    "Index (created_at, user_id)."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το composite (user_id, created_at) καλύπτει και το equality (user_id) και το range (created_at) σε ένα index, με τη σωστή σειρά (equality πρώτα). Το (created_at, user_id) δεν θα ήταν τόσο αποδοτικό για αυτό το pattern."
+/>
+
+<Exercise
+  question="Γιατί δεν βάζεις index σε κάθε στήλη 'για σιγουριά';"
+  options={[
+    "Κάθε index επιβαρύνει τα writes (INSERT/UPDATE/DELETE) και τον χώρο· αχρησιμοποίητα indexes είναι καθαρό overhead.",
+    "Επειδή τα indexes χαλάνε τα δεδομένα.",
+    "Δεν υπάρχει λόγος — βάζε παντού."
+  ]}
+  correctOptionIndex={0}
+  explanation="Τα indexes επιταχύνουν reads αλλά κάθε write πρέπει να τα ενημερώσει, και πιάνουν χώρο/μνήμη. Indexάρεις στοχευμένα τις στήλες με συχνά selective WHERE/JOIN/ORDER BY, με βάση μετρήσεις (EXPLAIN)."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you diagnose and fix a slow query?»
+
+> I start with `EXPLAIN ANALYZE` to see the plan. A sequential scan on a large table with a selective filter usually means a missing index. An index is a sorted structure — typically a B-tree — that lets the database jump to matching rows instead of scanning everything, turning an O(n) scan into an O(log n) lookup. For multi-column filters I use a composite index and order the columns left to right, equality columns first then a range column, because the index only helps queries that match a left prefix. I also watch for things that defeat indexes: a function wrapped around the column, a leading wildcard in `LIKE`, or arithmetic on the column. And I don't index everything — each index slows down writes and costs space, so I index the columns that actually appear in selective `WHERE`, `JOIN`, and `ORDER BY` clauses, guided by the query plan.
+
+<Flashcards
+  title="Indexing & performance — interview drills"
+  cards={[
+    {
+      question: "Τι είναι ένα index και τι κερδίζεις;",
+      answer: "Ταξινομημένη δομή (B-tree) που βρίσκει rows χωρίς full scan. Μετατρέπει το O(n) seq scan σε ~O(log n) lookup. Σαν ευρετήριο βιβλίου."
+    },
+    {
+      question: "Πώς διαβάζεις το EXPLAIN;",
+      answer: "Seq Scan = σαρώνει όλον τον πίνακα (κακό σε μεγάλο/selective query). Index Scan = στοχευμένη χρήση index. EXPLAIN ANALYZE δίνει και πραγματικούς χρόνους."
+    },
+    {
+      question: "Σειρά στηλών σε composite index;",
+      answer: "Left-to-right prefix rule: το index καλύπτει queries που ξεκινούν από το αριστερό prefix. Βάλε equality (=) στήλη πρώτη, μετά range/sort στήλη."
+    },
+    {
+      question: "Πότε ΔΕΝ χρησιμοποιείται index;",
+      answer: "Function/πράξη πάνω στη στήλη (LOWER(email)), leading wildcard (LIKE '%x'), negation χαμηλής selectivity. Κράτα τη στήλη 'καθαρή' στη σύγκριση ή φτιάξε functional index."
+    },
+    {
+      question: "Ποιο είναι το κόστος ενός index;",
+      answer: "Πιο αργά writes (κάθε INSERT/UPDATE/DELETE ενημερώνει τα indexes), χώρος (disk/memory). Αχρησιμοποίητα/πολλά indexes = overhead. Index στοχευμένα."
+    },
+    {
+      question: "Index σε boolean/low-cardinality στήλη;",
+      answer: "Συνήθως άχρηστο: χαμηλή selectivity (λίγες διακριτές τιμές), η βάση πιθανόν προτιμά seq scan. Indexάρεις high-cardinality στήλες με selective filters."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Βελτιστοποίηση αργού query"
+  scenario="Έχεις ένα query που κάνει seq scan σε μεγάλο πίνακα. Διάγνωσε και διόρθωσε με μέτρηση."
+  outcomes={[
+    "Να διαβάζεις query plans με EXPLAIN.",
+    "Να φτιάχνεις σωστά (composite) indexes.",
+    "Να αναγνωρίζεις index-unfriendly queries."
+  ]}
+  steps={[
+    "Τρέξε EXPLAIN ANALYZE και εντόπισε το Seq Scan.",
+    "Πρόσθεσε index στη selective στήλη του WHERE.",
+    "Για WHERE με ισότητα + range, φτιάξε composite index σωστής σειράς.",
+    "Βρες ένα query με function πάνω στη στήλη και ξαναγράψέ το (ή functional index).",
+    "Ξαναμέτρα και επιβεβαίωσε Index Scan & μικρότερο χρόνο."
+  ]}
+  checkpoints={[
+    "Το plan άλλαξε από Seq Scan σε Index Scan.",
+    "Το composite index έχει equality-first σειρά.",
+    "Το index-unfriendly query διορθώθηκε."
+  ]}
+  mistakes={[
+    "Index σε κάθε στήλη χωρίς μέτρηση (writes/χώρος).",
+    "Λάθος σειρά στηλών σε composite (range πρώτα).",
+    "Function πάνω στη στήλη που ακυρώνει το index.",
+    "Index σε low-cardinality στήλη χωρίς όφελος."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μετατρέπεις ένα seq scan σε index scan με μετρήσιμη βελτίωση και ξέρεις το κόστος."
+/>
