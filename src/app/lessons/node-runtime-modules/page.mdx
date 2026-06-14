@@ -1,0 +1,169 @@
+# Node Runtime & Modules
+
+Πριν γράψεις Express, πρέπει να καταλαβαίνεις **τι είναι** το Node: όχι «JavaScript στον server» σκέτο, αλλά ένα runtime χτισμένο γύρω από το V8 και ένα event loop με non-blocking I/O. Στις συνεντεύξεις, το «πώς τρέχει το Node χιλιάδες ταυτόχρονα requests με ένα thread;» και «CommonJS ή ESM;» είναι σχεδόν εγγυημένα.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς το runtime: V8, libuv, event loop, single-threaded non-blocking I/O,
+- να ξεχωρίζεις I/O-bound από CPU-bound και γιατί έχει σημασία,
+- να καταλαβαίνεις τη σειρά: macrotasks, microtasks, `process.nextTick`,
+- να διαλέγεις ανάμεσα σε CommonJS και ESM modules,
+- να χρησιμοποιείς σωστά `process`, env vars και τα core modules.
+
+## Το runtime: V8 + libuv + event loop
+
+Το Node τρέχει JavaScript πάνω στο **V8** (ο engine της Chrome) και προσθέτει το **libuv** — μια C βιβλιοθήκη που δίνει το event loop και ένα thread pool για I/O. Το κρίσιμο σχεδιαστικό χαρακτηριστικό: **single-threaded JavaScript εκτέλεση με non-blocking I/O**.
+
+Παραδοσιακοί servers δεσμεύουν ένα thread ανά request — αν το request περιμένει τη database, το thread κάθεται αδρανές. Το Node δουλεύει αλλιώς: όταν ένα request περιμένει I/O (database, αρχείο, δίκτυο), ο μοναδικός thread **συνεχίζει να εξυπηρετεί άλλα requests** και επιστρέφει όταν έρθει η απάντηση μέσω callback/promise.
+
+Συνέπειες που πρέπει να αρθρώνεις:
+- **Δυνατό σε I/O-bound φορτία**: APIs, proxies, real-time — χιλιάδες ταυτόχρονες συνδέσεις με λίγη μνήμη.
+- **Αδύναμο σε CPU-bound δουλειά**: ένα βαρύ συγχρονισμένο loop (image processing, crypto) **μπλοκάρει το event loop** και παγώνει όλα τα requests. Λύση: `worker_threads` ή ξεχωριστό service.
+
+## Event loop phases & σειρά εκτέλεσης
+
+Το event loop έχει φάσεις (timers, I/O callbacks, poll, check, close). Δύο ουρές «παρακάμπτουν» τη σειρά:
+- **microtasks** (resolved promises, `queueMicrotask`) — τρέχουν μετά από κάθε operation, **πριν** τα timers.
+- **`process.nextTick`** — προτεραιότητα ακόμη πιο πάνω, πριν τα microtasks.
+
+```js
+console.log("1: sync");
+setTimeout(() => console.log("2: timeout (macrotask)"), 0);
+Promise.resolve().then(() => console.log("3: promise (microtask)"));
+process.nextTick(() => console.log("4: nextTick"));
+console.log("5: sync");
+// 1, 5, 4, 3, 2
+```
+
+Η λογική: όλος ο sync κώδικας πρώτα (1, 5)· μετά `process.nextTick` (4)· μετά microtasks/promises (3)· τέλος macrotasks/timers (2).
+
+<PredictOutput
+  title="Event loop ordering"
+  code={`console.log("A");
+setTimeout(() => console.log("B"), 0);
+Promise.resolve().then(() => console.log("C"));
+console.log("D");`}
+  options={["A, B, C, D", "A, D, C, B", "A, D, B, C", "A, C, D, B"]}
+  correctOptionIndex={1}
+  answer="A, D, C, B"
+  explanation="Sync πρώτα: A, D. Μετά το microtask (promise): C. Τέλος το macrotask (setTimeout): B. Τα promises ΠΑΝΤΑ προηγούνται των timers, ανεξάρτητα από το delay 0. Ίδια λογική με τον browser event loop."
+/>
+
+## CommonJS vs ESM
+
+Δύο module systems συνυπάρχουν στο Node:
+
+```js
+// CommonJS (CJS) — το ιστορικό default, synchronous require
+const fs = require("fs");
+module.exports = { add };
+
+// ES Modules (ESM) — το standard, static import/export
+import fs from "node:fs";
+export function add(a, b) { return a + b; }
+```
+
+Πώς διαλέγει το Node: `.mjs` = ESM, `.cjs` = CJS, `.js` ακολουθεί το `"type"` στο `package.json` (`"module"` = ESM, `"commonjs"` ή απών = CJS).
+
+Διαφορές που πρέπει να ξέρεις:
+- **ESM είναι static**: τα imports αναλύονται πριν τρέξει ο κώδικας → επιτρέπει tree-shaking, top-level `await`. Το CJS `require` είναι dynamic, runtime.
+- **ESM είναι το μέλλον**: νέα projects ξεκινούν ESM. Αλλά πολλά packages/legacy κώδικας είναι ακόμη CJS, άρα πρέπει να ξέρεις και τα δύο.
+- Στο ESM δεν υπάρχουν `__dirname`/`require` — χρησιμοποιείς `import.meta.url`.
+
+## `process`, env vars & core modules
+
+```js
+process.env.NODE_ENV          // environment config — ΠΟΤΕ secrets hardcoded
+process.argv                  // command-line arguments
+process.exit(1)               // exit με κωδικό (1 = error)
+process.on("SIGTERM", ...)    // graceful shutdown signal
+
+// Core modules — χρησιμοποίησε το node: prefix (σαφές ότι είναι built-in)
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import crypto from "node:crypto";
+```
+
+Τα env vars είναι ο σωστός τρόπος για config: τα secrets και οι ρυθμίσεις έρχονται από το περιβάλλον (`.env` τοπικά, secrets manager σε production), ποτέ μέσα στον κώδικα ή στο Git.
+
+<Exercise
+  question="Το API σου κάνει βαρύ συγχρονισμένο υπολογισμό (π.χ. hashing) σε κάθε request και ΟΛΑ τα requests αργούν. Γιατί;"
+  options={[
+    "Το Node εκτελεί JavaScript single-threaded — η CPU-bound δουλειά μπλοκάρει το event loop, οπότε κανένα άλλο request δεν εξυπηρετείται όσο τρέχει.",
+    "Η database έχει αργά indexes.",
+    "Το V8 δεν υποστηρίζει hashing."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το non-blocking μοντέλο λάμπει σε I/O αλλά η συγχρονισμένη CPU δουλειά παγώνει τα πάντα. Λύση: worker_threads, job queue με ξεχωριστό worker, ή native crypto που τρέχει στο libuv thread pool."
+/>
+
+<Exercise
+  question="Ποια η βασική διαφορά ESM από CommonJS;"
+  options={[
+    "ESM είναι static (imports αναλύονται πριν την εκτέλεση → tree-shaking, top-level await), ενώ CommonJS require είναι dynamic/synchronous στο runtime. ESM είναι το standard για νέα projects.",
+    "Το ESM είναι πιο αργό και αποφεύγεται.",
+    "Δεν υπάρχει καμία πρακτική διαφορά."
+  ]}
+  correctOptionIndex={0}
+  explanation="Static analysis του ESM επιτρέπει bundler optimizations και top-level await. Το CJS παραμένει σε πολλά legacy packages, οπότε ένας Node dev πρέπει να ξέρει και τα δύο και πώς τα διαλέγει το package.json type."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How does Node handle thousands of concurrent requests with a single thread?»
+
+> Node runs my JavaScript on a single thread via V8, but I/O is non-blocking thanks to libuv and the event loop. When a request waits on the database, a file, or the network, the thread doesn't sit idle — it serves other requests and comes back via a callback or promise when the data is ready. That's why Node excels at I/O-bound workloads like APIs and real-time. The flip side is CPU-bound work: a heavy synchronous loop blocks the event loop and freezes every request, so I move that to worker threads or a separate service. And I keep the execution order straight — sync code first, then `process.nextTick`, then promise microtasks, then timers and other macrotasks.
+
+<Flashcards
+  title="Node runtime & modules — interview drills"
+  cards={[
+    {
+      question: "Πώς εξυπηρετεί το Node χιλιάδες concurrent requests με ένα thread;",
+      answer: "V8 + libuv event loop + non-blocking I/O: όταν ένα request περιμένει db/δίκτυο/δίσκο, ο thread εξυπηρετεί άλλα και επιστρέφει μέσω callback/promise. Δουλεύει γιατί τα web φορτία είναι κυρίως I/O-bound."
+    },
+    {
+      question: "Πότε το Node είναι ΚΑΚΗ επιλογή;",
+      answer: "CPU-bound δουλειά (image/video processing, βαρύ crypto, ML) — μπλοκάρει το event loop και παγώνει όλα τα requests. Λύση: worker_threads ή ξεχωριστός worker/service."
+    },
+    {
+      question: "Σειρά: sync, setTimeout, promise, process.nextTick;",
+      answer: "Sync → process.nextTick → microtasks (promises) → macrotasks (timers). Τα promises προηγούνται των timers ανεξάρτητα από delay 0."
+    },
+    {
+      question: "CommonJS vs ESM;",
+      answer: "CJS: require/module.exports, synchronous, dynamic, legacy default. ESM: import/export, static (tree-shaking, top-level await), το standard. Το package.json 'type' και η κατάληξη (.mjs/.cjs) καθορίζουν ποιο."
+    },
+    {
+      question: "Πού ζει το config/secrets ενός Node app;",
+      answer: "Σε environment variables (process.env), φορτωμένα από .env τοπικά ή secrets manager σε production. Ποτέ hardcoded, ποτέ στο Git."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Κατανόησε το runtime"
+  scenario="Γράψε μικρά πειράματα που αποδεικνύουν πώς δουλεύει το event loop και τα modules, και τεκμηρίωσε τι παρατηρείς."
+  outcomes={[
+    "Να προβλέπεις τη σειρά εκτέλεσης sync/micro/macro tasks.",
+    "Να επιδεικνύεις το blocking ενός CPU loop.",
+    "Να στήνεις ESM project με σωστό package.json."
+  ]}
+  steps={[
+    "Γράψε snippet με sync logs, setTimeout, Promise.then, process.nextTick και πρόβλεψε το output.",
+    "Φτιάξε ένα βαρύ συγχρονισμένο loop και δες ότι μπλοκάρει ένα δεύτερο setTimeout.",
+    "Μετέφερε το loop σε worker_threads και δες ότι ξεμπλοκάρει.",
+    "Στήσε package.json με type:module και χρησιμοποίησε import/top-level await.",
+    "Διάβασε ένα env var μέσω process.env με fallback."
+  ]}
+  checkpoints={[
+    "Προβλέπεις σωστά τη σειρά των tasks.",
+    "Καταλαβαίνεις γιατί ο CPU loop παγώνει το event loop.",
+    "Τα secrets έρχονται από env, όχι hardcoded."
+  ]}
+  mistakes={[
+    "Να βάζεις CPU-bound δουλειά inline και να παγώνεις όλα τα requests.",
+    "Να υποθέτεις ότι setTimeout(…,0) τρέχει πριν ένα resolved promise.",
+    "Να μπερδεύεις CJS/ESM syntax στο ίδιο αρχείο χωρίς σωστό type."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν εξηγείς το non-blocking μοντέλο και προβλέπεις σωστά τη σειρά sync/nextTick/microtask/macrotask."
+/>

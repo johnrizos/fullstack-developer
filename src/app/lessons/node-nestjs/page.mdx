@@ -1,0 +1,218 @@
+# NestJS in Depth
+
+Το NestJS παίρνει τα στρώματα που έμαθες να φτιάχνεις χειροκίνητα στο Express και τα κάνει **conventions επιβεβλημένες από το framework**, με decorators και built-in dependency injection. Είναι η default επιλογή για μεγαλύτερα TypeScript backends και ομάδες. Στη συνέντευξη: «Express ή NestJS;», «τι είναι το DI και γιατί το θες;», «τι κάνει ένα module;».
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς τα building blocks: Module, Controller, Provider/Service,
+- να καταλαβαίνεις σε βάθος το dependency injection του Nest,
+- να χρησιμοποιείς Pipes (validation), Guards (auth), Interceptors,
+- να ξέρεις πότε διαλέγεις NestJS αντί για Express,
+- να οργανώνεις ένα feature module σωστά.
+
+## Τα building blocks
+
+```ts
+@Controller("tasks")                 // HTTP layer
+export class TasksController {
+  // DI: το Nest ΔΙΝΕΙ το service — δεν κάνεις new TasksService()
+  constructor(private readonly tasksService: TasksService) {}
+
+  @Get()
+  findAll(@Query("completed") completed?: string) {
+    return this.tasksService.findAll({ completed: completed === "true" });
+  }
+
+  @Post()
+  @UsePipes(new ValidationPipe())    // auto-validation από το DTO
+  create(@Body() dto: CreateTaskDto) {
+    return this.tasksService.create(dto);
+  }
+}
+
+@Injectable()                        // Provider — μπορεί να γίνει inject
+export class TasksService {
+  constructor(private readonly repo: TasksRepository) {}
+  findAll(filter) { return this.repo.find(filter); }
+}
+
+@Module({                            // οργάνωση + DI scope
+  controllers: [TasksController],
+  providers: [TasksService, TasksRepository],
+  exports: [TasksService],           // διαθέσιμο σε άλλα modules
+})
+export class TasksModule {}
+```
+
+Οι αντιστοιχίες με το Express layering: **Controller** = routes (HTTP), **Service/Provider** = business logic, **Module** = το wiring + DI scope. Η διαφορά: το Nest τα **επιβάλλει** και κάνει το DI αυτόματα.
+
+## Dependency Injection — σε βάθος
+
+Αυτή είναι η ψυχή του Nest. Ο controller **δηλώνει τι χρειάζεται** στον constructor· το Nest κατασκευάζει και «ενίει» την υλοποίηση:
+
+```ts
+constructor(private readonly tasksService: TasksService) {}
+// Το Nest βλέπει τον τύπο TasksService, βρίσκει τον provider,
+// τον κατασκευάζει (μία φορά — singleton scope), και τον δίνει.
+```
+
+Γιατί το θες — η ερώτηση-φίλτρο:
+- **Testability**: στο test δίνεις mock provider με μία γραμμή, χωρίς να πειράξεις imports.
+- **Ορατές εξαρτήσεις**: όλες στα constructors, όχι κρυμμένες σε `require`.
+- **Lifecycle/scope**: το Nest διαχειρίζεται singletons, request-scoped providers κ.λπ.
+
+```ts
+// Testing με DI — αντικαθιστάς τον provider
+const module = await Test.createTestingModule({
+  controllers: [TasksController],
+  providers: [{ provide: TasksService, useValue: mockService }],
+}).compile();
+```
+
+<PredictOutput
+  title="DI scope"
+  code={`@Injectable()
+export class CounterService {
+  count = 0;
+  inc() { return ++this.count; }
+}
+// Default scope = singleton.
+// Δύο controllers κάνουν inject το CounterService
+// και καλούν inc() μία φορά ο καθένας. Το δεύτερο inc() επιστρέφει;`}
+  options={["1", "2", "0", "undefined"]}
+  correctOptionIndex={1}
+  answer="2"
+  explanation="Default scope στο Nest είναι singleton — ΜΙΑ instance μοιράζεται σε όλο το app. Άρα και οι δύο controllers μοιράζονται το ίδιο CounterService: πρώτο inc()→1, δεύτερο inc()→2. Αν ήθελες ξεχωριστή instance ανά request, θα όριζες Scope.REQUEST."
+/>
+
+## Pipes, Guards, Interceptors — το request lifecycle
+
+Το Nest έχει σαφή σημεία επέκτασης γύρω από κάθε request:
+
+```ts
+// Pipe — validation/transformation του input
+@UsePipes(new ValidationPipe({ whitelist: true }))   // με class-validator DTOs
+
+export class CreateTaskDto {
+  @IsString() @MinLength(2)
+  title: string;
+  @IsEnum(Priority)
+  priority: Priority;
+}
+
+// Guard — auth/authorization (πριν τον handler)
+@Injectable()
+export class AuthGuard implements CanActivate {
+  canActivate(ctx: ExecutionContext): boolean {
+    const req = ctx.switchToHttp().getRequest();
+    return Boolean(verifyToken(req.headers.authorization));
+  }
+}
+@UseGuards(AuthGuard)
+
+// Interceptor — γύρω από τον handler (logging, response shaping, caching)
+@Injectable()
+export class LoggingInterceptor implements NestInterceptor {
+  intercept(ctx, next) {
+    const start = Date.now();
+    return next.handle().pipe(tap(() => console.log(Date.now() - start)));
+  }
+}
+```
+
+- **Pipe**: μετασχηματίζει/επικυρώνει input (το `ValidationPipe` + class-validator DTOs δίνουν auto-422).
+- **Guard**: αποφασίζει αν το request προχωρά (auth/roles).
+- **Interceptor**: τυλίγει τον handler (timing, logging, response transform).
+
+## Express ή NestJS;
+
+```txt
+Express: μικρά APIs, microservices, μέγιστη ελευθερία, εσύ στήνεις το layering.
+NestJS:  μεγαλύτερα apps & ομάδες — δομή έτοιμη και κοινή, DI, testing εύκολο.
+         Κόστος: boilerplate και καμπύλη εκμάθησης.
+```
+
+Δεν είναι «καλύτερο/χειρότερο» — είναι trade-off. Σε ομάδα όπου η συνέπεια μετράει, το Nest επιβάλλει την ίδια δομή για όλους. Σε μικρό service, το Express είναι ελαφρύτερο.
+
+<Exercise
+  question="Τι είναι το dependency injection στο NestJS και ποιο το κύριο όφελος;"
+  options={[
+    "Ο controller δηλώνει τις εξαρτήσεις του στον constructor και το Nest τις κατασκευάζει & ενίει. Όφελος: testability (mock με μία γραμμή), ορατές εξαρτήσεις, διαχείριση lifecycle/scope.",
+    "Ένας τρόπος να φορτώνεις npm packages πιο γρήγορα.",
+    "Η αυτόματη δημιουργία database connections."
+  ]}
+  correctOptionIndex={0}
+  explanation="DI = inversion of control: δηλώνεις τι χρειάζεσαι, το framework το παρέχει. Στο test δίνεις mock provider αντί για το πραγματικό — χωρίς να πειράξεις imports. Ορατές, αντικαταστάσιμες εξαρτήσεις."
+/>
+
+<Exercise
+  question="Πότε διαλέγεις NestJS αντί για Express;"
+  options={[
+    "Σε μεγαλύτερα apps/ομάδες όπου η συνεπής δομή, το built-in DI και το εύκολο testing αξίζουν το boilerplate. Express για μικρά services/microservices με μέγιστη ελευθερία.",
+    "Πάντα — το NestJS είναι αντικειμενικά καλύτερο.",
+    "Ποτέ — το Express είναι πάντα προτιμότερο."
+  ]}
+  correctOptionIndex={0}
+  explanation="Trade-off, όχι ιεραρχία. Nest: επιβεβλημένη δομή + DI + testing, με κόστος boilerplate/learning curve — αξίζει σε μέγεθος/ομάδα. Express: ελαφρύ, ευέλικτο, εσύ στήνεις το layering."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«Express or NestJS — how do you choose?»
+
+> Express is minimal and unopinionated, so for small services I set up my own layering — routes, services, repositories, a central error handler. NestJS bakes that same architecture into the framework with modules, controllers, and providers, plus built-in dependency injection: a controller declares what it needs in its constructor and Nest constructs and injects it, defaulting to singletons. That pays off in larger codebases and teams because the structure is consistent and testing is trivial — I swap a provider for a mock in one line instead of patching imports. Nest also gives clean lifecycle hooks: pipes for validation, guards for auth, interceptors for cross-cutting concerns. The cost is boilerplate and a learning curve, so for a tiny microservice I'd still reach for Express.
+
+<Flashcards
+  title="NestJS — interview drills"
+  cards={[
+    {
+      question: "Τα core building blocks του Nest;",
+      answer: "Controller (HTTP/routes), Provider/Service (@Injectable, business logic), Module (@Module — wiring + DI scope, με providers/controllers/exports). Αντιστοιχούν στο Express layering αλλά επιβεβλημένα."
+    },
+    {
+      question: "Τι είναι το DI και γιατί το θες;",
+      answer: "Δηλώνεις εξαρτήσεις στον constructor, το Nest τις κατασκευάζει & ενίει (default singleton). Όφελος: mock με μία γραμμή στα tests, ορατές εξαρτήσεις, διαχείριση scope/lifecycle."
+    },
+    {
+      question: "Pipe vs Guard vs Interceptor;",
+      answer: "Pipe: validate/transform input (ValidationPipe + DTOs → auto 422). Guard: αποφασίζει αν προχωρά το request (auth/roles). Interceptor: τυλίγει τον handler (logging, timing, response shaping)."
+    },
+    {
+      question: "Default DI scope στο Nest;",
+      answer: "Singleton — μία instance του provider μοιράζεται σε όλο το app. Για ξεχωριστή instance ανά request ορίζεις Scope.REQUEST (με κόστος performance)."
+    },
+    {
+      question: "Express vs NestJS — το trade-off;",
+      answer: "Express: μικρά/microservices, ελευθερία, χειροκίνητο layering. NestJS: μεγάλα apps/ομάδες, επιβεβλημένη δομή + DI + εύκολο testing, με κόστος boilerplate/learning curve."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Feature module στο NestJS"
+  scenario="Φτιάξε ένα tasks feature module με controller, service, DTO validation, ένα guard, και test με mocked provider."
+  outcomes={[
+    "Να οργανώνεις module με controller/provider/exports.",
+    "Να αξιοποιείς DI και να το mock-άρεις στα tests.",
+    "Να χρησιμοποιείς pipes/guards για validation/auth."
+  ]}
+  steps={[
+    "Φτιάξε TasksModule με TasksController και TasksService.",
+    "Όρισε CreateTaskDto με class-validator και ValidationPipe (auto 422).",
+    "Πρόσθεσε AuthGuard με @UseGuards σε ένα endpoint.",
+    "Γράψε test με Test.createTestingModule και useValue mock service.",
+    "Πρόσθεσε LoggingInterceptor που μετρά διάρκεια."
+  ]}
+  checkpoints={[
+    "Ο controller παίρνει το service μέσω DI, όχι new.",
+    "Invalid DTO → 422 αυτόματα από το ValidationPipe.",
+    "Το test τρέχει με mock provider, χωρίς πραγματικές εξαρτήσεις."
+  ]}
+  mistakes={[
+    "Να κάνεις new TasksService() αντί για DI.",
+    "Να ξεχνάς το ValidationPipe/DTO και να κάνεις χειροκίνητο validation.",
+    "Να βάζεις business logic στον controller αντί στο service.",
+    "Να μην εκμεταλλεύεσαι το DI για mocking στα tests."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν εξηγείς γιατί το DI κάνει το testing τετριμμένο και στήνεις feature module με guard+pipe χωρίς να ψάξεις."
+/>

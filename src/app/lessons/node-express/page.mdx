@@ -1,0 +1,214 @@
+# Express Fundamentals
+
+Το Express είναι ο πιο διαδεδομένος τρόπος να φτιάξεις HTTP API σε Node — minimal, unopinionated, και η βάση που πρέπει να κατέχεις πριν πας σε NestJS. Στη συνέντευξη: «τι κάνει το `express.json()`;», «πώς δουλεύει το routing;», «route handler vs middleware;».
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να στήνεις Express app με routes και σωστά HTTP methods/status codes,
+- να καταλαβαίνεις το `req`/`res` lifecycle,
+- να χρησιμοποιείς route parameters, query strings και request body,
+- να κρατάς το route handler «λεπτό» (μόνο HTTP concerns),
+- να στέλνεις σωστά JSON responses και status codes.
+
+## Το πρώτο API
+
+```ts
+import express from "express";
+
+const app = express();
+app.use(express.json());   // ΧΩΡΙΣ αυτό, το req.body είναι undefined!
+
+app.get("/tasks", async (req, res) => {
+  const tasks = await taskService.list({ completed: req.query.completed === "true" });
+  res.json({ data: tasks });
+});
+
+app.post("/tasks", async (req, res, next) => {
+  try {
+    const title = req.body.title;
+    if (typeof title !== "string" || title.trim().length < 2) {
+      return res.status(422).json({ error: "Title must be at least 2 characters" });
+    }
+    const task = await taskService.create({ title: title.trim() });
+    res.status(201).json({ data: task });   // 201 Created για νέο resource
+  } catch (error) {
+    next(error);   // προώθηση σε centralized error handler
+  }
+});
+
+app.listen(3000);
+```
+
+Το `express.json()` είναι middleware που κάνει parse το JSON body — χωρίς αυτό, το `req.body` είναι `undefined`. Κλασικό «γιατί δεν δουλεύει το POST μου» bug.
+
+## req & res — τα βασικά
+
+```ts
+app.get("/users/:id", (req, res) => {
+  req.params.id        // route parameter: /users/42 → "42"
+  req.query.sort       // query string: ?sort=name → "name"
+  req.body             // parsed body (χρειάζεται express.json())
+  req.headers          // request headers
+  req.method, req.path // GET, /users/42
+
+  res.status(200)      // status code (chainable)
+     .set("X-Custom", "value")   // response header
+     .json({ data });            // JSON + τερματισμός
+});
+```
+
+Το `res` τερματίζει το request: `res.json()`, `res.send()`, `res.end()`, `res.redirect()`. **Μόνο ένα** ανά request — διπλό `res.json` ρίχνει «headers already sent».
+
+## HTTP methods & status codes — σωστά
+
+```txt
+GET     /tasks       → 200  λίστα (idempotent, χωρίς side effects)
+GET     /tasks/:id   → 200 ή 404
+POST    /tasks       → 201  δημιουργία (επιστρέφει το νέο resource)
+PUT     /tasks/:id   → 200  πλήρης αντικατάσταση
+PATCH   /tasks/:id   → 200  μερική ενημέρωση
+DELETE  /tasks/:id   → 204  διαγραφή (No Content)
+
+422 Unprocessable   → invalid input (validation failed)
+401 Unauthorized    → δεν είσαι authenticated
+403 Forbidden       → είσαι authenticated αλλά δεν επιτρέπεται
+500 Internal Error  → unexpected server error
+```
+
+Τα σωστά status codes είναι μέρος του API contract — ο client βασίζεται σε αυτά. Επιστροφή `200` με `{error}` μέσα είναι anti-pattern: ο client δεν μπορεί να ξεχωρίσει success από failure χωρίς να διαβάσει το body.
+
+<PredictOutput
+  title="express.json() drill"
+  code={`const app = express();
+// ΧΩΡΙΣ app.use(express.json())
+
+app.post("/echo", (req, res) => {
+  res.json({ received: req.body });
+});
+// POST /echo με body {"name":"Ana"} — τι επιστρέφει;`}
+  options={['{"received":{"name":"Ana"}}', '{"received":undefined}', "500 error", '{"received":{}}']}
+  correctOptionIndex={1}
+  answer='{"received": undefined}'
+  explanation="Χωρίς το express.json() middleware, το body δεν γίνεται parse και το req.body μένει undefined. Στο JSON serialization, το undefined γίνεται απλώς απών/null. Πάντα app.use(express.json()) για JSON APIs."
+/>
+
+## Router — οργάνωση routes
+
+Καθώς μεγαλώνει το API, σπας τα routes σε modules με `express.Router`:
+
+```ts
+// routes/tasks.routes.ts
+import { Router } from "express";
+const router = Router();
+
+router.get("/", listTasks);
+router.post("/", createTask);
+router.patch("/:id", updateTask);
+
+export default router;
+
+// app.ts
+app.use("/tasks", tasksRouter);   // όλα τα routes με prefix /tasks
+```
+
+Έτσι το `app.ts` μένει καθαρό και κάθε resource έχει το δικό του router file.
+
+## Το route handler μένει λεπτό
+
+Το route handler κρατά **μόνο** τα HTTP concerns: parsing, validation, status codes. Η δουλειά γίνεται στο service:
+
+```ts
+app.post("/tasks", async (req, res, next) => {
+  try {
+    const task = await taskService.create(req.body);  // λογική στο service
+    res.status(201).json({ data: task });             // handler: μόνο HTTP
+  } catch (error) {
+    next(error);
+  }
+});
+```
+
+Γιατί; Το service τεστάρεται **χωρίς HTTP** και επαναχρησιμοποιείται (π.χ. από cron ή queue worker). Ο handler διαβάζεται σε 5 γραμμές. (Περισσότερα στο μάθημα Layered Architecture.)
+
+<Exercise
+  question="Κάνεις POST με JSON body αλλά το req.body είναι undefined. Γιατί;"
+  options={[
+    "Λείπει το app.use(express.json()) — χωρίς αυτό το middleware, το JSON body δεν γίνεται parse και το req.body μένει undefined.",
+    "Το Express δεν υποστηρίζει POST.",
+    "Πρέπει να κάνεις res.body αντί για req.body."
+  ]}
+  correctOptionIndex={0}
+  explanation="express.json() είναι το built-in middleware που κάνει parse το application/json body. Είναι το πιο συχνό αρχάριο Express bug. Πρόσθεσέ το πριν τα routes."
+/>
+
+<Exercise
+  question="Δημιουργείς νέο resource με POST. Ποιο status code;"
+  options={[
+    "201 Created — και ιδανικά επιστρέφεις το νέο resource στο body. Το 200 είναι για success χωρίς δημιουργία· το 201 δηλώνει ρητά ότι φτιάχτηκε κάτι.",
+    "200 OK πάντα, ανεξάρτητα από το τι έγινε.",
+    "204 No Content επειδή δημιούργησες resource."
+  ]}
+  correctOptionIndex={0}
+  explanation="201 Created είναι το σημασιολογικά σωστό για επιτυχή δημιουργία. 204 είναι για επιτυχία χωρίς body (π.χ. DELETE). Τα σωστά codes είναι μέρος του contract."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«Walk me through handling a POST request in Express.»
+
+> First I register `express.json()` so the JSON body gets parsed — without it `req.body` is undefined, which is the classic beginner bug. In the handler I read params, query, and body off `req`, validate the input and return `422` with a clear message if it's bad, then delegate the actual work to a service so the handler only deals with HTTP concerns. On success I respond with the right status — `201` for a creation, returning the new resource — and `res.json` ends the request, so I only send one response. Any unexpected error I forward with `next(error)` to a centralized error handler instead of catching it inline everywhere. As the API grows I split routes into `express.Router` modules per resource.
+
+<Flashcards
+  title="Express fundamentals — interview drills"
+  cards={[
+    {
+      question: "Τι κάνει το express.json();",
+      answer: "Middleware που κάνει parse το application/json request body και το βάζει στο req.body. Χωρίς αυτό, το req.body είναι undefined — το πιο συχνό Express bug."
+    },
+    {
+      question: "Πού βρίσκεις params, query, body;",
+      answer: "req.params (route :id), req.query (?sort=), req.body (parsed JSON, χρειάζεται express.json()), req.headers. Το res τερματίζει με json/send/end/redirect — ένα μόνο ανά request."
+    },
+    {
+      question: "POST που δημιουργεί resource — ποιο status;",
+      answer: "201 Created, με το νέο resource στο body. DELETE → 204 No Content. Invalid input → 422. Τα σωστά codes είναι μέρος του API contract."
+    },
+    {
+      question: "Τι ανήκει στο route handler και τι όχι;",
+      answer: "Handler: μόνο HTTP concerns — parsing, validation, status codes. ΟΧΙ business logic/queries — αυτά στο service, ώστε να τεστάρονται χωρίς HTTP και να επαναχρησιμοποιούνται."
+    },
+    {
+      question: "Τι κάνει το express.Router;",
+      answer: "Οργανώνει routes σε modules ανά resource. app.use('/tasks', tasksRouter) βάζει prefix σε όλα. Κρατά το app.ts καθαρό καθώς μεγαλώνει το API."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="CRUD API με Express"
+  scenario="Φτιάξε ένα tasks API με σωστά routes, status codes και καθαρούς handlers."
+  outcomes={[
+    "Να στήνεις Express με json parsing και routers.",
+    "Να επιστρέφεις σωστά status codes ανά περίπτωση.",
+    "Να κρατάς τους handlers λεπτούς."
+  ]}
+  steps={[
+    "Στήσε app με express.json() και έναν tasks Router.",
+    "GET /tasks (200) με optional ?completed= filter.",
+    "POST /tasks: 422 σε invalid, 201 με το νέο task.",
+    "PATCH /tasks/:id (200 ή 404) και DELETE /tasks/:id (204).",
+    "Μετέφερε τη λογική σε taskService και κράτα τους handlers σε λίγες γραμμές."
+  ]}
+  checkpoints={[
+    "Όλα τα endpoints επιστρέφουν σωστά codes.",
+    "req.body δουλεύει (express.json() παρόν).",
+    "Οι handlers δεν περιέχουν business logic/queries."
+  ]}
+  mistakes={[
+    "Να ξεχνάς express.json() και να απορείς γιατί το body είναι undefined.",
+    "Να επιστρέφεις πάντα 200 ακόμα και σε error/not found.",
+    "Να βάζεις validation, queries και formatting όλα στον handler.",
+    "Διπλό res.json → 'headers already sent'."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν φτιάχνεις πλήρες CRUD με σωστά status codes και handlers που είναι μόνο HTTP glue."
+/>

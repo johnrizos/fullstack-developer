@@ -7,12 +7,32 @@ export type Lesson = {
   href: string;
 };
 
-export type CurriculumSection = {
+// A topic that is too big for one page (π.χ. Python, Node.js): groups several
+// sub-lessons under a single heading inside a section.
+export type LessonGroup = {
   id: string;
   title: string;
   description: string;
   lessons: Lesson[];
 };
+
+export type SectionItem = Lesson | LessonGroup;
+
+export type CurriculumSection = {
+  id: string;
+  title: string;
+  description: string;
+  lessons: SectionItem[];
+};
+
+export function isLessonGroup(item: SectionItem): item is LessonGroup {
+  return "lessons" in item;
+}
+
+// Όλα τα leaf lessons μιας ενότητας, "ισιωμένα" (groups ανοιγμένα), με τη σειρά τους.
+export function flattenItems(items: SectionItem[]): Lesson[] {
+  return items.flatMap((item) => (isLessonGroup(item) ? item.lessons : [item]));
+}
 
 export const curriculum: CurriculumSection[] = [
   {
@@ -272,12 +292,92 @@ export const curriculum: CurriculumSection[] = [
     description: "Φτιάχνεις server-side λογική και endpoints που μιλάνε με το frontend.",
     lessons: [
       {
-        id: "backend-node",
+        id: "node",
         title: "Node.js, Express & NestJS",
-        description: "Backend server, routes, middleware και structured APIs με Express ή NestJS.",
-        project: "Μικρό tasks API.",
-        skills: ["routes", "JSON", "NestJS"],
-        href: "/lessons/backend-node",
+        description:
+          "Από το runtime και τα async patterns μέχρι production: ένα πλήρες backend track με Express, NestJS, persistence, testing και scaling.",
+        lessons: [
+          {
+            id: "node-runtime-modules",
+            title: "Node Runtime & Modules",
+            description: "V8, libuv, event loop, single-threaded non-blocking I/O, CommonJS vs ESM, process & env.",
+            project: "Πειράματα event loop ordering και ESM setup.",
+            skills: ["event loop", "non-blocking I/O", "ESM"],
+            href: "/lessons/node-runtime-modules",
+          },
+          {
+            id: "node-async-streams",
+            title: "Async Patterns & Streams",
+            description: "callbacks→promises→async/await, Promise.all/allSettled, EventEmitter και streams/backpressure.",
+            project: "Παράλληλα API calls και stream pipeline για μεγάλο αρχείο.",
+            skills: ["async/await", "Promise.all", "streams"],
+            href: "/lessons/node-async-streams",
+          },
+          {
+            id: "node-express",
+            title: "Express Fundamentals",
+            description: "Routing, req/res lifecycle, status codes, routers και λεπτοί handlers.",
+            project: "CRUD tasks API με σωστά status codes.",
+            skills: ["Express", "routing", "status codes"],
+            href: "/lessons/node-express",
+          },
+          {
+            id: "node-middleware-errors",
+            title: "Middleware & Error Handling",
+            description: "Middleware pipeline, centralized error handler και το async error trap.",
+            project: "Production-grade error handling χωρίς κρεμασμένα requests.",
+            skills: ["middleware", "error handler", "async errors"],
+            href: "/lessons/node-middleware-errors",
+          },
+          {
+            id: "node-validation-security",
+            title: "Validation & Security",
+            description: "Zod schema validation, helmet/CORS/rate limit, injection, secrets και password hashing.",
+            project: "Ασφάλιση API με validation και security controls.",
+            skills: ["Zod", "security", "bcrypt"],
+            href: "/lessons/node-validation-security",
+          },
+          {
+            id: "node-architecture",
+            title: "Layered Architecture",
+            description: "routes/services/repositories, validated config και dependency injection.",
+            project: "Refactor fat controller σε καθαρά στρώματα.",
+            skills: ["layering", "config", "DI"],
+            href: "/lessons/node-architecture",
+          },
+          {
+            id: "node-nestjs",
+            title: "NestJS in Depth",
+            description: "Modules, controllers, providers, dependency injection, pipes/guards/interceptors.",
+            project: "Feature module με DI, validation και guard.",
+            skills: ["NestJS", "DI", "guards"],
+            href: "/lessons/node-nestjs",
+          },
+          {
+            id: "node-persistence",
+            title: "Persistence with Prisma",
+            description: "Type-safe schema, CRUD, relations, N+1 problem, transactions και migrations.",
+            project: "Data layer χωρίς N+1 με transaction και migration.",
+            skills: ["Prisma", "N+1", "transactions"],
+            href: "/lessons/node-persistence",
+          },
+          {
+            id: "node-testing",
+            title: "Testing Node APIs",
+            description: "Unit tests (Jest/Vitest), integration με Supertest, mocking και testing pyramid.",
+            project: "Test suite με unit + integration και error paths.",
+            skills: ["Vitest", "Supertest", "mocking"],
+            href: "/lessons/node-testing",
+          },
+          {
+            id: "node-production",
+            title: "Performance, Scaling & Production",
+            description: "cluster/horizontal scaling, worker_threads, Redis caching, graceful shutdown και observability.",
+            project: "Production-ready service με caching, shutdown και logging.",
+            skills: ["scaling", "caching", "observability"],
+            href: "/lessons/node-production",
+          },
+        ],
       },
       {
         id: "rest-apis",
@@ -296,12 +396,116 @@ export const curriculum: CurriculumSection[] = [
         href: "/lessons/graphql-basics",
       },
       {
-        id: "python-services",
-        title: "Python Services",
-        description: "FastAPI, data processing, AI helpers και background jobs δίπλα στο main app.",
-        project: "Python service που δέχεται job και επιστρέφει result.",
-        skills: ["FastAPI", "workers", "AI/data"],
-        href: "/lessons/python-services",
+        id: "python",
+        title: "Python",
+        description:
+          "Από τα foundations μέχρι production FastAPI services: μια πλήρης διαδρομή για AI/data/background-job services δίπλα στο main app.",
+        lessons: [
+          {
+            id: "python-foundations",
+            title: "Python Foundations",
+            description: "Syntax, dynamic+strong typing, truthiness, functions και Pythonic idioms vs JavaScript.",
+            project: "Μετατροπή JavaScript-style λογικής σε Pythonic κώδικα.",
+            skills: ["syntax", "typing model", "functions"],
+            href: "/lessons/python-foundations",
+          },
+          {
+            id: "python-collections",
+            title: "Collections & Comprehensions",
+            description: "list/dict/set/tuple, comprehensions, slicing, unpacking και generators.",
+            project: "Pythonic data wrangling πάνω σε λίστα από records.",
+            skills: ["comprehensions", "generators", "slicing"],
+            href: "/lessons/python-collections",
+          },
+          {
+            id: "python-iterators-generators",
+            title: "Iterators, Generators & Lazy Evaluation",
+            description: "Iteration protocol, generators, yield from, lazy pipelines και itertools.",
+            project: "Lazy data pipeline που επεξεργάζεται 'τεράστιο' αρχείο με σταθερή μνήμη.",
+            skills: ["iterators", "generators", "itertools"],
+            href: "/lessons/python-iterators-generators",
+          },
+          {
+            id: "python-oop-typing",
+            title: "OOP, Type Hints & Dataclasses",
+            description: "Classes, self, dunder methods, type hints, mypy και @dataclass.",
+            project: "Typed domain model με dataclasses.",
+            skills: ["classes", "type hints", "dataclasses"],
+            href: "/lessons/python-oop-typing",
+          },
+          {
+            id: "python-decorators-context-managers",
+            title: "Decorators & Context Managers",
+            description: "Decorators (με/χωρίς params, functools.wraps), closures applied και context managers.",
+            project: "Reusable decorators (timing/retry/cache) και transaction context manager.",
+            skills: ["decorators", "functools.wraps", "with"],
+            href: "/lessons/python-decorators-context-managers",
+          },
+          {
+            id: "python-advanced-typing",
+            title: "Advanced Typing",
+            description: "Generics (TypeVar), Protocol, type narrowing, Literal/TypedDict και mypy --strict.",
+            project: "Generic, typed utility module που περνά mypy --strict.",
+            skills: ["generics", "Protocol", "mypy"],
+            href: "/lessons/python-advanced-typing",
+          },
+          {
+            id: "python-stdlib",
+            title: "Standard Library Mastery",
+            description: "collections, functools, itertools, pathlib και timezone-aware datetime.",
+            project: "Λύση κλασικών data προβλημάτων μόνο με stdlib.",
+            skills: ["collections", "functools", "pathlib"],
+            href: "/lessons/python-stdlib",
+          },
+          {
+            id: "python-fastapi",
+            title: "FastAPI Services",
+            description: "Endpoints, Pydantic validation, dependency injection και contract με το main app.",
+            project: "Python service που δέχεται job και επιστρέφει result.",
+            skills: ["FastAPI", "Pydantic", "Depends"],
+            href: "/lessons/python-fastapi",
+          },
+          {
+            id: "python-sqlalchemy",
+            title: "Databases with SQLAlchemy & Alembic",
+            description: "Typed ORM models, select()/Session CRUD, relationships, N+1 problem, transactions, migrations.",
+            project: "Data layer με relationships χωρίς N+1 και Alembic migration.",
+            skills: ["SQLAlchemy", "N+1", "Alembic"],
+            href: "/lessons/python-sqlalchemy",
+          },
+          {
+            id: "python-async-jobs",
+            title: "Async, Concurrency & Background Jobs",
+            description: "GIL, asyncio vs threads vs processes, queue + worker, retries και status flow.",
+            project: "Background job pipeline με queue, worker και status.",
+            skills: ["GIL", "asyncio", "Celery"],
+            href: "/lessons/python-async-jobs",
+          },
+          {
+            id: "python-data-ai",
+            title: "Data & AI with Python",
+            description: "numpy/pandas vectorization, data wrangling, model serving και production AI/LLM patterns.",
+            project: "Service που κάνει vectorized data processing και σερβίρει predictions.",
+            skills: ["numpy", "pandas", "model serving"],
+            href: "/lessons/python-data-ai",
+          },
+          {
+            id: "python-performance",
+            title: "Performance & Profiling",
+            description: "timeit/cProfile, Big-O δομών, performance traps, caching και πότε φεύγεις από pure Python.",
+            project: "Profile & βελτιστοποίηση αργού script με μετρήσεις.",
+            skills: ["cProfile", "Big-O", "caching"],
+            href: "/lessons/python-performance",
+          },
+          {
+            id: "python-production",
+            title: "Testing, Packaging & Production",
+            description: "pytest, fixtures/mocking, virtual environments, packaging, Docker και config από env.",
+            project: "Tested, containerized FastAPI service με health check.",
+            skills: ["pytest", "venv", "deployment"],
+            href: "/lessons/python-production",
+          },
+        ],
       },
       {
         id: "websockets-realtime",
@@ -428,15 +632,17 @@ export type LessonWithSection = Lesson & {
   sectionId: string;
   sectionTitle: string;
   sectionIndex: number;
+  groupTitle?: string;
 };
 
 export const allLessons: LessonWithSection[] = curriculum.flatMap((section, sectionIndex) =>
-  section.lessons.map((lesson) => ({
-    ...lesson,
-    sectionId: section.id,
-    sectionTitle: section.title,
-    sectionIndex,
-  })),
+  section.lessons.flatMap((item) => {
+    const base = { sectionId: section.id, sectionTitle: section.title, sectionIndex };
+    if (isLessonGroup(item)) {
+      return item.lessons.map((lesson) => ({ ...lesson, ...base, groupTitle: item.title }));
+    }
+    return [{ ...item, ...base }];
+  }),
 );
 
 export function getLessonBySlug(slug: string): LessonWithSection | undefined {

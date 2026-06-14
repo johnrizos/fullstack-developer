@@ -1,0 +1,232 @@
+# OOP, Type Hints & Dataclasses
+
+Στην παραγωγή, η Python σπάνια είναι σκόρπιες functions — είναι classes που μοντελοποιούν το domain, type hints που πιάνουν λάθη πριν το runtime, και dataclasses που γλιτώνουν boilerplate. Στις συνεντεύξεις για backend Python, το `self`, το πώς δουλεύει το inheritance, και «τι κάνουν τα type hints αφού η Python είναι dynamic;» είναι σταθερά ερωτήματα.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να ορίζεις classes με `__init__`, instance methods και να εξηγείς το `self`,
+- να χρησιμοποιείς type hints σε variables, παραμέτρους και return values,
+- να ξέρεις γιατί τα type hints δεν επιβάλλονται στο runtime και τι ρόλο παίζει το mypy,
+- να γράφεις `@dataclass` αντί για χειροκίνητο `__init__`,
+- να καταλαβαίνεις inheritance, `super()` και πότε προτιμάς composition.
+
+## Classes & το `self`
+
+```py
+class BankAccount:
+    def __init__(self, owner: str, balance: float = 0.0):
+        self.owner = owner        # instance attribute
+        self.balance = balance
+
+    def deposit(self, amount: float) -> None:
+        if amount <= 0:
+            raise ValueError("Amount must be positive")
+        self.balance += amount
+
+    def __repr__(self) -> str:
+        return f"BankAccount(owner={self.owner!r}, balance={self.balance})"
+
+acc = BankAccount("Ana", 100)
+acc.deposit(50)
+print(acc)   # BankAccount(owner='Ana', balance=150)
+```
+
+Τα κλειδιά:
+- `__init__` είναι ο constructor — τρέχει όταν κάνεις `BankAccount(...)`.
+- `self` είναι το instance, **ρητά πρώτη παράμετρος** κάθε instance method. Δεν είναι κρυφό `this` όπως στη JS — η Python προτιμά explicit. Όταν γράφεις `acc.deposit(50)`, η Python καλεί `BankAccount.deposit(acc, 50)`.
+- `__repr__` ορίζει πώς τυπώνεται το αντικείμενο — απαραίτητο για debugging. Το `!r` καλεί `repr()` στο owner (βάζει quotes στα strings).
+
+## Dunder methods — το «πρωτόκολλο» της Python
+
+Οι μέθοδοι με διπλό underscore (`__repr__`, `__eq__`, `__len__`, `__str__`) είναι το πώς ενσωματώνεσαι στις built-in λειτουργίες της γλώσσας:
+
+```py
+class Money:
+    def __init__(self, cents: int):
+        self.cents = cents
+
+    def __eq__(self, other) -> bool:
+        return isinstance(other, Money) and self.cents == other.cents
+
+    def __add__(self, other: "Money") -> "Money":
+        return Money(self.cents + other.cents)
+
+Money(500) == Money(500)   # True — χάρη στο __eq__
+Money(500) + Money(250)    # Money(750) — χάρη στο __add__
+```
+
+## Type hints — documentation που ελέγχεται
+
+Η Python τρέχει αγνοώντας τα type hints (είναι dynamic), αλλά οι hints **δεν είναι σχόλια**: τα διαβάζουν IDEs, type checkers (mypy/pyright) και frameworks (FastAPI/Pydantic) για validation:
+
+```py
+def total_price(prices: list[float], tax_rate: float = 0.0) -> float:
+    return sum(prices) * (1 + tax_rate)
+
+name: str = "Ana"
+scores: dict[str, int] = {"math": 90}
+
+from typing import Optional
+def find_user(uid: int) -> Optional[str]:   # str ή None
+    ...
+# Σύγχρονο syntax (3.10+): def find_user(uid: int) -> str | None
+```
+
+Κρίσιμο σημείο για τη συνέντευξη: **τα type hints ΔΕΝ επιβάλλονται στο runtime**. Αυτό τρέχει κανονικά παρά το λάθος τύπου:
+
+```py
+def greet(name: str) -> str:
+    return f"Hi {name}"
+
+greet(123)   # ΔΕΝ σκάει — τυπώνει "Hi 123". Η Python αγνοεί τον hint.
+```
+
+Τα λάθη τα πιάνει το **mypy** σε static analysis (στο CI ή στο IDE), πριν καν τρέξει ο κώδικας:
+
+```txt
+$ mypy app.py
+app.py:5: error: Argument 1 to "greet" has incompatible type "int"; expected "str"
+```
+
+Άρα: type hints = ασφάλεια + αυτο-τεκμηρίωση + καλύτερο autocomplete, χωρίς runtime κόστος, με τον έλεγχο να γίνεται ξεχωριστά από έναν type checker.
+
+<PredictOutput
+  title="Type hints at runtime"
+  code={`def double(n: int) -> int:
+    return n * 2
+
+print(double("ab"))`}
+  options={["TypeError", "abab", "16", "None"]}
+  correctOptionIndex={1}
+  answer="abab"
+  explanation="Τα type hints αγνοούνται στο runtime. 'ab' * 2 είναι έγκυρη πράξη (string repetition) → 'abab'. Ο hint :int θα τον έπιανε το mypy στατικά, όχι η Python στην εκτέλεση."
+/>
+
+## Dataclasses — τέλος στο boilerplate
+
+Για classes που κυρίως κρατούν δεδομένα, το `@dataclass` σου δίνει αυτόματα `__init__`, `__repr__`, `__eq__`:
+
+```py
+from dataclasses import dataclass, field
+
+@dataclass
+class Task:
+    title: str
+    done: bool = False
+    tags: list[str] = field(default_factory=list)   # ΟΧΙ tags: list = []!
+
+t1 = Task("Write tests")
+t2 = Task("Write tests")
+t1 == t2          # True — auto __eq__ συγκρίνει τα fields
+print(t1)         # Task(title='Write tests', done=False, tags=[])
+```
+
+Δύο σημεία:
+- Γράφεις μόνο τα fields με τους τύπους τους — όλο το boilerplate παράγεται.
+- Για mutable default (list/dict) χρησιμοποιείς `field(default_factory=list)` — είναι ο σωστός τρόπος που λύνει το mutable-default bug που είδες στα foundations.
+
+## Inheritance & `super()`
+
+```py
+class Animal:
+    def __init__(self, name: str):
+        self.name = name
+    def speak(self) -> str:
+        return "..."
+
+class Dog(Animal):
+    def __init__(self, name: str, breed: str):
+        super().__init__(name)    # καλεί τον parent constructor
+        self.breed = breed
+    def speak(self) -> str:       # override
+        return "Woof"
+
+Dog("Rex", "Lab").speak()   # "Woof"
+```
+
+Το `super().__init__(...)` δίνει στον parent να αρχικοποιήσει το δικό του μέρος. Αλλά η σύγχρονη Python προτιμά **composition over inheritance** για τα περισσότερα domain models — βαθιές ιεραρχίες κληρονομικότητας γίνονται δύσκολες. Inheritance όταν υπάρχει αληθινό «is-a» (Dog is-a Animal)· composition («has-a») όταν απλώς θες να επαναχρησιμοποιήσεις λειτουργικότητα.
+
+<Exercise
+  question="Αν η Python αγνοεί τα type hints στο runtime, τι αξία έχουν;"
+  options={[
+    "Στατικό έλεγχο (mypy/pyright) που πιάνει type bugs πριν τρέξει ο κώδικας, καλύτερο autocomplete/IDE support, αυτο-τεκμηρίωση, και runtime validation από frameworks όπως FastAPI/Pydantic.",
+    "Καμία — είναι απλώς σχόλια για ανθρώπους.",
+    "Κάνουν τον κώδικα να τρέχει πιο γρήγορα."
+  ]}
+  correctOptionIndex={0}
+  explanation="Hints + type checker = ασφάλεια χωρίς runtime κόστος. Και frameworks σαν το Pydantic ΤΑ χρησιμοποιούν για πραγματικό runtime validation — εκεί αποκτούν 'δόντια'."
+/>
+
+<Exercise
+  question="Γιατί tags: list[str] = field(default_factory=list) αντί για tags: list[str] = [];"
+  options={[
+    "Το ίδιο mutable-default bug: ένα σκέτο [] θα μοιραζόταν ανάμεσα σε όλα τα instances. Το default_factory δημιουργεί φρέσκο list για κάθε instance.",
+    "Είναι απλώς πιο σύντομο να γράφεται.",
+    "Το field() κάνει το list immutable."
+  ]}
+  correctOptionIndex={0}
+  explanation="Οι dataclasses απαγορεύουν ρητά mutable defaults για ακριβώς αυτό τον λόγο — θα έσκαγαν με ValueError. Το default_factory είναι ο σωστός τρόπος."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«Python is dynamically typed — so what's the point of type hints?»
+
+> Hints don't change runtime behavior — the interpreter ignores them, so `greet(123)` with a `str` hint still runs. Their value is everywhere else: a static checker like mypy catches type mismatches in CI before the code runs, the IDE gives accurate autocomplete and refactoring, and they document intent at call sites. And frameworks like Pydantic and FastAPI actually read the hints to do real runtime validation, so the same annotation that documents my code also enforces my API contract. I get safety without the ceremony of a statically typed language.
+
+<Flashcards
+  title="OOP, typing & dataclasses — interview drills"
+  cards={[
+    {
+      question: "Τι είναι το self;",
+      answer: "Το instance, ρητά ως πρώτη παράμετρος κάθε instance method. acc.deposit(50) μεταφράζεται σε BankAccount.deposit(acc, 50). Η Python προτιμά explicit self αντί για κρυφό this."
+    },
+    {
+      question: "Επιβάλλονται τα type hints στο runtime;",
+      answer: "Όχι. Η Python τα αγνοεί κατά την εκτέλεση. Τα πιάνει static checker (mypy/pyright). Εξαίρεση: frameworks όπως Pydantic τα διαβάζουν για πραγματικό runtime validation."
+    },
+    {
+      question: "Τι σου δίνει το @dataclass;",
+      answer: "Αυτόματα __init__, __repr__ και __eq__ από τα δηλωμένα fields. Λιγότερο boilerplate για classes που κρατούν δεδομένα. Mutable defaults μέσω field(default_factory=list)."
+    },
+    {
+      question: "Τι κάνει το super().__init__();",
+      answer: "Καλεί τον constructor του parent class ώστε να αρχικοποιήσει το δικό του μέρος του instance, πριν ο child προσθέσει τα δικά του attributes."
+    },
+    {
+      question: "Inheritance vs composition — πότε τι;",
+      answer: "Inheritance για αληθινό 'is-a' (Dog is-a Animal). Composition ('has-a') όταν απλώς επαναχρησιμοποιείς λειτουργικότητα — προτιμότερο στα περισσότερα domain models γιατί βαθιές ιεραρχίες γίνονται εύθραυστες."
+    },
+    {
+      question: "Τι είναι τα dunder methods;",
+      answer: "Methods με __διπλό_underscore__ (__init__, __repr__, __eq__, __add__, __len__) που σε συνδέουν με τις built-in λειτουργίες της γλώσσας — π.χ. __eq__ ορίζει τι σημαίνει ==."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Domain model με dataclasses & typing"
+  scenario="Μοντελοποίησε ένα μικρό domain (π.χ. Order με items, status, total) χρησιμοποιώντας dataclasses, type hints και methods με business logic."
+  outcomes={[
+    "Να γράφεις τυποποιημένες classes/dataclasses καθαρά.",
+    "Να εξηγείς τον ρόλο των hints και του mypy.",
+    "Να διαλέγεις inheritance ή composition συνειδητά."
+  ]}
+  steps={[
+    "Φτιάξε @dataclass Order με fields και σωστό default_factory για τη λίστα items.",
+    "Πρόσθεσε method total() με type hints παραμέτρων και return.",
+    "Όρισε __repr__/__eq__ (ή άσε το dataclass να τα φτιάξει) και δοκίμασε ισότητα.",
+    "Τρέξε mypy και διόρθωσε τα type errors πριν τρέξει ο κώδικας."
+  ]}
+  checkpoints={[
+    "Όλες οι public methods έχουν type hints.",
+    "Κανένα mutable default χωρίς default_factory.",
+    "mypy περνά καθαρά."
+  ]}
+  mistakes={[
+    "Να νομίζεις ότι τα hints κάνουν runtime validation από μόνα τους.",
+    "Να βάζεις mutable default σε dataclass field.",
+    "Να φτιάχνεις βαθιές ιεραρχίες inheritance εκεί που αρκεί composition."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μετατρέπεις μια χειροκίνητη class με __init__/__repr__/__eq__ σε @dataclass και εξηγείς τι κέρδισες."
+/>

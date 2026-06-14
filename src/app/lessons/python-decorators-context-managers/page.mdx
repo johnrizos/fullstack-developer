@@ -1,0 +1,293 @@
+# Decorators & Context Managers
+
+Αυτά τα δύο είναι το σημείο όπου η Python σταματά να μοιάζει με «JavaScript με indentation» και αποκτά τη δική της φιλοσοφία. Decorators τυλίγουν συμπεριφορά (logging, caching, auth, retries) χωρίς να αγγίζουν τη function. Context managers εγγυώνται καθαρισμό πόρων (αρχεία, connections, locks). Τα βλέπεις παντού σε FastAPI, Flask, pytest — και στη συνέντευξη «εξήγησέ μου πώς δουλεύει ένας decorator» ξεχωρίζει αμέσως το επίπεδο.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να γράφεις decorators που τυλίγουν functions, με `*args/**kwargs` και `functools.wraps`,
+- να γράφεις decorators **με παραμέτρους** (τρία επίπεδα functions),
+- να εξηγείς το `@` ως syntactic sugar,
+- να χρησιμοποιείς και να γράφεις context managers (`with`, `__enter__`/`__exit__`, `@contextmanager`),
+- να εγγυάσαι καθαρισμό πόρων ακόμη και σε exception.
+
+## Decorators — τι πραγματικά είναι το `@`
+
+Ένας decorator είναι απλώς **function που παίρνει function και επιστρέφει function**. Το `@` είναι syntactic sugar:
+
+```py
+@my_decorator
+def greet():
+    ...
+
+# είναι ΑΚΡΙΒΩΣ ισοδύναμο με:
+def greet():
+    ...
+greet = my_decorator(greet)
+```
+
+Στηρίζεται σε closures (που είδες στα foundations): η εσωτερική function «θυμάται» την τυλιγμένη function:
+
+```py
+import functools
+
+def log_calls(func):
+    @functools.wraps(func)              # κρίσιμο! (εξήγηση πιο κάτω)
+    def wrapper(*args, **kwargs):
+        print(f"→ {func.__name__}({args}, {kwargs})")
+        result = func(*args, **kwargs)
+        print(f"← {result}")
+        return result
+    return wrapper
+
+@log_calls
+def add(a, b):
+    return a + b
+
+add(2, 3)
+# → add((2, 3), {})
+# ← 5
+```
+
+Το `*args, **kwargs` στο wrapper είναι απαραίτητο: ο decorator πρέπει να δουλεύει για functions **οποιασδήποτε** υπογραφής.
+
+## Γιατί `functools.wraps` — όχι προαιρετικό
+
+Χωρίς `@functools.wraps(func)`, η τυλιγμένη function χάνει την ταυτότητά της — το `__name__`, το `__doc__`, τα type hints γίνονται αυτά του `wrapper`. Αυτό σπάει debugging, documentation tools και frameworks που διαβάζουν metadata:
+
+```py
+def bad(func):
+    def wrapper(*a, **k):
+        return func(*a, **k)
+    return wrapper            # ΧΩΡΙΣ wraps
+
+@bad
+def greet():
+    """Says hello."""
+    ...
+
+greet.__name__   # 'wrapper' — λάθος! χάθηκε το 'greet'
+greet.__doc__    # None — χάθηκε το docstring
+```
+
+Το `@functools.wraps(func)` αντιγράφει το metadata του original πάνω στο wrapper. **Πάντα** το βάζεις.
+
+<PredictOutput
+  title="Decorator identity"
+  code={`import functools
+def deco(func):
+    @functools.wraps(func)
+    def wrapper(*a, **k):
+        return func(*a, **k)
+    return wrapper
+
+@deco
+def hello():
+    pass
+
+print(hello.__name__)`}
+  options={["wrapper", "hello", "deco", "None"]}
+  correctOptionIndex={1}
+  answer="hello"
+  explanation="Με @functools.wraps(func), το wrapper κληρονομεί το __name__ του original → 'hello'. ΧΩΡΙΣ το wraps, θα τύπωνε 'wrapper'. Αυτό είναι το πιο συχνό decorator gotcha στη συνέντευξη."
+/>
+
+## Decorators με παραμέτρους — τρία επίπεδα
+
+Όταν ο decorator παίρνει όρισμα (π.χ. `@retry(times=3)`), χρειάζεσαι **ένα επιπλέον επίπεδο**: μια function που φτιάχνει τον decorator:
+
+```py
+import functools, time
+
+def retry(times: int, delay: float = 0.5):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(times):
+                try:
+                    return func(*args, **kwargs)
+                except Exception:
+                    if attempt == times - 1:
+                        raise                 # τελευταία προσπάθεια — ξαναπέτα
+                    time.sleep(delay * (2 ** attempt))   # backoff
+        return wrapper
+    return decorator
+
+@retry(times=3, delay=0.2)
+def fetch():
+    ...
+```
+
+Η σειρά ανάγνωσης: `retry(times=3)` τρέχει πρώτο και επιστρέφει τον `decorator`· μετά `decorator(fetch)` επιστρέφει το `wrapper`. Δηλαδή `fetch = retry(times=3)(fetch)`.
+
+## Stacking & χρήσιμοι built-in decorators
+
+```py
+@app.get("/users")         # κάτω-προς-τα-πάνω εφαρμογή
+@require_auth
+@cache_response
+def list_users(): ...
+
+# Built-in που πρέπει να ξέρεις:
+from functools import lru_cache, cached_property
+
+@lru_cache(maxsize=128)    # memoization — cache-άρει αποτελέσματα ανά args
+def fib(n): ...
+
+class Circle:
+    @property              # method που καλείται σαν attribute: c.area
+    def area(self): ...
+    @staticmethod          # δεν παίρνει self
+    def unit(): ...
+```
+
+## Context Managers — εγγυημένος καθαρισμός
+
+Το `with` εγγυάται ότι ο πόρος **κλείνει**, ακόμη κι αν πεταχτεί exception στη μέση:
+
+```py
+with open("data.txt") as f:
+    data = f.read()
+# το αρχείο κλείνει ΕΓΓΥΗΜΕΝΑ εδώ — ακόμη κι αν το read() έσκασε
+```
+
+Χωρίς `with`, ένα exception πριν το `f.close()` θα άφηνε το αρχείο ανοιχτό (resource leak). Το `with` είναι το σωστό για κάθε πόρο: αρχεία, database connections, locks, network sockets.
+
+### Δικός σου context manager — δύο τρόποι
+
+```py
+# Τρόπος 1: class με __enter__ / __exit__
+class Timer:
+    def __enter__(self):
+        self.start = time.perf_counter()
+        return self
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.elapsed = time.perf_counter() - self.start
+        print(f"Took {self.elapsed:.3f}s")
+        return False        # False = μη καταπιείς το exception
+
+with Timer():
+    do_work()
+
+# Τρόπος 2: @contextmanager (πιο σύντομο, με generator)
+from contextlib import contextmanager
+
+@contextmanager
+def db_transaction(conn):
+    tx = conn.begin()
+    try:
+        yield tx            # ό,τι είναι πριν το yield = setup
+        tx.commit()         # ό,τι μετά = teardown (στο normal exit)
+    except Exception:
+        tx.rollback()       # καθαρισμός σε σφάλμα
+        raise
+
+with db_transaction(conn) as tx:
+    tx.execute(...)
+```
+
+Το `__exit__` δέχεται πληροφορίες για τυχόν exception· αν επιστρέψει `True`, **καταπίνει** το exception (σπάνια το θες). Το `@contextmanager` pattern με `try/yield/finally` είναι ο κομψός τρόπος για setup/teardown.
+
+<PredictOutput
+  title="with + exception"
+  code={`class Resource:
+    def __enter__(self):
+        print("open")
+        return self
+    def __exit__(self, *a):
+        print("close")
+        return False
+
+with Resource():
+    print("work")
+    raise ValueError("boom")`}
+  options={["open, work — μετά crash χωρίς close", "open, work, close — μετά propagate ValueError", "open, work, close — το error καταπίνεται", "open, close, work"]}
+  correctOptionIndex={1}
+  answer="open, work, close, μετά ValueError"
+  explanation="Το __exit__ καλείται ΠΑΝΤΑ, ακόμη και με exception — άρα τυπώνεται 'close' (ο πόρος καθαρίζεται). Επειδή __exit__ επιστρέφει False, το ValueError ΔΕΝ καταπίνεται και συνεχίζει να ανεβαίνει. Αυτή είναι η εγγύηση του with."
+/>
+
+<Exercise
+  question="Γιατί βάζεις @functools.wraps στον wrapper ενός decorator;"
+  options={[
+    "Για να διατηρήσει ο wrapper το __name__, __doc__ και metadata της original function — αλλιώς debugging, docs και frameworks 'βλέπουν' τον wrapper αντί για την πραγματική function.",
+    "Για να τρέχει ο decorator πιο γρήγορα.",
+    "Είναι υποχρεωτικό αλλιώς ο decorator σκάει."
+  ]}
+  correctOptionIndex={0}
+  explanation="Χωρίς wraps ο κώδικας δουλεύει αλλά χάνεις την ταυτότητα της function (__name__ γίνεται 'wrapper'). Πάντα το βάζεις για σωστή introspection."
+/>
+
+<Exercise
+  question="Ποιο είναι το βασικό όφελος του with / context manager;"
+  options={[
+    "Εγγυάται τον καθαρισμό του πόρου (close/commit/rollback/release) ακόμη κι αν πεταχτεί exception στη μέση — μέσω του __exit__ που καλείται πάντα.",
+    "Κάνει τον κώδικα πιο σύντομο μόνο οπτικά.",
+    "Αποτρέπει όλα τα exceptions από το να συμβούν."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το __exit__ καλείται είτε normal exit είτε exception — γι' αυτό το with είναι ο σωστός τρόπος για αρχεία, connections, locks. Δεν αποτρέπει exceptions· εγγυάται καθαρισμό παρ' όλα αυτά."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«Explain how a decorator works.»
+
+> A decorator is just a function that takes a function and returns a replacement, and `@deco` is sugar for `func = deco(func)`. Inside, I return a `wrapper` that takes `*args, **kwargs` so it works for any signature, runs my extra behavior around the call, and I put `@functools.wraps(func)` on it so the wrapper keeps the original's name, docstring, and metadata — otherwise introspection and frameworks break. If the decorator needs arguments, like `@retry(times=3)`, I add a third layer: an outer function that takes the args and returns the actual decorator. Context managers are the dual idea for resources — `with` guarantees `__exit__` runs even on exceptions, so files, connections, and locks always get cleaned up, and `@contextmanager` lets me write that setup/teardown as a generator with try/yield/finally.
+
+<Flashcards
+  title="Decorators & context managers — interview drills"
+  cards={[
+    {
+      question: "Τι είναι decorator;",
+      answer: "Function που παίρνει function και επιστρέφει function. @deco ≡ func = deco(func). Στηρίζεται σε closures· το wrapper παίρνει *args/**kwargs για να δουλεύει σε κάθε υπογραφή."
+    },
+    {
+      question: "Γιατί @functools.wraps;",
+      answer: "Αντιγράφει __name__, __doc__, metadata της original στο wrapper. Χωρίς αυτό, η function 'γίνεται' wrapper για introspection/docs/frameworks. Πάντα το βάζεις."
+    },
+    {
+      question: "Decorator με παραμέτρους — πόσα επίπεδα;",
+      answer: "Τρία: outer(args) → decorator(func) → wrapper(*a,**k). @retry(3) σημαίνει func = retry(3)(func). Το επιπλέον επίπεδο 'πιάνει' τα arguments."
+    },
+    {
+      question: "Τι εγγυάται το with;",
+      answer: "Ότι το __exit__ (cleanup) καλείται πάντα — normal exit Η exception. Σωστό για αρχεία, db connections, locks, sockets. Δεν εμποδίζει exceptions· εγγυάται καθαρισμό."
+    },
+    {
+      question: "__enter__ / __exit__ — τι κάνουν;",
+      answer: "__enter__: setup, επιστρέφει το object του as. __exit__(exc_type, exc_val, tb): teardown· παίρνει info για exception· return True καταπίνει το exception (σπάνια), False το αφήνει να propagate."
+    },
+    {
+      question: "Τι κάνει το @contextmanager;",
+      answer: "Μετατρέπει generator σε context manager: ό,τι πριν το yield = setup, ό,τι μετά = teardown. Με try/yield/except/finally γράφεις commit/rollback κομψά αντί για class με __enter__/__exit__."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Cross-cutting concerns με decorators & context managers"
+  scenario="Γράψε reusable decorators (timing, retry με backoff, simple cache) και context managers (timer, transaction) και εφάρμοσέ τα σε ένα μικρό service function."
+  outcomes={[
+    "Να γράφεις decorators με και χωρίς παραμέτρους σωστά.",
+    "Να διατηρείς function identity με functools.wraps.",
+    "Να εγγυάσαι καθαρισμό πόρων με context managers."
+  ]}
+  steps={[
+    "Γράψε @timing decorator με functools.wraps που μετρά διάρκεια.",
+    "Γράψε @retry(times, delay) με exponential backoff (τρία επίπεδα).",
+    "Φτιάξε context manager Timer με class (__enter__/__exit__).",
+    "Φτιάξε db_transaction με @contextmanager: commit στο happy path, rollback σε exception.",
+    "Επιβεβαίωσε ότι ο πόρος καθαρίζεται ακόμη κι όταν πετάς exception μέσα στο with."
+  ]}
+  checkpoints={[
+    "Όλοι οι decorators έχουν @functools.wraps.",
+    "Ο retry ξαναπετά μετά την τελευταία αποτυχία.",
+    "Το __exit__/finally τρέχει και σε exception."
+  ]}
+  mistakes={[
+    "Να ξεχνάς functools.wraps και να χάνεις το __name__.",
+    "Να ξεχνάς *args/**kwargs στον wrapper.",
+    "Να κάνεις cleanup έξω από with/finally και να διαρρέεις πόρους σε exception."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν γράφεις parametrized decorator και @contextmanager transaction χωρίς να ψάξεις, και εξηγείς γιατί το @ είναι απλώς func = deco(func)."
+/>

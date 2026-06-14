@@ -1,0 +1,237 @@
+# Collections & Comprehensions
+
+Εδώ ξεχωρίζει η Python που μοιάζει με μεταφρασμένη JavaScript από την Python που γράφει έμπειρος developer. Το 80% της καθημερινής Python είναι χειρισμός `list`, `dict`, `set`, `tuple` — και ο τρόπος που τα χειρίζεσαι (comprehensions, unpacking, slicing) είναι αυτό που κρίνει αν ο κώδικάς σου είναι Pythonic. Στις συνεντεύξεις, comprehensions και «πότε dict vs list» είναι σχεδόν σίγουρα.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να διαλέγεις σωστά ανάμεσα σε list, tuple, dict, set,
+- να γράφεις list/dict/set comprehensions αντί για manual loops,
+- να κάνεis slicing και unpacking με σιγουριά,
+- να εξηγείς γιατί τα tuples είναι immutable και πού το θες,
+- να καταλαβαίνεις generators και γιατί εξοικονομούν μνήμη.
+
+## Οι τέσσερις βασικές collections
+
+```py
+fruits = ["apple", "banana"]        # list  — ordered, mutable, επιτρέπει διπλά
+point = (10, 20)                     # tuple — ordered, IMMUTABLE
+user = {"name": "Ana", "age": 30}    # dict  — key→value, ordered (3.7+)
+tags = {"py", "web", "py"}           # set   — unordered, unique → {"py", "web"}
+```
+
+Πότε τι:
+- **list**: σειρά μετράει, αλλάζει, επιτρέπεις διπλά (η default επιλογή).
+- **tuple**: σταθερή ομάδα τιμών που δεν αλλάζει — coordinates, μια εγγραφή, return πολλαπλών τιμών. Επειδή είναι immutable, μπορεί να γίνει **dict key** ή **set member**.
+- **dict**: lookup με κλειδί, O(1) πρόσβαση — το αντίστοιχο των JS objects/Maps.
+- **set**: μοναδικότητα και γρήγορος έλεγχος ύπαρξης (`x in s` είναι O(1)), union/intersection.
+
+<PredictOutput
+  title="Set deduplication"
+  code={`nums = [1, 2, 2, 3, 3, 3]
+unique = set(nums)
+print(len(unique))`}
+  options={["6", "3", "1", "Error"]}
+  correctOptionIndex={1}
+  answer="3"
+  explanation="Το set κρατά μόνο μοναδικές τιμές: {1, 2, 3}. len = 3. Το `set(list)` είναι το standard idiom για deduplication — αντίστοιχο του [...new Set(arr)] στη JS."
+/>
+
+## Comprehensions — το σήμα κατατεθέν της Python
+
+Αντί για manual loop με `.append()`, γράφεις τον μετασχηματισμό σε μία γραμμή. Είναι πιο γρήγορο και πιο ευανάγνωστο:
+
+```py
+nums = [1, 2, 3, 4, 5]
+
+# JavaScript-στυλ (un-Pythonic):
+doubled = []
+for n in nums:
+    doubled.append(n * 2)
+
+# Pythonic — list comprehension:
+doubled = [n * 2 for n in nums]              # [2, 4, 6, 8, 10]
+
+# Με φίλτρο (το αντίστοιχο .filter().map()):
+evens_squared = [n ** 2 for n in nums if n % 2 == 0]  # [4, 16]
+
+# Dict comprehension:
+lengths = {word: len(word) for word in ["hi", "world"]}  # {'hi': 2, 'world': 5}
+
+# Set comprehension:
+initials = {name[0] for name in ["Ana", "Alex", "Bob"]}  # {'A', 'B'}
+```
+
+Η αντιστοιχία με JavaScript array methods βοηθά στη συνέντευξη:
+
+```txt
+JS:  nums.filter(n => n % 2 === 0).map(n => n ** 2)
+PY:  [n ** 2 for n in nums if n % 2 == 0]
+```
+
+> Πότε ΟΧΙ comprehension: αν έχει δύο-τρία nested `for` και `if`, γίνεται δυσανάγνωστο — τότε ένα κανονικό loop είναι πιο καθαρό. Η Pythonic αρχή είναι readability, όχι «όλα σε μία γραμμή».
+
+## Slicing — `[start:stop:step]`
+
+```py
+items = [0, 1, 2, 3, 4, 5]
+items[1:4]    # [1, 2, 3]   — από index 1 έως ΠΡΙΝ το 4
+items[:3]     # [0, 1, 2]   — από την αρχή
+items[3:]     # [3, 4, 5]   — μέχρι το τέλος
+items[::2]    # [0, 2, 4]   — κάθε δεύτερο (step=2)
+items[::-1]   # [5,4,3,2,1,0] — αντιστροφή! το πιο γνωστό idiom
+text = "hello"
+text[::-1]    # 'olleh' — slicing δουλεύει και σε strings
+```
+
+Το `items[::-1]` για αντιστροφή είναι κλασική ερώτηση. Slicing **ποτέ δεν σκάει** σε out-of-range — `items[10:20]` δίνει `[]` αντί για error.
+
+## Unpacking — multiple assignment
+
+```py
+# Tuple unpacking
+x, y = (10, 20)
+a, b = b, a                  # swap χωρίς temp variable!
+
+# Star unpacking — μάζεμα του "υπόλοιπου"
+first, *rest = [1, 2, 3, 4]  # first=1, rest=[2, 3, 4]
+*init, last = [1, 2, 3, 4]   # init=[1, 2, 3], last=4
+
+# Dict unpacking σε function call & merge
+defaults = {"role": "member", "active": True}
+user = {**defaults, "name": "Ana"}   # merge — σαν το JS spread
+```
+
+<PredictOutput
+  title="Star unpacking drill"
+  code={`first, *middle, last = [1, 2, 3, 4, 5]
+print(middle)`}
+  options={["[2, 3, 4]", "[1, 2, 3, 4]", "2", "[2, 3, 4, 5]"]}
+  correctOptionIndex={0}
+  answer="[2, 3, 4]"
+  explanation="Το first παίρνει 1, το last παίρνει 5, και το *middle μαζεύει ΟΛΑ τα ενδιάμεσα ως list → [2, 3, 4]. Μπορεί να υπάρχει μόνο ένα *target σε ένα unpacking."
+/>
+
+## Dict — τα idioms που πρέπει να ξέρεις
+
+```py
+user = {"name": "Ana"}
+
+user["age"]            # KeyError αν λείπει — σκάει!
+user.get("age")        # None αν λείπει — ασφαλές
+user.get("age", 0)     # 0 ως default
+
+for key, value in user.items():    # iterate key+value μαζί
+    print(key, value)
+
+"name" in user         # έλεγχος ύπαρξης key — O(1)
+
+# Counting pattern με .get ή defaultdict
+counts = {}
+for ch in "banana":
+    counts[ch] = counts.get(ch, 0) + 1   # {'b':1, 'a':3, 'n':2}
+```
+
+## Generators — lazy, για μνήμη
+
+Ένα list comprehension με `[]` φτιάχνει **όλη** τη λίστα στη μνήμη. Ένα generator με `()` παράγει τιμές **μία-μία, on demand** — κρίσιμο για μεγάλα/άπειρα streams:
+
+```py
+# List — όλα τα 10M στη μνήμη ταυτόχρονα
+squares = [n ** 2 for n in range(10_000_000)]
+
+# Generator — καμία τιμή μέχρι να ζητηθεί, σταθερή μνήμη
+squares = (n ** 2 for n in range(10_000_000))
+total = sum(squares)   # καταναλώνεται καθώς προχωρά
+
+def read_lines(path):
+    with open(path) as f:
+        for line in f:
+            yield line.strip()   # yield = "δώσε μία τιμή, κράτα τη θέση σου"
+```
+
+Το `yield` μετατρέπει μια function σε generator: κρατά την κατάστασή της και συνεχίζει από εκεί που σταμάτησε στην επόμενη τιμή. Έτσι διαβάζεις αρχείο 50GB χωρίς να γεμίσεις τη RAM.
+
+<Exercise
+  question="Θες να ελέγχεις πολύ συχνά 'υπάρχει το x στη συλλογή;' σε εκατομμύρια στοιχεία. Τι διαλέγεις;"
+  options={[
+    "set — το `x in s` είναι O(1) (hash lookup), ενώ σε list το `x in lst` είναι O(n) γιατί σαρώνει όλα τα στοιχεία.",
+    "list — είναι πάντα πιο γρήγορο.",
+    "tuple — επειδή είναι immutable είναι πιο γρήγορο στο lookup."
+  ]}
+  correctOptionIndex={0}
+  explanation="Membership test: set/dict O(1), list/tuple O(n). Αν κάνεις πολλά 'in' checks, η μετατροπή σε set αλλάζει δραματικά την απόδοση."
+/>
+
+<Exercise
+  question="Πότε προτιμάς generator (n for n in ...) αντί για list [n for n in ...];"
+  options={[
+    "Όταν τα δεδομένα είναι μεγάλα ή άπειρα και τα διατρέχεις μία φορά — ο generator κρατά σταθερή μνήμη αντί να υλοποιήσει όλη τη λίστα.",
+    "Πάντα — οι generators είναι πάντα καλύτεροι.",
+    "Ποτέ — οι generators είναι πιο αργοί σε όλα."
+  ]}
+  correctOptionIndex={0}
+  explanation="Generator = lazy, σταθερή μνήμη, single-pass. Αν χρειάζεσαι random access, len(), ή να το διατρέξεις πολλές φορές, θες list."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How would you remove duplicates from a list and why?»
+
+> The idiomatic way is `list(set(items))` — converting to a set drops duplicates because sets only hold unique values, and membership is O(1). The caveat is that a set is unordered, so if I need to preserve insertion order I'd use `list(dict.fromkeys(items))`, since dicts keep order from Python 3.7 on. I reach for comprehensions over manual loops for transforms, and a generator instead of a list comprehension when the data is large and I only iterate once.
+
+<Flashcards
+  title="Collections & comprehensions — interview drills"
+  cards={[
+    {
+      question: "list vs tuple — πότε tuple;",
+      answer: "Tuple όταν η ομάδα τιμών δεν αλλάζει (coordinates, μια εγγραφή, return πολλών τιμών). Επειδή είναι immutable και hashable, μπορεί να γίνει dict key ή set member — list δεν μπορεί."
+    },
+    {
+      question: "Γράψε filter+map ως comprehension.",
+      answer: "[transform(x) for x in items if condition(x)]. Π.χ. το JS items.filter(x=>x>0).map(x=>x*2) γίνεται [x*2 for x in items if x>0]."
+    },
+    {
+      question: "Πώς αντιστρέφεις list/string σε μία κίνηση;",
+      answer: "Με slicing: items[::-1]. Step -1 διατρέχει ανάποδα. Δουλεύει και σε strings: 'abc'[::-1] → 'cba'."
+    },
+    {
+      question: "dict[key] vs dict.get(key);",
+      answer: "dict[key] σκάει με KeyError αν λείπει το κλειδί. dict.get(key) επιστρέφει None (ή το default που δίνεις) — ασφαλές όταν το κλειδί μπορεί να μην υπάρχει."
+    },
+    {
+      question: "Τι κάνει το yield;",
+      answer: "Μετατρέπει function σε generator: παράγει μία τιμή τη φορά, κρατά την κατάσταση και συνεχίζει στην επόμενη κλήση. Lazy evaluation — σταθερή μνήμη για μεγάλα/άπειρα streams."
+    },
+    {
+      question: "Membership test complexity: set vs list;",
+      answer: "`x in set` είναι O(1) (hash), `x in list` είναι O(n) (γραμμική σάρωση). Για συχνά 'in' checks σε πολλά δεδομένα, μετέτρεψε σε set."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Pythonic data wrangling"
+  scenario="Έχεις μια λίστα από dicts (π.χ. orders με fields customer, amount, status) και πρέπει να βγάλεις στατιστικά: μοναδικοί πελάτες, σύνολο ανά status, top αγοραστές."
+  outcomes={[
+    "Να μετασχηματίζεις δεδομένα με comprehensions αντί για loops.",
+    "Να διαλέγεις σωστή collection για κάθε δουλειά.",
+    "Να χρησιμοποιείς dict idioms (.get, .items, counting)."
+  ]}
+  steps={[
+    "Βγάλε τους μοναδικούς customers με set comprehension.",
+    "Φτιάξε dict total ανά status με counting pattern (.get με default).",
+    "Φιλτράρισε και μετασχημάτισε με comprehension + if.",
+    "Δοκίμασε generator για να αθροίσεις amounts χωρίς ενδιάμεση λίστα."
+  ]}
+  checkpoints={[
+    "Καμία manual .append() εκεί που αρκεί comprehension.",
+    "Χρήση set για μοναδικότητα, dict για lookup/counting.",
+    "Ασφαλής πρόσβαση σε keys που μπορεί να λείπουν."
+  ]}
+  mistakes={[
+    "Να φτιάχνεις τεράστιες ενδιάμεσες λίστες όταν αρκεί generator.",
+    "Να χρησιμοποιείς list για membership tests σε μεγάλα δεδομένα.",
+    "Να στριμώχνεις 3 nested loops σε ένα δυσανάγνωστο comprehension."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μετατρέπεις ένα filter+map+reduce JS pipeline σε comprehensions/generators χωρίς να σκεφτείς."
+/>

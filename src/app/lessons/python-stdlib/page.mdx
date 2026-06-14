@@ -1,0 +1,216 @@
+# Standard Library Mastery
+
+«Batteries included» είναι το motto της Python — και το να ξέρεις τη standard library είναι αυτό που ξεχωρίζει τον developer που γράφει 30 γραμμές χειροκίνητα από αυτόν που λύνει το ίδιο πρόβλημα με μία κλήση στο `collections` ή στο `itertools`. Στη συνέντευξη, το «πώς θα μετρούσες συχνότητες;» ή «πώς ομαδοποιείς;» απαντιέται σωστά με stdlib, όχι με reinventing the wheel.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να αξιοποιείς το `collections` (`Counter`, `defaultdict`, `deque`, `namedtuple`),
+- να χρησιμοποιείς `functools` (`reduce`, `lru_cache`, `partial`),
+- να συνδυάζεις `itertools` σε πραγματικά προβλήματα,
+- να δουλεύεις paths με `pathlib` αντί για `os.path`,
+- να χειρίζεσαι ημερομηνίες/ώρες σωστά με `datetime` (timezone-aware).
+
+## `collections` — οι δομές που λείπουν
+
+```py
+from collections import Counter, defaultdict, deque
+
+# Counter — μετράει συχνότητες αυτόματα
+Counter("banana")               # Counter({'a': 3, 'n': 2, 'b': 1})
+Counter(words).most_common(3)   # τα 3 πιο συχνά ως [(item, count), ...]
+
+# defaultdict — δίνει default όταν λείπει το key (όχι KeyError)
+groups = defaultdict(list)
+for user in users:
+    groups[user.role].append(user)   # χωρίς να ελέγχεις αν υπάρχει το key
+
+# deque — double-ended queue, O(1) και στις δύο άκρες
+q = deque([1, 2, 3])
+q.appendleft(0)     # O(1) — σε list το insert(0, x) είναι O(n)!
+q.popleft()         # O(1) — ideal για queues/BFS
+```
+
+Τρία idioms που πρέπει να αναγνωρίζεις αμέσως:
+- **Μέτρημα** → `Counter`, όχι χειροκίνητο dict με `.get`.
+- **Ομαδοποίηση** → `defaultdict(list)`, όχι `if key not in d: d[key] = []`.
+- **Queue/FIFO** → `deque`, όχι `list.pop(0)` (που είναι O(n)).
+
+<PredictOutput
+  title="Counter most_common"
+  code={`from collections import Counter
+votes = ["a", "b", "a", "c", "a", "b"]
+print(Counter(votes).most_common(1))`}
+  options={["['a']", "[('a', 3)]", "{'a': 3}", "('a', 3)"]}
+  correctOptionIndex={1}
+  answer="[('a', 3)]"
+  explanation="most_common(n) επιστρέφει LIST από (element, count) tuples, ταξινομημένα φθίνουσα. most_common(1) → [('a', 3)]. Είναι ο standard τρόπος για 'top-N πιο συχνά'."
+/>
+
+## `functools` — εργαλεία για functions
+
+```py
+from functools import reduce, lru_cache, partial
+
+# reduce — αναδίπλωση σε μία τιμή
+reduce(lambda acc, x: acc + x, [1, 2, 3, 4], 0)   # 10 (αλλά sum() καλύτερο εδώ)
+reduce(lambda acc, x: acc * x, [1, 2, 3, 4], 1)   # 24 (factorial-style)
+
+# lru_cache — memoization δωρεάν
+@lru_cache(maxsize=None)
+def fib(n: int) -> int:
+    return n if n < 2 else fib(n - 1) + fib(n - 2)
+fib(100)    # στιγμιαίο — χωρίς cache θα ήταν εκθετικά αργό
+
+# partial — "καρφώνει" arguments, φτιάχνει νέα function
+from functools import partial
+basetwo = partial(int, base=2)
+basetwo("1010")    # 10 — int(x, base=2) με το base προ-συμπληρωμένο
+```
+
+Το `lru_cache` είναι το πιο πρακτικό: μετατρέπει εκθετική αναδρομή σε γραμμική, ή cache-άρει ακριβές pure functions, με μία γραμμή.
+
+## `itertools` σε πραγματικά προβλήματα
+
+```py
+import itertools as it
+
+# Ομαδοποίηση ΔΙΑΔΟΧΙΚΩΝ (χρειάζεται sorted πρώτα!)
+data = sorted(items, key=lambda x: x.category)
+for category, group in it.groupby(data, key=lambda x: x.category):
+    print(category, list(group))
+
+# Pairwise — διαδοχικά ζευγάρια (3.10+)
+list(it.pairwise([1, 2, 3, 4]))     # [(1,2),(2,3),(3,4)] — ideal για diffs
+
+# Accumulate — running totals
+list(it.accumulate([1, 2, 3, 4]))   # [1, 3, 6, 10]
+
+# Combinations / permutations
+list(it.combinations("ABC", 2))     # [('A','B'),('A','C'),('B','C')]
+```
+
+> Trap στο `groupby`: ομαδοποιεί μόνο **διαδοχικά** ίσα στοιχεία — αν τα δεδομένα δεν είναι ταξινομημένα κατά το key, θα πάρεις σπασμένες ομάδες. Πάντα `sorted` με το ίδιο key πρώτα. Κλασικό σημείο όπου χάνονται άνθρωποι.
+
+## `pathlib` — paths σαν objects
+
+Ξέχνα το `os.path.join` με strings — το `pathlib` δίνει καθαρό, cross-platform API:
+
+```py
+from pathlib import Path
+
+root = Path("data")
+config = root / "settings" / "app.json"   # το / κάνει join, cross-platform!
+
+config.exists()
+config.suffix          # '.json'
+config.stem            # 'app'
+config.read_text()     # διάβασμα σε μία γραμμή
+list(root.glob("**/*.py"))   # όλα τα .py αναδρομικά
+Path("out").mkdir(parents=True, exist_ok=True)
+```
+
+Το `/` operator για join είναι το σήμα κατατεθέν — διαβάζεται φυσικά και δουλεύει σε Windows/Linux χωρίς `\` vs `/` προβλήματα.
+
+## `datetime` — με timezone, πάντα
+
+Το πιο συχνό production bug με χρόνο: **naive datetimes** (χωρίς timezone). Σε servers, δούλευε πάντα timezone-aware σε UTC:
+
+```py
+from datetime import datetime, timezone, timedelta
+
+datetime.now(timezone.utc)          # ✓ aware, UTC — ο σωστός τρόπος σε server
+datetime.now()                      # ✗ naive — άγνωστη ζώνη, πηγή bugs
+
+deadline = datetime.now(timezone.utc) + timedelta(days=7)
+iso = deadline.isoformat()          # serialize για API/DB
+datetime.fromisoformat(iso)         # parse πίσω
+```
+
+Ο κανόνας: **store & compute σε UTC, convert σε local μόνο για display**. Naive datetimes που συγκρίνονται με aware πετάνε `TypeError` — γι' αυτό η συνέπεια έχει σημασία.
+
+<Exercise
+  question="Πρέπει να μετρήσεις πόσες φορές εμφανίζεται κάθε λέξη σε ένα κείμενο. Pythonic τρόπος;"
+  options={[
+    "collections.Counter(words) — μετράει αυτόματα και δίνει most_common(n) για top-N, αντί για χειροκίνητο dict με .get(key, 0) + 1.",
+    "Χειροκίνητο loop με dict και if key in d έλεγχο.",
+    "Ταξινόμηση και χειροκίνητο μέτρημα διαδοχικών."
+  ]}
+  correctOptionIndex={0}
+  explanation="Counter είναι ακριβώς γι' αυτό: μία κλήση μετράει τα πάντα, και most_common δίνει τα κορυφαία. Το χειροκίνητο dict δουλεύει αλλά είναι reinventing the wheel."
+/>
+
+<Exercise
+  question="Γιατί datetime.now(timezone.utc) αντί για datetime.now() σε backend;"
+  options={[
+    "Το now() δίνει naive datetime χωρίς ζώνη — διφορούμενο και πηγή bugs (σύγκριση με aware πετά TypeError). Σε server αποθηκεύεις/υπολογίζεις σε UTC-aware και μετατρέπεις σε local μόνο για display.",
+    "Είναι απλώς πιο μακρύ να γράφεται· δεν έχει διαφορά.",
+    "Το now() δεν δουλεύει σε Linux."
+  ]}
+  correctOptionIndex={0}
+  explanation="Naive vs aware είναι από τα πιο ύπουλα production bugs. UTC-aware παντού στο backend, conversion σε local ζώνη μόνο στο τελευταίο βήμα (UI)."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How would you count word frequencies and return the top three?»
+
+> `Counter(words).most_common(3)` — the `collections` module handles it in one call and returns `(word, count)` tuples sorted by frequency, so there's no manual dict bookkeeping. More broadly, I reach for the standard library before writing loops: `Counter` for frequencies, `defaultdict(list)` for grouping, `deque` for O(1) queues, `lru_cache` for memoization, `itertools.groupby`/`pairwise`/`accumulate` for sequence work, `pathlib` for filesystem paths, and timezone-aware `datetime` in UTC for anything time-related. Knowing the batteries that ship with Python turns a lot of twenty-line problems into one expressive line.
+
+<Flashcards
+  title="Standard library — interview drills"
+  cards={[
+    {
+      question: "Μέτρημα συχνοτήτων + top-N;",
+      answer: "collections.Counter(items) μετράει αυτόματα· .most_common(n) δίνει τα top-N ως [(item, count), ...] φθίνουσα. Καμία χειροκίνητη .get(k,0)+1 λογική."
+    },
+    {
+      question: "Ομαδοποίηση σε dict ανά key;",
+      answer: "defaultdict(list): groups[key].append(x) χωρίς έλεγχο ύπαρξης key. Για ομαδοποίηση ΔΙΑΔΟΧΙΚΩΝ σε iterable: itertools.groupby (με sorted πρώτα στο ίδιο key!)."
+    },
+    {
+      question: "Πότε deque αντί για list;",
+      answer: "Για queue/stack από αριστερά: appendleft/popleft είναι O(1), ενώ list.insert(0,x)/pop(0) είναι O(n). Ιδανικό για FIFO queues και BFS."
+    },
+    {
+      question: "Τι κάνει το functools.lru_cache;",
+      answer: "Memoization decorator: cache-άρει αποτελέσματα ανά arguments. Μετατρέπει εκθετική αναδρομή (fib) σε γραμμική και επιταχύνει ακριβές pure functions με μία γραμμή."
+    },
+    {
+      question: "pathlib αντί για os.path — γιατί;",
+      answer: "Paths ως objects: το / κάνει join cross-platform, με .exists()/.read_text()/.glob()/.suffix. Πιο ευανάγνωστο και ασφαλές από string concatenation με os.path.join."
+    },
+    {
+      question: "Naive vs aware datetime;",
+      answer: "Naive (datetime.now()) δεν έχει ζώνη — πηγή bugs· σύγκριση με aware πετά TypeError. Σε backend: datetime.now(timezone.utc), store/compute σε UTC, convert σε local μόνο για display."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Λύσε τα ίδια προβλήματα με stdlib"
+  scenario="Πάρε μερικά κλασικά μικροπροβλήματα (frequency count, grouping, running totals, top-N, file scan, deadline calc) και λύσε τα ΜΟΝΟ με standard library, χωρίς χειροκίνητα loops όπου υπάρχει έτοιμο εργαλείο."
+  outcomes={[
+    "Να αναγνωρίζεις ποιο stdlib module λύνει κάθε pattern.",
+    "Να γράφεις λιγότερο, πιο γρήγορο και πιο ευανάγνωστο κώδικα.",
+    "Να αποφεύγεις κοινά traps (groupby χωρίς sort, naive datetime)."
+  ]}
+  steps={[
+    "Frequency count + top-3 με Counter.most_common.",
+    "Ομαδοποίηση records ανά πεδίο με defaultdict(list).",
+    "Running totals με itertools.accumulate και διαδοχικά ζεύγη με pairwise.",
+    "Σάρωση φακέλου για αρχεία με pathlib.glob.",
+    "Υπολογισμός deadline σε UTC-aware datetime και serialize/parse με isoformat."
+  ]}
+  checkpoints={[
+    "Καμία χειροκίνητη .get(k,0)+1 ή if key not in d.",
+    "groupby πάντα μετά από sorted στο ίδιο key.",
+    "Όλα τα datetimes timezone-aware (UTC)."
+  ]}
+  mistakes={[
+    "Reinventing το Counter/defaultdict με χειροκίνητο dict.",
+    "list.pop(0) για queue αντί για deque.",
+    "groupby σε αταξινόμητα δεδομένα → σπασμένες ομάδες.",
+    "Naive datetimes που σπάνε σε σύγκριση με aware."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν, μπροστά σε ένα data-wrangling πρόβλημα, η πρώτη σου σκέψη είναι 'ποιο stdlib εργαλείο το λύνει;' πριν γράψεις loop."
+/>

@@ -1,0 +1,187 @@
+# Layered Architecture
+
+Η διαφορά ανάμεσα σε ένα API που συντηρείται και σε ένα που γίνεται «spaghetti» δεν είναι το framework — είναι η **οργάνωση σε στρώματα**. Όταν το route handler κάνει validation, business logic, database queries και formatting όλα μαζί, κάθε αλλαγή είναι ρίσκο. Στη συνέντευξη: «πώς οργανώνεις ένα Express project;», «πού βάζεις τη business logic;».
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να χωρίζεις routes / services / repositories με σαφή ευθύνη,
+- να εξηγείς γιατί η business logic δεν ανήκει στο route handler,
+- να κρατάς το data access απομονωμένο (αλλαγή DB χωρίς να αγγίξεις λογική),
+- να συγκεντρώνεις config σε ένα σημείο με validation,
+- να καταλαβαίνεις dependency injection και testability.
+
+## Τα στρώματα
+
+```txt
+src/
+  routes/tasks.routes.ts      ← HTTP: paths, status codes, parsing, validation
+  services/tasks.service.ts   ← business logic (testable, ΧΩΡΙΣ HTTP)
+  repositories/tasks.repo.ts  ← data access (queries μόνο)
+  middleware/auth.ts          ← cross-cutting concerns
+  config.ts                   ← env vars ΕΝΑ σημείο (validated στο startup)
+  app.ts                      ← wiring
+```
+
+Κάθε στρώμα έχει **μία** ευθύνη και ξέρει μόνο το επόμενο από κάτω:
+
+```ts
+// routes/tasks.routes.ts — ξέρει HTTP, ΟΧΙ business rules
+router.post("/", asyncHandler(async (req, res) => {
+  const data = CreateTaskSchema.parse(req.body);
+  const task = await taskService.create(data);
+  res.status(201).json({ data: task });
+}));
+
+// services/tasks.service.ts — business rules, ΟΧΙ req/res, ΟΧΙ SQL
+export async function create(input: CreateTaskInput) {
+  if (await taskRepo.countByUser(input.userId) >= 100) {
+    throw new ValidationError("Task limit reached");   // business rule
+  }
+  return taskRepo.insert({ ...input, completed: false });
+}
+
+// repositories/tasks.repo.ts — μόνο data access
+export async function insert(task: NewTask) {
+  return db.task.create({ data: task });
+}
+```
+
+## Γιατί έχει σημασία
+
+- **Testability**: το service τεστάρεται με απλές κλήσεις, χωρίς να σηκώσεις HTTP server.
+- **Αντικατάσταση**: το repository αλλάζει (SQLite → Postgres, ή ORM) **χωρίς** να αγγίξεις τη business logic.
+- **Επαναχρησιμοποίηση**: το ίδιο service καλείται από route, cron job ή queue worker.
+- **Αναγνωσιμότητα**: το route διαβάζεται σε 5 γραμμές· ξέρεις αμέσως πού να ψάξεις τι.
+
+> Το anti-pattern: «fat controller» — ο handler των 80 γραμμών που κάνει τα πάντα. Όταν η business logic είναι κολλημένη στο `req`/`res`, δεν τεστάρεται χωρίς HTTP και δεν επαναχρησιμοποιείται.
+
+<PredictOutput
+  title="Πού ανήκει ο κανόνας;"
+  code={`// Business rule: "ένας χρήστης δεν μπορεί να έχει >100 tasks"
+// Σε ποιο στρώμα ανήκει αυτός ο έλεγχος;`}
+  options={["Route handler", "Service", "Repository", "Middleware"]}
+  correctOptionIndex={1}
+  answer="Service"
+  explanation="Business rules ανήκουν στο service. Ο route handler χειρίζεται μόνο HTTP (parsing, status codes). Το repository μόνο data access (queries). Έτσι ο κανόνας τεστάρεται χωρίς HTTP και ισχύει ανεξάρτητα από το ποιος καλεί το service (route, cron, queue)."
+/>
+
+## Config σε ένα σημείο, με validation
+
+Διασκόρπιστα `process.env.X` παντού είναι παγίδα — ένα ορθογραφικό λάθος γίνεται `undefined` σιωπηλά. Συγκέντρωσε και **επικύρωσε** στο startup:
+
+```ts
+// config.ts
+import { z } from "zod";
+
+const Env = z.object({
+  NODE_ENV: z.enum(["development", "production", "test"]),
+  PORT: z.coerce.number().default(3000),
+  DATABASE_URL: z.string().url(),
+  JWT_SECRET: z.string().min(32),
+});
+
+export const config = Env.parse(process.env);   // σκάει στο startup αν λείπει/άκυρο
+```
+
+**Fail fast**: αν λείπει το `DATABASE_URL` ή το `JWT_SECRET` είναι πολύ μικρό, το app **αρνείται να ξεκινήσει** — αντί να σκάσει αργότερα στο πρώτο request. Ο υπόλοιπος κώδικας κάνει `import { config }`, ποτέ `process.env` απευθείας.
+
+## Dependency Injection — η ιδέα
+
+Αντί το service να κατασκευάζει τις εξαρτήσεις του (`new TaskRepo()`), τις **δέχεται** απ' έξω. Έτσι στο test δίνεις mock:
+
+```ts
+// Αντί για hard-coded εξάρτηση μέσα στο service...
+export function makeTaskService(repo: TaskRepo) {
+  return {
+    create: (input) => { /* χρησιμοποιεί το repo */ },
+  };
+}
+
+// Production: makeTaskService(realRepo)
+// Test:       makeTaskService(fakeRepo)   ← mock με μία γραμμή
+```
+
+Το όφελος: οι εξαρτήσεις είναι **ορατές** (στις παραμέτρους, όχι κρυμμένες σε imports) και **αντικαταστάσιμες** (mock στα tests). Αυτή είναι η ιδέα που το NestJS κάνει αυτόματη με το DI container (επόμενο μάθημα).
+
+<Exercise
+  question="Γιατί χωρίζεις route handler από service;"
+  options={[
+    "Ώστε η business logic να τεστάρεται χωρίς HTTP, να επαναχρησιμοποιείται (cron/queue) και να αλλάζει η DB χωρίς να αγγίζεις λογική. Ο handler μένει λεπτό HTTP glue.",
+    "Είναι απλώς θέμα στυλ, δεν αλλάζει τίποτα ουσιαστικό.",
+    "Για να τρέχει πιο γρήγορα το Express."
+  ]}
+  correctOptionIndex={0}
+  explanation="Separation of concerns: HTTP στο route, rules στο service, queries στο repo. Κάθε στρώμα τεστάρεται/αλλάζει ανεξάρτητα. Ο 'fat controller' που τα κάνει όλα είναι το anti-pattern."
+/>
+
+<Exercise
+  question="Πού και πώς διαχειρίζεσαι config/env vars σε καλά δομημένο app;"
+  options={[
+    "Σε ένα config module που διαβάζει ΚΑΙ επικυρώνει τα env vars στο startup (fail fast αν λείπει/άκυρο), και ο υπόλοιπος κώδικας κάνει import το config — όχι process.env διάσπαρτο.",
+    "process.env.X όπου το χρειάζεσαι, για ευκολία.",
+    "Hardcoded στον κώδικα με ένα σχόλιο."
+  ]}
+  correctOptionIndex={0}
+  explanation="Κεντρικό validated config = fail fast στο startup αντί για σιωπηλά undefined που σκάνε αργότερα. Ένα σημείο αλήθειας, typed, που ο υπόλοιπος κώδικας εμπιστεύεται."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you structure an Express application?»
+
+> In layers with single responsibilities: routes handle HTTP — parsing, validation, status codes; services hold business logic and know nothing about req/res; repositories do only data access. That way the service is testable without spinning up a server, the repository can swap SQLite for Postgres without touching logic, and the same service works from a route, a cron job, or a queue worker. I centralize config in one module that validates env vars at startup so the app fails fast if something's missing, and I pass dependencies in rather than constructing them inside, which makes them visible and easy to mock in tests. The anti-pattern I avoid is the fat controller that does everything inline.
+
+<Flashcards
+  title="Layered architecture — interview drills"
+  cards={[
+    {
+      question: "Τα τρία στρώματα και η ευθύνη τους;",
+      answer: "Route: HTTP (parsing, status, validation). Service: business logic (χωρίς req/res). Repository: data access (queries μόνο). Κάθε ένα ξέρει μόνο το από κάτω."
+    },
+    {
+      question: "Πού ανήκει ένας business rule;",
+      answer: "Στο service — ώστε να τεστάρεται χωρίς HTTP και να ισχύει ανεξάρτητα από το ποιος καλεί (route, cron, queue). ΟΧΙ στον handler ή στο repository."
+    },
+    {
+      question: "Ποια οφέλη δίνει το layering;",
+      answer: "Testability (service χωρίς HTTP), αντικατάσταση DB χωρίς αλλαγή λογικής, επαναχρησιμοποίηση service, αναγνωσιμότητα. Αποφεύγει τον fat controller."
+    },
+    {
+      question: "Πώς διαχειρίζεσαι config;",
+      answer: "Ένα config module που διαβάζει + επικυρώνει env στο startup (fail fast). Ο κώδικας κάνει import config, όχι process.env διάσπαρτο. Typed, ένα σημείο αλήθειας."
+    },
+    {
+      question: "Τι είναι DI και γιατί βοηθά;",
+      answer: "Οι εξαρτήσεις δίνονται απ' έξω αντί να κατασκευάζονται μέσα. Όφελος: ορατές εξαρτήσεις, εύκολο mock στα tests, αντικαταστάσιμες υλοποιήσεις. Το NestJS το αυτοματοποιεί."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Refactor σε στρώματα"
+  scenario="Πάρε ένα 'fat controller' Express endpoint που κάνει τα πάντα και χώρισέ το σε routes/service/repository με κεντρικό config."
+  outcomes={[
+    "Να διαχωρίζεις HTTP, business logic και data access.",
+    "Να συγκεντρώνεις και να επικυρώνεις config.",
+    "Να κάνεις τη λογική testable χωρίς HTTP."
+  ]}
+  steps={[
+    "Εντόπισε σε ένα fat handler τι είναι HTTP, τι rule, τι query.",
+    "Μετέφερε τη business logic σε service (χωρίς req/res).",
+    "Μετέφερε τα queries σε repository.",
+    "Φτιάξε config module με Zod validation των env vars στο startup.",
+    "Γράψε ένα test που καλεί το service απευθείας, χωρίς να σηκώσεις server."
+  ]}
+  checkpoints={[
+    "Ο handler έχει μόνο HTTP concerns.",
+    "Το service δεν αναφέρει req/res ούτε SQL.",
+    "Το config επικυρώνεται στο startup (fail fast)."
+  ]}
+  mistakes={[
+    "Fat controller που κάνει validation+logic+queries+formatting.",
+    "Business rules στο repository ή στο route.",
+    "process.env διάσπαρτο αντί για κεντρικό validated config.",
+    "Hard-coded εξαρτήσεις που δεν mock-άρονται."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν προσθέτεις ένα νέο endpoint αγγίζοντας καθαρά route+service+repo, και τεστάρεις τη λογική χωρίς HTTP."
+/>

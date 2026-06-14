@@ -1,0 +1,198 @@
+# FastAPI Services
+
+Όταν ένα Node/Next.js product χρειάζεται Python — για AI, data processing, scraping, background jobs — το standard είναι ένα **FastAPI service** δίπλα στο main app. Στις συνεντεύξεις, το ζητούμενο δεν είναι «ξέρεις FastAPI;» αλλά «καταλαβαίνεις πού μπαίνει η Python σε fullstack architecture, και πώς σχεδιάζεις το HTTP contract ανάμεσα στα services;».
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς γιατί βάζεις Python service σε Node/Next product (και πότε ΔΕΝ το βάζεις),
+- να γράφεις FastAPI endpoints με Pydantic request/response models,
+- να καταλαβαίνεις πώς το FastAPI κάνει validation από τα type hints,
+- να χρησιμοποιείς dependency injection (`Depends`) για auth/db,
+- να σχεδιάζεις το contract main-app ↔ Python service.
+
+## Πού ταιριάζει — και πού όχι — η Python
+
+Καλή χρήση Python service: AI/ML inference, data pipelines, PDF/image processing, scraping, analytics, scheduled jobs — δουλειές όπου το Python ecosystem (numpy, pandas, torch, transformers) είναι ασύγκριτο.
+
+Κακή χρήση: user CRUD, basic login, settings page, business rules που ανήκουν στο core product. Μην προσθέτεις service μόνο και μόνο επειδή «είναι trendy» — κάθε νέο service είναι deployment, monitoring και network hop παραπάνω.
+
+> Η ερώτηση-φίλτρο πριν φτιάξεις Python service: *«Το πρόβλημα χρειάζεται το Python ecosystem, ή απλώς ένα ακόμη backend endpoint;»* Αν είναι το δεύτερο, μένει στο Node.
+
+## FastAPI — το πρώτο service
+
+```py
+from fastapi import FastAPI
+from pydantic import BaseModel, Field
+
+app = FastAPI()
+
+class AnalyzeRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=10_000)
+    language: str = "en"
+
+class AnalyzeResponse(BaseModel):
+    word_count: int
+    sentiment: str
+
+@app.post("/analyze", response_model=AnalyzeResponse)
+def analyze(payload: AnalyzeRequest) -> AnalyzeResponse:
+    words = payload.text.split()
+    sentiment = "positive" if "good" in payload.text.lower() else "neutral"
+    return AnalyzeResponse(word_count=len(words), sentiment=sentiment)
+```
+
+Τι κερδίζεις «δωρεάν» εδώ — και αυτό είναι το πιο σημαντικό σημείο της συνέντευξης: το FastAPI **διαβάζει τα Pydantic models / type hints** και:
+- κάνει **validation** του incoming JSON (λάθος ή λείπον πεδίο → αυτόματα `422` με σαφές μήνυμα),
+- κάνει **parsing & coercion** στους σωστούς τύπους,
+- κάνει **serialization** του response μέσω του `response_model`,
+- παράγει **αυτόματο OpenAPI / Swagger** στο `/docs`.
+
+Δηλαδή ο ίδιος ο type hint που τεκμηριώνει τον κώδικα **είναι** το validation contract. Αυτό είναι το «type hints αποκτούν δόντια» που είδες στο OOP/Typing μάθημα.
+
+<PredictOutput
+  title="Validation drill"
+  code={`class CreateUser(BaseModel):
+    name: str
+    age: int
+
+# Έρχεται POST με body:
+# {"name": "Ana", "age": "thirty"}
+# Τι επιστρέφει το FastAPI;`}
+  options={["200 με age=0", "422 Unprocessable Entity", "500 Server Error", "200 με age='thirty'"]}
+  correctOptionIndex={1}
+  answer="422 Unprocessable Entity"
+  explanation="Το Pydantic προσπαθεί να κάνει coerce το 'thirty' σε int, αποτυγχάνει, και το FastAPI επιστρέφει αυτόματα 422 με ακριβές μήνυμα ποιο πεδίο απέτυχε. Δεν φτάνει ποτέ στον handler σου — το contract προστατεύεται πριν τη business logic."
+/>
+
+## Async endpoints & I/O
+
+Το FastAPI υποστηρίζει `async def` για I/O-bound δουλειά (database, εξωτερικά APIs). Η λογική είναι ίδια με το Node event loop:
+
+```py
+import httpx
+
+@app.get("/weather/{city}")
+async def weather(city: str):
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"https://api.example.com/weather/{city}")
+        return resp.json()
+```
+
+Κανόνας: `async def` + `await` για I/O (μη μπλοκάρεις το event loop). Για **CPU-bound** δουλειά (ML inference, image processing) **μην** την τρέχεις inline σε async handler — μπλοκάρει τα πάντα· πάει σε background job ή worker (επόμενο μάθημα).
+
+## Dependency Injection με `Depends`
+
+Το FastAPI έχει built-in DI για κοινές ανάγκες (auth, database session, config). Δηλώνεις τι χρειάζεσαι, το framework το παρέχει:
+
+```py
+from fastapi import Depends, Header, HTTPException
+
+def require_api_key(x_api_key: str = Header()):
+    if x_api_key != "secret-from-env":
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    return x_api_key
+
+@app.post("/jobs")
+def create_job(payload: AnalyzeRequest, _: str = Depends(require_api_key)):
+    return {"status": "queued"}
+```
+
+Το `Depends(require_api_key)` τρέχει πριν τον handler· αν πετάξει `HTTPException`, ο handler δεν εκτελείται ποτέ. Ίδια ιδέα με τα middleware/guards του Express/NestJS — testable, reusable, ορατές εξαρτήσεις.
+
+## Το contract main-app ↔ Python service
+
+Σχεδίασε τη ροή ρητά. Δύο pattern:
+
+```txt
+1) Synchronous (γρήγορη δουλειά < ~1s):
+   Next.js API ──POST /analyze──> FastAPI ──result──> Next.js (περιμένει)
+
+2) Async job (αργή δουλειά: ML, μεγάλα αρχεία):
+   Next.js ──POST /jobs──> FastAPI: επιστρέφει {job_id, status:"queued"} αμέσως
+   worker επεξεργάζεται στο background
+   Next.js ──GET /jobs/{id}──> {status:"done", result:{...}}  (polling ή webhook)
+```
+
+Ο κανόνας: **μην κρατάς ανοιχτό HTTP request για δουλειά που αργεί**. Αν ξεπερνά λίγα δευτερόλεπτα, γίνεται job με status flow — αλλιώς γεμίζεις timeouts και κρεμασμένα connections.
+
+<Exercise
+  question="Από πού βγαίνει το αυτόματο validation και τα /docs του FastAPI;"
+  options={[
+    "Από τα Pydantic models και τα type hints — το FastAPI τα διαβάζει για να επικυρώσει input, να κάνει serialize το output και να παράγει OpenAPI schema.",
+    "Πρέπει να γράψεις χειροκίνητα validation σε κάθε endpoint.",
+    "Από ένα ξεχωριστό config αρχείο που ορίζεις."
+  ]}
+  correctOptionIndex={0}
+  explanation="Αυτό είναι το core value proposition: ο ίδιος type hint που τεκμηριώνει είναι το validation contract και η πηγή του auto-generated Swagger. Λιγότερος κώδικας, εγγυημένα συνεπές contract."
+/>
+
+<Exercise
+  question="Το /predict κάνει βαρύ ML inference 8 δευτερολέπτων και τα requests κρεμάνε. Σωστή σχεδίαση;"
+  options={[
+    "Κάν' το async job: POST επιστρέφει job_id αμέσως, ο worker τρέχει το inference στο background, ο client κάνει polling στο GET /jobs/{id} ή δέχεται webhook.",
+    "Βάλε async def στον handler και τελείωσε.",
+    "Αύξησε το HTTP timeout σε 60 δευτερόλεπτα."
+  ]}
+  correctOptionIndex={0}
+  explanation="async def δεν βοηθά σε CPU-bound inference — μπλοκάρει το event loop. Η σωστή λύση είναι job + status flow, ώστε το HTTP request να μένει σύντομο."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«When would you add a Python service to a Node/Next.js product?»
+
+> When the problem genuinely needs the Python ecosystem — ML inference, data pipelines, scraping, document processing — not for plain CRUD that the Node backend already handles. I'd expose it as a FastAPI service with Pydantic models, so request validation, response serialization, and the OpenAPI docs all come from the type hints. For fast work I call it synchronously; for anything slow like inference I make it a job — the endpoint returns a job id immediately and the client polls or gets a webhook — so I never hold an HTTP request open for a long task.
+
+<Flashcards
+  title="FastAPI services — interview drills"
+  cards={[
+    {
+      question: "Πότε προσθέτεις Python service σε Node product;",
+      answer: "Όταν χρειάζεσαι το Python ecosystem: AI/ML, data pipelines, scraping, image/PDF processing, analytics. ΟΧΙ για CRUD/auth/settings — αυτά μένουν στο core backend."
+    },
+    {
+      question: "Πώς κάνει validation το FastAPI;",
+      answer: "Μέσω Pydantic models / type hints: επικυρώνει το incoming JSON (λάθος τύπος → αυτόματο 422), κάνει coerce, serialize το response μέσω response_model, και παράγει OpenAPI/Swagger στο /docs."
+    },
+    {
+      question: "async def πότε και πότε όχι;",
+      answer: "async def + await για I/O-bound (db, εξωτερικά APIs) ώστε να μη μπλοκάρει το event loop. ΟΧΙ για CPU-bound (ML inference, image processing) — αυτό πάει σε background worker."
+    },
+    {
+      question: "Τι κάνει το Depends();",
+      answer: "Dependency injection: τρέχει μια εξάρτηση (auth check, db session, config) πριν τον handler. Αν πετάξει HTTPException, ο handler δεν εκτελείται. Reusable, testable — σαν middleware/guard."
+    },
+    {
+      question: "Sync vs async job contract — πώς διαλέγεις;",
+      answer: "Γρήγορη δουλειά (<~1s): synchronous, ο client περιμένει το result. Αργή δουλειά: επιστρέφεις job_id αμέσως, ο worker τρέχει στο background, ο client κάνει polling/webhook. Ποτέ ανοιχτό HTTP για αργή δουλειά."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Python service δίπλα στο main app"
+  scenario="Φτιάξε FastAPI service που δέχεται ένα job (π.χ. text analysis ή image resize) από το main app, το επικυρώνει και επιστρέφει αποτέλεσμα ή job status."
+  outcomes={[
+    "Να σχεδιάζεις HTTP contract ανάμεσα σε δύο services.",
+    "Να αξιοποιείς Pydantic για validation/serialization.",
+    "Να ξεχωρίζεις sync request από async job."
+  ]}
+  steps={[
+    "Όρισε Pydantic request/response models με σαφή πεδία και constraints.",
+    "Γράψε POST /analyze (sync) και επιβεβαίωσε ότι λάθος input δίνει 422.",
+    "Πρόσθεσε require_api_key μέσω Depends.",
+    "Σχεδίασε ένα async job endpoint: POST /jobs → job_id, GET /jobs/{id} → status.",
+    "Δες το auto-generated /docs και επιβεβαίωσε ότι το schema ταιριάζει."
+  ]}
+  checkpoints={[
+    "Invalid input επιστρέφει 422 χωρίς να γράψεις χειροκίνητο validation.",
+    "Αργή δουλειά δεν κρατά ανοιχτό HTTP request.",
+    "Τα secrets (API key) έρχονται από env, όχι hardcoded."
+  ]}
+  mistakes={[
+    "Να βάζεις CPU-bound inference inline σε async handler.",
+    "Να φτιάχνεις Python service για απλό CRUD που ανήκει στο core.",
+    "Να μην ορίζεις response_model και να διαρρέεις εσωτερικά πεδία."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μπορείς να σχεδιάσεις σε έναν πίνακα το contract main-app ↔ Python service για μια αργή ML δουλειά, με sync vs job διάκριση."
+/>

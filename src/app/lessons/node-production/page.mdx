@@ -1,0 +1,195 @@
+# Performance, Scaling & Production
+
+Το να τρέχει το API στο laptop σου είναι η αρχή. Το να αντέχει φορτίο, να αξιοποιεί όλους τους πυρήνες, να κάνει graceful shutdown και να σου λέει τι συμβαίνει όταν χαλάσει — αυτό είναι production. Στη συνέντευξη: «πώς κλιμακώνεις ένα Node app;», «πώς αξιοποιείς πολλούς πυρήνες αφού είναι single-threaded;».
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να κλιμακώνεις με cluster/πολλαπλά instances (το Node είναι single-threaded),
+- να βγάζεις CPU-bound δουλειά σε `worker_threads`,
+- να προσθέτεις caching σωστά (Redis, με TTL),
+- να κάνεις graceful shutdown και health checks,
+- να στήνεις structured logging και observability για production.
+
+## Scaling — το Node είναι single-threaded
+
+Ένα Node process χρησιμοποιεί **έναν** πυρήνα. Για να αξιοποιήσεις 8 πυρήνες, τρέχεις **8 instances** πίσω από load balancer:
+
+```ts
+// Επιλογή 1: cluster module — fork workers ανά πυρήνα
+import cluster from "node:cluster";
+import os from "node:os";
+
+if (cluster.isPrimary) {
+  for (let i = 0; i < os.availableParallelism(); i++) cluster.fork();
+} else {
+  startServer();   // κάθε worker τρέχει το app
+}
+```
+
+Στην πράξη, σε production συνήθως αφήνεις την **ορchestration έξω από το app**: πολλαπλά container replicas (Kubernetes/ECS) ή έναν process manager (PM2). Το concept που πρέπει να ξέρεις: το Node scale-άρει **οριζόντια** (περισσότερα instances), όχι κάθετα μέσα σε ένα process — γι' αυτό τα instances πρέπει να είναι **stateless** (sessions/cache σε Redis, όχι στη μνήμη του process).
+
+<PredictOutput
+  title="Single-threaded scaling"
+  code={`// Έχεις server με 4 πυρήνες και τρέχεις ΕΝΑ node process.
+// Το API είναι I/O-bound (κυρίως db calls).
+// Πόσους πυρήνες αξιοποιεί το app;`}
+  options={["4", "1", "0", "8"]}
+  correctOptionIndex={1}
+  answer="1"
+  explanation="Ένα Node process = ένας πυρήνας για JavaScript εκτέλεση. Οι άλλοι 3 μένουν αχρησιμοποίητοι. Για να τους αξιοποιήσεις: cluster ή 4 instances πίσω από load balancer. (Το libuv thread pool βοηθά κάποιο I/O, αλλά η JS εκτέλεση μένει single-threaded.)"
+/>
+
+## CPU-bound → worker_threads
+
+Όπως είδες στο runtime μάθημα, βαριά συγχρονισμένη CPU δουλειά μπλοκάρει το event loop. Βγάλ' την σε worker:
+
+```ts
+import { Worker } from "node:worker_threads";
+
+function runHeavyTask(data) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker("./heavy-worker.js", { workerData: data });
+    worker.on("message", resolve);
+    worker.on("error", reject);
+  });
+}
+// Το main thread μένει ελεύθερο να εξυπηρετεί requests
+```
+
+Για πολύ βαριά/μακροχρόνια δουλειά, προτίμησε **job queue** (BullMQ + Redis) με ξεχωριστό worker process — έτσι το API επιστρέφει αμέσως και η δουλειά γίνεται ασύγχρονα (ίδιο pattern με το Python jobs μάθημα).
+
+## Caching με Redis
+
+Cache για ακριβά reads που δεν αλλάζουν συχνά, με **TTL** ώστε να μη μένουν stale:
+
+```ts
+async function getUser(id: string) {
+  const cached = await redis.get(`user:${id}`);
+  if (cached) return JSON.parse(cached);          // cache hit
+
+  const user = await db.user.findUnique({ where: { id } });
+  await redis.set(`user:${id}`, JSON.stringify(user), "EX", 300);   // TTL 300s
+  return user;
+}
+```
+
+Κανόνες: πάντα **TTL** (να μη μένει stale για πάντα)· **invalidate** το cache όταν αλλάζει το δεδομένο· cache **stateless** (σε Redis, όχι στη μνήμη του process — αλλιώς κάθε instance έχει διαφορετικό cache).
+
+## Graceful shutdown & health checks
+
+Όταν το orchestration στέλνει `SIGTERM` (deploy/scale-down), το app πρέπει να **τελειώσει τα τρέχοντα requests** πριν κλείσει — όχι να τα κόψει στη μέση:
+
+```ts
+const server = app.listen(config.PORT);
+
+process.on("SIGTERM", async () => {
+  server.close(async () => {          // σταμάτα να δέχεσαι νέα requests
+    await db.$disconnect();           // κλείσε connections καθαρά
+    await redis.quit();
+    process.exit(0);
+  });
+});
+
+// Health check — το χρησιμοποιεί ο orchestrator/load balancer
+app.get("/health", (_req, res) => res.json({ status: "ok" }));
+```
+
+Το `/health` (και ένα `/ready` που ελέγχει db/redis) λέει στον load balancer πότε το instance είναι έτοιμο να δεχτεί traffic.
+
+## Structured logging & observability
+
+`console.log` με strings δεν φιλτράρεται. Σε production: **structured JSON logs** (pino/winston) που πάνε σε aggregator:
+
+```ts
+import pino from "pino";
+const log = pino();
+
+log.info({ reqId, userId, route: "/tasks", ms: 42 }, "request handled");
+log.error({ reqId, err }, "task creation failed");
+```
+
+Τα τρία pillars της observability: **logs** (τι έγινε), **metrics** (πόσο/πόσο γρήγορα — latency, error rate, throughput), **traces** (η διαδρομή ενός request μέσα από services). Πρόσθεσε error tracking (Sentry) και θα ξέρεις τι σπάει στην παραγωγή πριν σου το πει ο χρήστης.
+
+<Exercise
+  question="Πώς αξιοποιείς 8 πυρήνες σε ένα single-threaded Node app;"
+  options={[
+    "Τρέχεις πολλαπλά instances (cluster module ή container replicas/PM2 πίσω από load balancer) — οριζόντια κλιμάκωση. Τα instances πρέπει να είναι stateless (cache/sessions σε Redis).",
+    "Το Node χρησιμοποιεί αυτόματα όλους τους πυρήνες.",
+    "Αυξάνεις τη RAM του server."
+  ]}
+  correctOptionIndex={0}
+  explanation="Ένα process = ένας πυρήνας. Scale οριζόντια με πολλά instances + load balancer. Προϋπόθεση: stateless instances, ώστε ο όποιος instance να μπορεί να εξυπηρετήσει οποιοδήποτε request — γι' αυτό sessions/cache σε Redis."
+/>
+
+<Exercise
+  question="Το orchestration στέλνει SIGTERM για deploy. Τι πρέπει να κάνει το app;"
+  options={[
+    "Graceful shutdown: σταμάτα να δέχεσαι νέα requests, ολοκλήρωσε τα τρέχοντα, κλείσε db/redis connections καθαρά, μετά exit — ώστε να μην κοπούν requests στη μέση.",
+    "Να κλείσει αμέσως με process.exit(0).",
+    "Να αγνοήσει το SIGTERM και να συνεχίσει."
+  ]}
+  correctOptionIndex={0}
+  explanation="Graceful shutdown αποτρέπει κομμένα requests και διαρρεόμενα connections κατά τα deploys. server.close() σταματά νέα requests αλλά αφήνει τα ενεργά να τελειώσουν, μετά καθαρό cleanup."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you scale and run a Node app in production?»
+
+> Node executes JavaScript on a single thread, so I scale horizontally — multiple instances behind a load balancer, via the cluster module or, more commonly, container replicas. That requires the instances to be stateless, so sessions and cache live in Redis, not process memory. CPU-bound work goes to worker threads or, if it's heavy, a job queue with a separate worker so the API stays responsive. I cache expensive reads in Redis with a TTL and invalidate on writes. For reliability I implement graceful shutdown on SIGTERM — stop accepting new requests, drain in-flight ones, close connections — and expose health and readiness endpoints. And I run structured JSON logging plus metrics, traces, and error tracking so I can see what's happening in production instead of guessing.
+
+<Flashcards
+  title="Performance, scaling & production — interview drills"
+  cards={[
+    {
+      question: "Πώς κλιμακώνεις single-threaded Node;",
+      answer: "Οριζόντια: πολλαπλά instances (cluster/replicas/PM2) πίσω από load balancer — ένα process = ένας πυρήνας. Προϋπόθεση: stateless instances (cache/sessions σε Redis)."
+    },
+    {
+      question: "CPU-bound δουλειά — πού πάει;",
+      answer: "worker_threads για το main thread, ή (για βαριά/μακρά) job queue (BullMQ+Redis) με ξεχωριστό worker. Ποτέ inline — μπλοκάρει το event loop και παγώνει όλα τα requests."
+    },
+    {
+      question: "Κανόνες caching με Redis;",
+      answer: "TTL πάντα (όχι stale forever), invalidate στο write, cache stateless (Redis όχι process memory ώστε όλα τα instances να μοιράζονται)."
+    },
+    {
+      question: "Τι είναι graceful shutdown;",
+      answer: "Σε SIGTERM: σταμάτα νέα requests (server.close), ολοκλήρωσε τα ενεργά, κλείσε db/redis connections, μετά exit. Αποτρέπει κομμένα requests/leaks στα deploys."
+    },
+    {
+      question: "Τα τρία pillars της observability;",
+      answer: "Logs (τι έγινε — structured JSON), metrics (latency/error rate/throughput), traces (διαδρομή request μέσα από services). + error tracking (Sentry) για production visibility."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Production-ready Node service"
+  scenario="Πάρε ένα λειτουργικό API και κάν' το production-ready: scaling, caching, graceful shutdown, health checks, structured logging."
+  outcomes={[
+    "Να κλιμακώνεις οριζόντια με stateless instances.",
+    "Να προσθέτεις caching με TTL και invalidation.",
+    "Να στήνεις graceful shutdown, health checks και observability."
+  ]}
+  steps={[
+    "Πρόσθεσε cluster (ή τεκμηρίωσε replica strategy) και κάνε το app stateless.",
+    "Βάλε Redis cache σε ένα ακριβό read με TTL και invalidate στο write.",
+    "Βγάλε μια CPU-bound δουλειά σε worker_thread ή job queue.",
+    "Υλοποίησε graceful shutdown σε SIGTERM και /health + /ready.",
+    "Άλλαξε console.log σε structured logger (pino) και πρόσθεσε error tracking."
+  ]}
+  checkpoints={[
+    "Τα instances είναι stateless (cache/sessions σε Redis).",
+    "Καμία CPU-bound δουλειά inline στο request.",
+    "SIGTERM δεν κόβει ενεργά requests· /health απαντά.",
+    "Τα logs είναι structured και αναζητήσιμα."
+  ]}
+  mistakes={[
+    "State (sessions/cache) στη μνήμη του process → σπάει με πολλά instances.",
+    "CPU-bound inline που παγώνει το event loop.",
+    "Cache χωρίς TTL/invalidation → stale data.",
+    "Hard exit χωρίς graceful shutdown → κομμένα requests στα deploys."
+  ]}
+  mastery="Το μάθημα — και το Node.js track — πέτυχε όταν μπορείς να πάρεις ένα API και να εξηγήσεις κάθε production απόφαση: scaling, statelessness, caching, shutdown, observability."
+/>

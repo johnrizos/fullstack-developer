@@ -1,0 +1,189 @@
+# Performance & Profiling
+
+«Make it work, make it right, make it fast» — με αυτή τη σειρά. Ένας expert δεν βελτιστοποιεί στα τυφλά· **μετράει πρώτα**, βρίσκει το πραγματικό bottleneck, και μετά διορθώνει. Στη συνέντευξη, το «ο κώδικάς μου είναι αργός, τι κάνεις;» έχει μία σωστή πρώτη απάντηση: «profile it». Το να ξέρεις τα εργαλεία και τις βασικές αρχές απόδοσης της Python σε ξεχωρίζει.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να μετράς χρόνο σωστά (`timeit`) και να κάνεις profile (`cProfile`),
+- να ξέρεις τα Big-O των βασικών δομών της Python,
+- να αναγνωρίζεις κοινά performance traps (string concat, list membership, περιττά copies),
+- να εφαρμόζεις caching (`lru_cache`) και να ξέρεις πότε βοηθά,
+- να ξέρεις πότε φεύγεις από pure Python (numpy, C-extensions, άλλο process).
+
+## Πρώτος κανόνας: μέτρα, μη μαντεύεις
+
+Η διαίσθηση για το «τι είναι αργό» είναι σχεδόν πάντα λάθος. Μέτρα:
+
+```py
+import timeit
+
+# timeit — για μικρά snippets, τρέχει πολλές φορές για ακρίβεια
+timeit.timeit("sum(range(100))", number=100000)
+
+# cProfile — για ολόκληρο πρόγραμμα: ποια function τρώει τον χρόνο
+import cProfile
+cProfile.run("main()")          # δείχνει calls, total time, per-function time
+```
+
+Το `cProfile` δείχνει **πού** πάει ο χρόνος — και συχνά η απάντηση είναι έκπληξη (π.χ. ένα αθώο `json.loads` σε loop, όχι ο «βαρύς» υπολογισμός που υποψιαζόσουν). Βελτιστοποιείς **μόνο** το αποδεδειγμένο bottleneck — το 90% του υπόλοιπου κώδικα δεν αξίζει τον κόπο (premature optimization).
+
+<PredictOutput
+  title="Πού να βελτιστοποιήσεις;"
+  code={`# cProfile output:
+#   ncalls  tottime  function
+#   1       0.02     parse_config
+#   50000   4.81     lookup_user       ← in a list
+#   1       0.15     render_report
+
+# Πού εστιάζεις πρώτα;`}
+  options={["parse_config", "lookup_user", "render_report", "και τα τρία ίσα"]}
+  correctOptionIndex={1}
+  answer="lookup_user"
+  explanation="Το lookup_user τρώει 4.81s — συντριπτικά το μεγαλύτερο. Καλείται 50000 φορές και ψάχνει σε list (O(n) membership). Λύση: μετέτρεψε τη list σε set/dict για O(1) lookup. Τα άλλα δύο είναι αμελητέα — μην τα αγγίξεις."
+/>
+
+## Big-O των δομών της Python
+
+Η σωστή δομή κάνει τη μεγαλύτερη διαφορά — πολύ περισσότερο από micro-optimizations:
+
+```txt
+list:    index O(1) | append O(1) | x in list O(n)   | insert(0,x)/pop(0) O(n)
+dict:    get/set O(1) | key in dict O(1)
+set:     add O(1) | x in set O(1)
+deque:   appendleft/popleft O(1)  (list pop(0) O(n))
+```
+
+Το πιο συχνό λάθος: επαναλαμβανόμενο `x in some_list` σε μεγάλα δεδομένα. Αν κάνεις πολλά membership checks, μετέτρεψε σε `set` — από O(n) σε O(1) ανά έλεγχο. Σε 50.000 lookups, αυτό είναι η διαφορά δευτερολέπτων από millisecond.
+
+## Κοινά traps
+
+```py
+# ❌ String concatenation σε loop — O(n²): κάθε += φτιάχνει νέο string
+result = ""
+for s in parts:
+    result += s
+# ✓ join — O(n)
+result = "".join(parts)
+
+# ❌ Membership σε list μέσα σε loop — O(n*m)
+for item in items:
+    if item in big_list:    # O(n) κάθε φορά
+        ...
+# ✓ set lookup — O(1)
+lookup = set(big_list)
+for item in items:
+    if item in lookup:      # O(1)
+        ...
+
+# ❌ Περιττό copy μεγάλης δομής σε loop
+# ✓ generator/iterator για single pass, in-place όπου ασφαλές
+```
+
+Το `"".join(...)` αντί για `+=` σε loop είναι κλασικό: τα strings είναι immutable, οπότε κάθε `+=` δημιουργεί νέο string αντιγράφοντας — quadratic. Το `join` το κάνει σε ένα πέρασμα.
+
+## Caching — υπολόγισε μία φορά
+
+```py
+from functools import lru_cache
+
+@lru_cache(maxsize=1024)
+def expensive(n: int) -> int:
+    # ακριβός pure υπολογισμός — cache-άρεται ανά argument
+    ...
+```
+
+Το `lru_cache` βοηθά όταν: η function είναι **pure** (ίδιο input → ίδιο output), καλείται **επανειλημμένα με ίδια arguments**, και ο υπολογισμός είναι **ακριβός**. ΔΕΝ βοηθά (και βλάπτει) όταν τα arguments είναι σχεδόν πάντα διαφορετικά (το cache απλώς τρώει μνήμη) ή η function έχει side effects.
+
+## Πότε φεύγεις από pure Python
+
+Η Python είναι αργή σε tight numeric loops (interpreter overhead). Αν το profiling δείξει ότι το bottleneck είναι αριθμητικό:
+
+1. **Vectorize με numpy** — η πρώτη και συχνά μόνη λύση που χρειάζεσαι (είδες στο data μάθημα).
+2. **C-extensions / Cython / native libs** — όταν numpy δεν αρκεί.
+3. **Ξεχωριστό process / άλλη γλώσσα** — για CPU-bound που πρέπει να γίνει παράλληλα (θυμήσου το GIL).
+4. **Async/concurrency** — αν το bottleneck είναι I/O, όχι CPU (διαφορετικό πρόβλημα — δες async μάθημα).
+
+Το κλειδί: **διάγνωσε πρώτα** τι είδους bottleneck έχεις (CPU-bound vs I/O-bound), γιατί η λύση είναι τελείως διαφορετική.
+
+<Exercise
+  question="Ο κώδικάς σου είναι αργός. Ποιο είναι το ΠΡΩΤΟ βήμα;"
+  options={[
+    "Profile τον (cProfile/timeit) για να βρεις το πραγματικό bottleneck — μετά βελτιστοποίησε ΜΟΝΟ αυτό. Η διαίσθηση για το 'τι είναι αργό' είναι συνήθως λάθος.",
+    "Ξαναγράψε τα πάντα σε numpy.",
+    "Πρόσθεσε caching παντού."
+  ]}
+  correctOptionIndex={0}
+  explanation="Measure, don't guess. Το cProfile δείχνει πού πάει ο χρόνος· συχνά εκπλήσσει. Βελτιστοποιείς το αποδεδειγμένο 5% που τρώει τον χρόνο, όχι στα τυφλά (premature optimization)."
+/>
+
+<Exercise
+  question="Κάνεις 100.000 ελέγχους 'υπάρχει το x;' σε μια λίστα 100.000 στοιχείων και είναι αργό. Λύση;"
+  options={[
+    "Μετέτρεψε τη list σε set μία φορά — το membership γίνεται O(1) αντί O(n), δηλαδή από ~10^10 σε ~10^5 πράξεις συνολικά.",
+    "Ταξινόμησε τη list.",
+    "Πρόσθεσε lru_cache στη συνάρτηση ελέγχου."
+  ]}
+  correctOptionIndex={0}
+  explanation="list membership O(n) × 100k checks = quadratic. set membership O(1) μετατρέπει το σύνολο σε γραμμικό. Η σωστή δομή δεδομένων είναι η μεγαλύτερη νίκη απόδοσης — πιο πολύ από κάθε micro-optimization."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«Your Python code is slow — how do you approach it?»
+
+> First I measure instead of guessing — `cProfile` for the whole program, `timeit` for snippets — because intuition about hotspots is usually wrong, and I only optimize the bottleneck the profiler actually points to. Most wins come from algorithms and data structures, not micro-tweaks: swapping an O(n) `list` membership check for an O(1) `set`, using `"".join` instead of `+=` in a loop, or `deque` for queues. I add `lru_cache` for expensive pure functions called with repeating arguments. If the profiler shows a tight numeric loop, I vectorize with numpy, and only if that's not enough do I reach for C extensions or a separate process — and I first confirm whether the bottleneck is CPU-bound or I/O-bound, because the fix is completely different.
+
+<Flashcards
+  title="Performance & profiling — interview drills"
+  cards={[
+    {
+      question: "Ποιο είναι το πρώτο βήμα σε performance problem;",
+      answer: "Profile (cProfile/timeit) για να βρεις το πραγματικό bottleneck. Measure, don't guess — η διαίσθηση είναι συνήθως λάθος. Βελτιστοποίησε ΜΟΝΟ το αποδεδειγμένο hotspot."
+    },
+    {
+      question: "list vs set membership — complexity;",
+      answer: "x in list: O(n) (γραμμική σάρωση). x in set/dict: O(1) (hash). Για επαναλαμβανόμενα membership checks σε μεγάλα δεδομένα, μετέτρεψε σε set — η μεγαλύτερη συχνή νίκη."
+    },
+    {
+      question: "Γιατί '+=' string σε loop είναι κακό;",
+      answer: "Τα strings είναι immutable· κάθε += φτιάχνει νέο string αντιγράφοντας → O(n²). Χρησιμοποίησε ''.join(parts) → O(n), ένα πέρασμα."
+    },
+    {
+      question: "Πότε βοηθά το lru_cache;",
+      answer: "Όταν η function είναι pure, καλείται επανειλημμένα με ΙΔΙΑ arguments, και ο υπολογισμός είναι ακριβός. ΟΧΙ όταν τα args είναι πάντα διαφορετικά (σπατάλη μνήμης) ή υπάρχουν side effects."
+    },
+    {
+      question: "Πότε φεύγεις από pure Python για ταχύτητα;",
+      answer: "Σε CPU-bound tight numeric loops: πρώτα vectorize με numpy· μετά C-extensions/Cython· για παράλληλο CPU ξεχωριστά processes (GIL). Αν το bottleneck είναι I/O, η λύση είναι async, όχι αυτά."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Profile & βελτιστοποίησε"
+  scenario="Πάρε ένα σκόπιμα αργό script (membership σε list, string += σε loop, περιττοί υπολογισμοί) και βελτιστοποίησέ το με βάση μετρήσεις, όχι εικασίες."
+  outcomes={[
+    "Να κάνεις profile και να εντοπίζεις το πραγματικό bottleneck.",
+    "Να διαλέγεις σωστές δομές δεδομένων για το πρόβλημα.",
+    "Να εφαρμόζεις caching/vectorization όπου πραγματικά βοηθά."
+  ]}
+  steps={[
+    "Τρέξε cProfile και εντόπισε ποια function τρώει τον χρόνο.",
+    "Μετέτρεψε ένα list membership σε set και ξαναμέτρα.",
+    "Αντικατέστησε string += loop με ''.join και ξαναμέτρα.",
+    "Πρόσθεσε lru_cache σε μια ακριβή pure function με επαναλαμβανόμενα inputs.",
+    "Αν υπάρχει αριθμητικό loop, vectorize με numpy και σύγκρινε."
+  ]}
+  checkpoints={[
+    "Κάθε αλλαγή στηρίζεται σε μέτρηση πριν/μετά.",
+    "Βελτιστοποιήθηκε μόνο το αποδεδειγμένο bottleneck.",
+    "Οι δομές δεδομένων ταιριάζουν στα access patterns."
+  ]}
+  mistakes={[
+    "Βελτιστοποίηση χωρίς profiling (premature optimization).",
+    "Micro-optimizations αντί για αλλαγή δομής/αλγορίθμου.",
+    "lru_cache σε function με συνεχώς διαφορετικά args ή side effects.",
+    "Να μη διαγιγνώσκεις CPU-bound vs I/O-bound πριν διαλέξεις λύση."
+  ]}
+  mastery="Το μάθημα — και το mastery track — πέτυχε όταν, μπροστά σε αργό κώδικα, μετράς πρώτα, εντοπίζεις το bottleneck, και το λύνεις με τη σωστή δομή/αλγόριθμο, εξηγώντας το πριν/μετά."
+/>

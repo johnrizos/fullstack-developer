@@ -1,0 +1,208 @@
+# Async, Concurrency & Background Jobs
+
+Εδώ είναι το πιο παρεξηγημένο κομμάτι της Python — και ακριβώς γι' αυτό διαχωρίζει τους junior από τους έμπειρους στη συνέντευξη. «Πες μου για το GIL», «asyncio ή threads ή processes;», «πώς τρέχεις βαριά δουλειά χωρίς να μπλοκάρεις το API;» είναι ερωτήσεις που ξεχωρίζουν το ποιος έχει τρέξει Python σε παραγωγή.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς το GIL και τι σημαίνει στην πράξη,
+- να διαλέγεις σωστά ανάμεσα σε asyncio, threads και processes ανάλογα με I/O-bound vs CPU-bound,
+- να γράφεις `async/await` με `asyncio`,
+- να σχεδιάζεις background jobs με queue + worker (Celery/RQ),
+- να σχεδιάζεις job status flow και retries.
+
+## Το GIL — η μία πρόταση που πρέπει να ξέρεις
+
+Ο **Global Interpreter Lock** σημαίνει ότι σε CPython **μόνο ένα thread εκτελεί Python bytecode κάθε στιγμή**, ακόμη κι αν έχεις 16 πυρήνες. Συνέπειες:
+
+- **CPU-bound δουλειά ΔΕΝ επιταχύνεται με threads** — τα threads μοιράζονται έναν πυρήνα για Python code. Για παράλληλο CPU χρειάζεσαι **processes** (`multiprocessing`), που έχουν δικό τους interpreter, άρα δικό τους GIL.
+- **I/O-bound δουλειά ΕΠΩΦΕΛΕΙΤΑΙ από threads/async** — όταν ένα thread περιμένει δίκτυο/δίσκο, αφήνει το GIL και τρέχει άλλο. Εδώ η συγχρονικότητα δουλεύει.
+
+Έτσι ο πίνακας απόφασης είναι απλός:
+
+```txt
+I/O-bound (δίκτυο, db, αρχεία):  asyncio  (ή threads)  → ένας πυρήνας φτάνει
+CPU-bound (ML, math, encoding):  multiprocessing       → πολλοί πυρήνες, παρακάμπτεις GIL
+Πολλά+βαριά:                     queue + worker process (Celery/RQ)
+```
+
+<PredictOutput
+  title="GIL & threads drill"
+  code={`# Έχεις 8 πυρήνες. Τρέχεις CPU-βαρύ υπολογισμό
+# (π.χ. πρώτοι αριθμοί) σε 8 threads.
+# Σε σχέση με 1 thread, ο χρόνος περίπου:`}
+  options={["~8x πιο γρήγορα", "~ίδιος ή λίγο χειρότερος", "ακριβώς 2x", "σκάει με error"]}
+  correctOptionIndex={1}
+  answer="~ίδιος ή λίγο χειρότερος"
+  explanation="Λόγω GIL, μόνο ένα thread τρέχει Python bytecode τη φορά — τα 8 threads μοιράζονται έναν πυρήνα για CPU δουλειά, με επιπλέον overhead εναλλαγής. Για πραγματική επιτάχυνση CPU-bound: multiprocessing (8 processes, 8 GILs, 8 πυρήνες)."
+/>
+
+## asyncio — concurrency σε ένα thread
+
+Για I/O-bound δουλειά, το `asyncio` δίνει concurrency χωρίς threads — ίδιο μοντέλο με το Node event loop:
+
+```py
+import asyncio
+import httpx
+
+async def fetch(client, url):
+    resp = await client.get(url)
+    return resp.status_code
+
+async def main():
+    urls = ["https://a.com", "https://b.com", "https://c.com"]
+    async with httpx.AsyncClient() as client:
+        # Όλα ΤΑΥΤΟΧΡΟΝΑ — όχι σειριακά
+        results = await asyncio.gather(*(fetch(client, u) for u in urls))
+    print(results)
+
+asyncio.run(main())
+```
+
+Σημεία-κλειδιά:
+- `await` = «παράτησε το control όσο περιμένω I/O, ώστε να τρέξει άλλη coroutine». Δεν μπλοκάρει τον thread.
+- `asyncio.gather(...)` τρέχει πολλά awaitables **ταυτόχρονα** — αν τα κάνεις `await` ένα-ένα σε loop, γίνονται σειριακά (κλασικό λάθος).
+- **Κανόνας μη-ανάμειξης**: μέσα σε `async` κώδικα μη βάζεις blocking κλήσεις (`time.sleep`, sync `requests`, βαρύ CPU loop) — παγώνουν όλο το event loop. Χρησιμοποίησε `asyncio.sleep`, async clients, ή πέτα τη CPU δουλειά σε executor/process.
+
+<PredictOutput
+  title="gather vs sequential await"
+  code={`# Κάθε fetch αργεί 1 δευτερόλεπτο (I/O).
+# Έχεις 3 URLs.
+
+# Εκδοχή A:
+for u in urls:
+    await fetch(u)
+
+# Εκδοχή B:
+await asyncio.gather(*(fetch(u) for u in urls))
+
+# Συνολικός χρόνος A vs B;`}
+  options={["A: ~3s, B: ~1s", "A: ~1s, B: ~3s", "Και τα δύο ~1s", "Και τα δύο ~3s"]}
+  correctOptionIndex={0}
+  answer="A: ~3s, B: ~1s"
+  explanation="Το await μέσα σε loop περιμένει το καθένα να τελειώσει πριν ξεκινήσει το επόμενο → σειριακά, ~3s. Το gather τα ξεκινά όλα μαζί και περιμένει το πιο αργό → ~1s. Αυτό είναι το πιο συχνό async performance bug."
+/>
+
+## Background jobs — queue + worker
+
+Όταν η δουλειά είναι αργή ή βαριά, δεν την κάνεις μέσα στο request. Τη βάζεις σε **queue** και ένας ξεχωριστός **worker process** την επεξεργάζεται:
+
+```txt
+FastAPI endpoint ──push job──> Queue (Redis/RabbitMQ) ──> Worker process(es)
+       │                                                        │
+       └── επιστρέφει job_id αμέσως          γράφει result/status στη βάση
+```
+
+Με Celery (το πιο διαδεδομένο):
+
+```py
+# tasks.py
+from celery import Celery
+
+celery = Celery("jobs", broker="redis://localhost:6379/0")
+
+@celery.task(bind=True, max_retries=3)
+def process_document(self, doc_id: str):
+    try:
+        # βαριά δουλειά: OCR, ML, parsing...
+        result = heavy_processing(doc_id)
+        save_result(doc_id, result)
+    except TransientError as exc:
+        # exponential backoff retry
+        raise self.retry(exc=exc, countdown=2 ** self.request.retries)
+```
+
+```py
+# στο FastAPI endpoint
+@app.post("/documents/{doc_id}/process")
+def enqueue(doc_id: str):
+    task = process_document.delay(doc_id)   # μπαίνει στην queue, δεν τρέχει εδώ
+    return {"job_id": task.id, "status": "queued"}
+```
+
+Τα production patterns που πρέπει να αναφέρεις:
+- **Idempotency**: ένα job μπορεί να ξανατρέξει (retry/duplicate) — γράψ' το ώστε να μην προκαλεί διπλά side effects (π.χ. έλεγχος «έχει ήδη γίνει;»).
+- **Retries με backoff**: παροδικά σφάλματα (δίκτυο, rate limit) ξαναδοκιμάζονται με αυξανόμενη καθυστέρηση· μόνιμα σφάλματα πάνε σε **dead-letter queue**.
+- **Status flow**: `queued → processing → done/failed`, αποθηκευμένο ώστε ο client να κάνει polling ή να δεχτεί webhook.
+- **Timeouts**: κάθε job έχει όριο χρόνου, αλλιώς ένα κολλημένο job κρατά worker.
+
+<Exercise
+  question="Έχεις CPU-bound δουλειά (ML inference) και θες να αξιοποιήσεις 8 πυρήνες. Τι χρησιμοποιείς;"
+  options={[
+    "multiprocessing / ξεχωριστά worker processes — κάθε process έχει δικό του interpreter & GIL, άρα τρέχουν πραγματικά παράλληλα σε διαφορετικούς πυρήνες.",
+    "threading με 8 threads — θα μοιραστούν τους πυρήνες.",
+    "asyncio.gather με 8 coroutines."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το GIL μπλοκάρει παράλληλο CPU σε threads. Threads/asyncio βοηθούν μόνο σε I/O-bound. Για παράλληλο CPU χρειάζεσαι processes (multiprocessing ή worker pool)."
+/>
+
+<Exercise
+  question="Ένα background job μπορεί να ξανατρέξει λόγω retry. Τι πρέπει να εγγυηθείς;"
+  options={[
+    "Idempotency — το να τρέξει δύο φορές να μην προκαλεί διπλά side effects (διπλή χρέωση, διπλό email). Π.χ. έλεγχος αν η δουλειά έχει ήδη ολοκληρωθεί πριν την επανεκτέλεση.",
+    "Ότι δεν θα ξανατρέξει ποτέ — απενεργοποίησε τα retries.",
+    "Ότι τρέχει σε ξεχωριστό thread."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σε κατανεμημένα συστήματα τα jobs ξανατρέχουν (at-least-once delivery). Idempotency είναι ο μόνος ασφαλής σχεδιασμός — σε συνδυασμό με retries+backoff και dead-letter queue για μόνιμες αποτυχίες."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«Python has the GIL — how do you run heavy work without blocking your API?»
+
+> It depends on the workload. For I/O-bound work — network, database, external APIs — the GIL is released during the wait, so `asyncio` (or threads) gives me real concurrency on a single core; I use `asyncio.gather` to fan out instead of awaiting in a loop. For CPU-bound work like ML inference the GIL blocks parallelism in threads, so I use multiple processes. In practice, anything slow or heavy goes off the request path entirely: I push a job to a queue like Celery on Redis, return a job id immediately, and a separate worker processes it. I make the job idempotent, add retries with backoff and a dead-letter queue, and expose a status endpoint for polling.
+
+<Flashcards
+  title="Async, concurrency & jobs — interview drills"
+  cards={[
+    {
+      question: "Τι είναι το GIL και τι σημαίνει πρακτικά;",
+      answer: "Global Interpreter Lock: σε CPython μόνο ένα thread τρέχει Python bytecode τη φορά. Πρακτικά: CPU-bound δεν επιταχύνεται με threads (θες processes)· I/O-bound επωφελείται από threads/async γιατί το GIL αφήνεται στην αναμονή."
+    },
+    {
+      question: "asyncio vs threading vs multiprocessing;",
+      answer: "asyncio: I/O-bound, ένα thread, concurrency χωρίς overhead threads. threading: I/O-bound, χρήσιμο για blocking libs. multiprocessing: CPU-bound, παρακάμπτει το GIL με ξεχωριστούς interpreters."
+    },
+    {
+      question: "Γιατί asyncio.gather αντί για await σε loop;",
+      answer: "await σε loop = σειριακά (περιμένει το καθένα). gather ξεκινά όλα τα awaitables ταυτόχρονα και περιμένει το πιο αργό. 3×1s tasks: loop ~3s, gather ~1s."
+    },
+    {
+      question: "Τι ΔΕΝ βάζεις μέσα σε async κώδικα;",
+      answer: "Blocking κλήσεις: time.sleep, sync requests, βαρύ CPU loop. Παγώνουν όλο το event loop. Χρησιμοποίησε asyncio.sleep, async clients, ή πέτα τη CPU δουλειά σε process/executor."
+    },
+    {
+      question: "Ποια production patterns θες σε background jobs;",
+      answer: "Idempotency (ασφαλές re-run), retries με exponential backoff, dead-letter queue για μόνιμες αποτυχίες, status flow (queued→processing→done/failed), και timeout ανά job."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Background job pipeline"
+  scenario="Σχεδίασε pipeline όπου το FastAPI δέχεται ένα βαρύ job (π.χ. document processing/ML), το βάζει σε queue, ένας worker το επεξεργάζεται, και ο client μαθαίνει το αποτέλεσμα."
+  outcomes={[
+    "Να ξεχωρίζεις I/O-bound από CPU-bound και να διαλέγεις σωστό μοντέλο.",
+    "Να σχεδιάζεις queue + worker με status flow.",
+    "Να εφαρμόζεις idempotency, retries και timeouts."
+  ]}
+  steps={[
+    "Endpoint που βάζει job στην queue και επιστρέφει job_id + status:queued.",
+    "Worker task που κάνει τη δουλειά και γράφει result/status.",
+    "Πρόσθεσε retry με exponential backoff για παροδικά σφάλματα.",
+    "Κάνε το job idempotent: έλεγξε αν έχει ήδη ολοκληρωθεί πριν ξανατρέξεις.",
+    "Endpoint GET /jobs/{id} για polling του status."
+  ]}
+  checkpoints={[
+    "Το βαρύ task δεν τρέχει ποτέ μέσα στο HTTP request.",
+    "Διπλό run δεν προκαλεί διπλά side effects.",
+    "Παροδική αποτυχία ξαναδοκιμάζεται· μόνιμη πάει σε dead-letter."
+  ]}
+  mistakes={[
+    "Να τρέχεις CPU-bound σε threads περιμένοντας speedup.",
+    "Να κάνεις await σε loop αντί για gather σε ανεξάρτητα I/O tasks.",
+    "Να μη σχεδιάζεις idempotency και να χρεώνεις/στέλνεις email δύο φορές."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μπορείς να σχεδιάσεις στον πίνακα ένα job pipeline με queue, worker, status flow και να εξηγήσεις πού μπαίνει το GIL στην απόφαση."
+/>

@@ -1,0 +1,194 @@
+# Testing Node APIs
+
+Κώδικας χωρίς tests είναι κώδικας που φοβάσαι να αλλάξεις. Στη συνέντευξη, το «πώς τεστάρεις ένα API;» αποκαλύπτει αν καταλαβαίνεις την πυραμίδα του testing — unit για λογική, integration για το API surface — και τι αξίζει να mock-άρεις. Το layering που έμαθες κάνει αυτό το κομμάτι εύκολο.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να γράφεις unit tests για services με Jest/Vitest,
+- να γράφεις integration tests για endpoints με Supertest,
+- να καταλαβαίνεις τι να mock-άρεις (και τι όχι),
+- να εφαρμόζεις την testing pyramid,
+- να γράφεις tests για error paths, όχι μόνο happy path.
+
+## Unit test — η business logic απομονωμένη
+
+Επειδή το service δεν ξέρει από HTTP, τεστάρεται με απλές κλήσεις. Δίνεις mock repository (DI το κάνει εύκολο):
+
+```ts
+import { describe, it, expect, vi } from "vitest";
+import { makeTaskService } from "./tasks.service";
+
+describe("taskService.create", () => {
+  it("rejects when the user hit the task limit", async () => {
+    const repo = { countByUser: vi.fn().mockResolvedValue(100), insert: vi.fn() };
+    const service = makeTaskService(repo);
+
+    await expect(service.create({ userId: 1, title: "x" }))
+      .rejects.toThrow("Task limit reached");
+    expect(repo.insert).not.toHaveBeenCalled();   // δεν έγραψε στη βάση
+  });
+
+  it("inserts a valid task", async () => {
+    const repo = { countByUser: vi.fn().mockResolvedValue(0),
+                   insert: vi.fn().mockResolvedValue({ id: 1 }) };
+    const service = makeTaskService(repo);
+
+    const result = await service.create({ userId: 1, title: "Write tests" });
+    expect(result.id).toBe(1);
+    expect(repo.insert).toHaveBeenCalledOnce();
+  });
+});
+```
+
+Γρήγορα, ντετερμινιστικά, χωρίς database ή server. Το mock repository απομονώνει τη λογική.
+
+## Integration test — το API surface με Supertest
+
+Το Supertest κάνει πραγματικά HTTP requests στο Express app (χωρίς να ανοίξει port), ελέγχοντας routing, middleware, validation και status codes μαζί:
+
+```ts
+import request from "supertest";
+import { app } from "./app";
+
+describe("POST /tasks", () => {
+  it("returns 422 for invalid input", async () => {
+    const res = await request(app).post("/tasks").send({ title: "" });
+    expect(res.status).toBe(422);
+  });
+
+  it("creates a task and returns 201", async () => {
+    const res = await request(app).post("/tasks").send({ title: "Ship it" });
+    expect(res.status).toBe(201);
+    expect(res.body.data.title).toBe("Ship it");
+  });
+
+  it("returns 401 without auth on protected routes", async () => {
+    const res = await request(app).get("/api/tasks");
+    expect(res.status).toBe(401);
+  });
+});
+```
+
+Αυτό τεστάρει το πραγματικό request flow — το ίδιο που θα δει ο client.
+
+## Τι mock-άρεις — και τι όχι
+
+Ο κανόνας: **mock στα σύνορα του συστήματος** — external APIs, χρόνος, randomness, τρίτα services. **ΜΗΝ** mock-άρεις τη λογική που τεστάρεις ούτε τη δική σου βάση σε integration test (χρησιμοποίησε test database):
+
+```ts
+// ✓ Mock εξωτερικό API — δεν θες να καλέσεις πραγματικό service στο test
+vi.mock("./paymentGateway", () => ({ charge: vi.fn().mockResolvedValue({ ok: true }) }));
+
+// ✓ Mock χρόνο για ντετερμινιστικά tests
+vi.setSystemTime(new Date("2026-01-01"));
+
+// ❌ ΜΗΝ mock-άρεις το ίδιο το service που τεστάρεις
+```
+
+Το υπερβολικό mocking δίνει tests που «περνάνε» αλλά δεν αποδεικνύουν ότι το σύστημα δουλεύει — γιατί τεστάρεις mocks, όχι κώδικα.
+
+## Testing pyramid
+
+```txt
+        ╱╲     E2E (λίγα): όλο το σύστημα, αργά, εύθραυστα
+       ╱──╲    Integration (μερικά): API + db, ρεαλιστικά
+      ╱────╲   Unit (πολλά): services/utils, γρήγορα, απομονωμένα
+```
+
+Πολλά γρήγορα unit tests στη βάση, λιγότερα integration, ελάχιστα E2E στην κορυφή. Αν η πυραμίδα αντιστραφεί (κυρίως αργά E2E), τα tests γίνονται αργά και εύθραυστα — anti-pattern.
+
+<PredictOutput
+  title="Τι να τεστάρεις πρώτα;"
+  code={`// Έχεις:
+// - taskService.create με business rule (limit 100)
+// - POST /tasks endpoint
+// - ένα E2E flow στο browser
+// Πού βάζεις τα ΠΕΡΙΣΣΟΤΕΡΑ tests;`}
+  options={["E2E browser flow", "taskService unit tests", "Μόνο integration", "Παντού ίσα"]}
+  correctOptionIndex={1}
+  answer="taskService unit tests"
+  explanation="Testing pyramid: τα περισσότερα tests είναι unit (services/utils) — γρήγορα, απομονωμένα, καλύπτουν edge cases φθηνά. Λιγότερα integration (API+db), ελάχιστα αργά/εύθραυστα E2E. Η business logic στο service είναι το ιδανικό σημείο για πυκνά unit tests."
+/>
+
+<Exercise
+  question="Τι πρέπει να mock-άρεις σε ένα test;"
+  options={[
+    "Τα σύνορα του συστήματος — external APIs, χρόνος, randomness, τρίτα services — ώστε τα tests να είναι γρήγορα και ντετερμινιστικά. ΟΧΙ τη λογική που τεστάρεις.",
+    "Τα πάντα, για να τρέχουν γρήγορα τα tests.",
+    "Τίποτα — πάντα χρησιμοποίησε πραγματικές εξαρτήσεις."
+  ]}
+  correctOptionIndex={0}
+  explanation="Mock στα boundaries (network, time, randomness, external services). Υπερβολικό mocking → tests που τεστάρουν mocks, όχι κώδικα. Για τη δική σου λογική και (σε integration) τη δική σου db, χρησιμοποίησε πραγματικά/test instances."
+/>
+
+<Exercise
+  question="Γιατί γράφεις tests και για error paths, όχι μόνο happy path;"
+  options={[
+    "Τα bugs ζουν στα error paths και edge cases (invalid input, αποτυχία εξάρτησης, όρια). Το happy path συνήθως δουλεύει· η αξία των tests είναι να πιάνουν το τι σπάει όταν κάτι πάει στραβά.",
+    "Δεν χρειάζεται — αν δουλεύει το happy path, δουλεύουν όλα.",
+    "Μόνο για να αυξήσεις το coverage νούμερο."
+  ]}
+  correctOptionIndex={0}
+  explanation="Error paths (422, 404, 401, αποτυχία εξωτερικού service, όρια) είναι εκεί που κρύβονται τα regressions. Test που καλύπτει μόνο happy path δίνει ψεύτικη ασφάλεια."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you test a Node API?»
+
+> I follow the testing pyramid. Most of my tests are fast unit tests on the services and utilities — and because the business logic doesn't know about HTTP, I just call it with a mocked repository and assert behavior, including error paths like hitting a limit, not only the happy path. Above that I write integration tests with Supertest that fire real HTTP requests at the app, exercising routing, middleware, validation, and status codes together. I mock only at the system boundaries — external APIs, time, randomness — never the logic under test, because over-mocking gives tests that pass without proving anything. A handful of E2E tests sit at the top. That shape keeps the suite fast and trustworthy.
+
+<Flashcards
+  title="Testing Node APIs — interview drills"
+  cards={[
+    {
+      question: "Unit vs integration test;",
+      answer: "Unit: service/util απομονωμένο με mock dependencies — γρήγορο, ντετερμινιστικό. Integration: πραγματικά HTTP requests (Supertest) στο app — routing+middleware+validation+status codes μαζί."
+    },
+    {
+      question: "Τι κάνει το Supertest;",
+      answer: "Κάνει HTTP requests στο Express app χωρίς να ανοίξει port, και ελέγχεις status/body. Τεστάρει το πραγματικό request flow — το ίδιο που βλέπει ο client."
+    },
+    {
+      question: "Τι mock-άρεις και τι όχι;",
+      answer: "Mock στα σύνορα: external APIs, χρόνος, randomness, τρίτα services. ΟΧΙ τη λογική που τεστάρεις. Υπερβολικό mocking → tests που τεστάρουν mocks."
+    },
+    {
+      question: "Τι είναι η testing pyramid;",
+      answer: "Πολλά γρήγορα unit (βάση), λιγότερα integration (μέση), ελάχιστα αργά E2E (κορυφή). Αντεστραμμένη πυραμίδα (κυρίως E2E) = αργά, εύθραυστα tests."
+    },
+    {
+      question: "Γιατί test τα error paths;",
+      answer: "Τα bugs ζουν στα error paths/edge cases (invalid input, αποτυχία εξάρτησης, όρια). Happy-path-only tests δίνουν ψεύτικη ασφάλεια."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Test suite για ένα API"
+  scenario="Γράψε unit tests για ένα service και integration tests για τα endpoints, ακολουθώντας την πυραμίδα."
+  outcomes={[
+    "Να γράφεις unit tests με mocked dependencies.",
+    "Να γράφεις integration tests με Supertest.",
+    "Να καλύπτεις error paths και να mock-άρεις σωστά."
+  ]}
+  steps={[
+    "Unit test το service για happy path ΚΑΙ ένα error path (π.χ. limit).",
+    "Integration test POST: 422 σε invalid, 201 σε valid (Supertest).",
+    "Integration test protected route: 401 χωρίς auth.",
+    "Mock ένα εξωτερικό API call και τον χρόνο για ντετερμινισμό.",
+    "Επιβεβαίωσε ότι έχεις περισσότερα unit από integration από E2E."
+  ]}
+  checkpoints={[
+    "Τα tests καλύπτουν error paths, όχι μόνο happy path.",
+    "Mock μόνο στα σύνορα, όχι τη λογική.",
+    "Η πυραμίδα είναι σωστά προσανατολισμένη."
+  ]}
+  mistakes={[
+    "Να τεστάρεις μόνο το happy path.",
+    "Υπερβολικό mocking που τεστάρει mocks αντί για κώδικα.",
+    "Κυρίως αργά E2E αντί για πολλά unit (αντεστραμμένη πυραμίδα).",
+    "Να εξαρτάς tests από πραγματικό εξωτερικό service/χρόνο."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν προσθέτεις feature και γράφεις αυτόματα unit για τη λογική + integration για το endpoint, καλύπτοντας και τα error paths."
+/>

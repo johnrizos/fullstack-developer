@@ -1,0 +1,200 @@
+# Data & AI with Python
+
+Αυτός είναι ο **λόγος** που η Python κυριαρχεί σε πολλά projects: το data/AI ecosystem (numpy, pandas, και οι AI/ML βιβλιοθήκες) δεν έχει αντίστοιχο σε καμία άλλη γλώσσα. Για fullstack expert που στήνει Python service, το ζητούμενο δεν είναι να γίνεις data scientist — αλλά να ξέρεις πώς να επεξεργάζεσαι δεδομένα αποδοτικά και πώς να σερβίρεις ένα AI model σαν production endpoint.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να καταλαβαίνεις γιατί numpy/pandas είναι τάξεις μεγέθους ταχύτερα από Python loops,
+- να κάνεις βασικό data wrangling με pandas (filter, group, aggregate),
+- να αποφεύγεις το anti-pattern «loop πάνω σε DataFrame»,
+- να σερβίρεις ένα ML model ως FastAPI endpoint σωστά,
+- να σχεδιάζεις batching, caching και cost control για AI calls.
+
+## Γιατί numpy — vectorization
+
+Ένα numpy array δεν είναι Python list: είναι συνεχόμενη μνήμη ομοιόμορφου τύπου, με πράξεις που τρέχουν σε **βελτιστοποιημένο C**, όχι στον Python interpreter. Γι' αυτό είναι 10-100× ταχύτερο:
+
+```py
+import numpy as np
+
+a = np.array([1, 2, 3, 4])
+a * 2            # [2 4 6 8] — vectorized, χωρίς loop, σε C
+a.mean()         # 2.5
+a[a > 2]         # [3 4] — boolean masking
+
+# Python loop: αργό (interpreter overhead ανά στοιχείο)
+result = [x * 2 for x in big_list]
+# numpy: γρήγορο (μία C operation σε όλο το array)
+result = big_array * 2
+```
+
+Η αρχή λέγεται **vectorization**: εκφράζεις την πράξη πάνω σε ολόκληρο το array αντί για element-by-element loop. Είναι το κλειδί για απόδοση σε αριθμητικό κώδικα.
+
+## pandas — δομημένα δεδομένα
+
+Το `DataFrame` είναι σαν πίνακας/spreadsheet με ισχυρό API:
+
+```py
+import pandas as pd
+
+df = pd.read_csv("orders.csv")        # ή read_sql, read_json, read_parquet
+
+df.head()                              # πρώτες γραμμές
+df["amount"].sum()                     # aggregate σε στήλη
+df[df["status"] == "paid"]             # boolean filter (όχι loop!)
+
+# Group + aggregate — το αντίστοιχο SQL GROUP BY
+df.groupby("customer")["amount"].agg(["sum", "count", "mean"])
+
+# Νέα στήλη — vectorized
+df["with_tax"] = df["amount"] * 1.24
+
+df.to_parquet("out.parquet")           # αποδοτικό columnar format
+```
+
+> Το #1 pandas anti-pattern: **`for index, row in df.iterrows()`**. Είναι αργό (Python loop πάνω σε C δομή). Σχεδόν πάντα υπάρχει vectorized εναλλακτική (boolean masking, `.groupby`, `.apply`, αριθμητικές πράξεις σε στήλες). Αν βλέπεις iterrows σε hot path, είναι red flag.
+
+<PredictOutput
+  title="Vectorization vs loop"
+  code={`import numpy as np
+arr = np.array([10, 20, 30, 40, 50])
+print(arr[arr > 25].sum())`}
+  options={["150", "120", "30", "90"]}
+  correctOptionIndex={1}
+  answer="120"
+  explanation="arr > 25 δίνει boolean mask [F,F,T,T,T]· arr[mask] κρατά [30,40,50]· .sum() = 120. Όλα vectorized, χωρίς loop — boolean masking + reduction είναι το βασικό numpy/pandas idiom."
+/>
+
+## Σερβίρισμα ML model ως endpoint
+
+Το κρίσιμο production pattern: **φόρτωσε το model ΜΙΑ φορά στο startup**, όχι ανά request. Το loading ενός model είναι ακριβό (δευτερόλεπτα, εκατοντάδες MB):
+
+```py
+from fastapi import FastAPI
+from contextlib import asynccontextmanager
+from pydantic import BaseModel
+
+model = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global model
+    model = load_model("model.pkl")    # ΜΙΑ φορά στο startup
+    yield
+    # cleanup στο shutdown αν χρειάζεται
+
+app = FastAPI(lifespan=lifespan)
+
+class PredictRequest(BaseModel):
+    features: list[float]
+
+@app.post("/predict")
+def predict(req: PredictRequest):
+    result = model.predict([req.features])   # χρησιμοποιεί το ήδη-φορτωμένο
+    return {"prediction": float(result[0])}
+```
+
+Αν φόρτωνες το model μέσα στο `predict`, κάθε request θα πλήρωνε το κόστος loading — απαράδεκτο. Το `lifespan` το φορτώνει στο startup και το κρατά στη μνήμη.
+
+## Heavy inference → background job
+
+Όπως είδες στο async/jobs μάθημα: αν το inference είναι βαρύ (CPU-bound, δευτερόλεπτα), **δεν** τρέχει inline στο request — μπλοκάρει το event loop. Πάει σε worker:
+
+```txt
+POST /predict (βαρύ) → επιστρέφει job_id αμέσως
+worker process → inference → γράφει result
+GET /predict/{job_id} → status/result
+```
+
+## Πρακτικά patterns για AI/LLM calls
+
+Όταν καλείς εξωτερικά AI APIs (π.χ. LLMs), τα production concerns:
+
+- **Batching**: ομαδοποίησε πολλά inputs σε ένα call όπου γίνεται — λιγότερα round-trips, χαμηλότερο κόστος.
+- **Caching**: ίδιο input → cache το result (Redis/lru_cache). Τα AI calls είναι ακριβά και αργά· μην ξαναπληρώνεις για ίδιο ερώτημα.
+- **Timeouts & retries**: τα model APIs έχουν latency spikes — βάλε timeout και retry με backoff (όπως ο decorator που έγραψες).
+- **Cost control**: μέτρα tokens/calls, βάλε rate limits, log το usage — το κόστος κλιμακώνεται γρήγορα.
+- **Streaming**: για LLM responses, stream τα tokens (Server-Sent Events) αντί να περιμένεις όλη την απάντηση.
+
+<Exercise
+  question="Γιατί είναι 10-100× ταχύτερο το numpy από Python loop για αριθμητικά;"
+  options={[
+    "Vectorization: οι πράξεις τρέχουν σε βελτιστοποιημένο C πάνω σε συνεχόμενη μνήμη ομοιόμορφου τύπου, αντί για element-by-element loop με interpreter overhead ανά στοιχείο.",
+    "Το numpy χρησιμοποιεί περισσότερους πυρήνες πάντα.",
+    "Είναι γραμμένο σε JavaScript που είναι ταχύτερο."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το κλειδί είναι ότι μία array operation = ένα C-level pass, ενώ το Python loop πληρώνει interpreter overhead για κάθε στοιχείο. Γι' αυτό 'σκέψου σε arrays', όχι σε loops."
+/>
+
+<Exercise
+  question="Πού πρέπει να φορτώνεις ένα ML model σε FastAPI service;"
+  options={[
+    "Μία φορά στο startup (lifespan/global), και να το επαναχρησιμοποιείς σε κάθε request — το loading είναι ακριβό (δευτερόλεπτα, εκατοντάδες MB).",
+    "Μέσα στον handler, σε κάθε request, για να είναι πάντα φρέσκο.",
+    "Σε ξεχωριστό αρχείο config."
+  ]}
+  correctOptionIndex={0}
+  explanation="Loading ανά request θα έκανε κάθε call να πληρώνει το κόστος φόρτωσης. Φόρτωσε στο startup με lifespan, κράτα στη μνήμη. Για βαρύ inference, πέτα τη δουλειά σε background worker."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How would you serve a machine-learning model from a Python service?»
+
+> I load the model once at startup using FastAPI's lifespan hook and keep it in memory, because loading is expensive — seconds and hundreds of megabytes — so doing it per request would be unacceptable. The endpoint validates input with a Pydantic model and runs prediction on the already-loaded model. If inference is heavy and CPU-bound, I don't run it inline — that blocks the event loop — I push it to a background worker and return a job id. For data prep I rely on numpy and pandas vectorization instead of Python loops, avoiding anti-patterns like `iterrows`. And when calling external AI APIs I add caching for repeated inputs, batching, timeouts with retries, and cost tracking, since those calls are slow and expensive.
+
+<Flashcards
+  title="Data & AI — interview drills"
+  cards={[
+    {
+      question: "Τι είναι vectorization και γιατί είναι γρήγορη;",
+      answer: "Έκφραση πράξης πάνω σε ολόκληρο array αντί για element loop. Τρέχει σε C πάνω σε συνεχόμενη μνήμη ομοιόμορφου τύπου — 10-100× ταχύτερη από Python loop που πληρώνει interpreter overhead ανά στοιχείο."
+    },
+    {
+      question: "Ποιο είναι το #1 pandas anti-pattern;",
+      answer: "df.iterrows() — Python loop πάνω σε C δομή, αργό. Σχεδόν πάντα υπάρχει vectorized εναλλακτική: boolean masking, groupby, αριθμητικές πράξεις σε στήλες, .apply."
+    },
+    {
+      question: "Πού φορτώνεις ML model σε FastAPI;",
+      answer: "Μία φορά στο startup (lifespan/global), κρατάς στη μνήμη, επαναχρησιμοποιείς ανά request. Loading είναι ακριβό· per-request loading = απαράδεκτο latency."
+    },
+    {
+      question: "Βαρύ inference σε request — τι κάνεις;",
+      answer: "Δεν το τρέχεις inline (μπλοκάρει το event loop, CPU-bound). Background worker: επιστρέφεις job_id, ο worker κάνει inference, ο client κάνει polling/webhook."
+    },
+    {
+      question: "Production patterns για εξωτερικά AI/LLM calls;",
+      answer: "Caching ίδιων inputs, batching, timeouts + retries με backoff, cost/token tracking + rate limits, και streaming (SSE) για LLM responses αντί να περιμένεις όλη την απάντηση."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Data processing + model serving"
+  scenario="Φτιάξε ένα Python service που (α) επεξεργάζεται ένα dataset με pandas vectorized και (β) σερβίρει predictions από ένα (απλό) model ως endpoint."
+  outcomes={[
+    "Να κάνεις data wrangling vectorized, χωρίς loops.",
+    "Να σερβίρεις model φορτώνοντάς το στο startup.",
+    "Να εφαρμόζεις caching/timeouts σε AI calls."
+  ]}
+  steps={[
+    "Φόρτωσε CSV με pandas, φιλτράρισε με boolean masking, group+aggregate.",
+    "Αντικατέστησε ένα iterrows loop με vectorized πράξη και σύγκρινε.",
+    "Φόρτωσε model στο FastAPI startup (lifespan) και φτιάξε /predict.",
+    "Πρόσθεσε lru_cache/Redis cache σε ένα ακριβό call για ίδια inputs.",
+    "Βάλε timeout + retry σε ένα εξωτερικό AI call."
+  ]}
+  checkpoints={[
+    "Καμία iterrows σε hot path — όλα vectorized.",
+    "Το model φορτώνεται μία φορά, όχι ανά request.",
+    "Επαναλαμβανόμενα inputs εξυπηρετούνται από cache."
+  ]}
+  mistakes={[
+    "iterrows αντί για vectorized pandas.",
+    "Loading model μέσα στον handler.",
+    "Inline βαρύ inference που μπλοκάρει το event loop.",
+    "AI calls χωρίς cache/timeout — αργά, ακριβά, εύθραυστα."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μετατρέπεις ένα loop-based data script σε vectorized και σερβίρεις model με startup loading, εξηγώντας κάθε απόφαση κόστους/απόδοσης."
+/>

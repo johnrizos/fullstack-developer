@@ -1,0 +1,219 @@
+# Advanced Typing
+
+Στο OOP/Typing μάθημα είδες τα βασικά type hints. Εδώ είναι το επίπεδο που χρησιμοποιούν βιβλιοθήκες και μεγάλα codebases: **generics, protocols, type narrowing, strict mypy**. Όταν μια ομάδα τρέχει `mypy --strict` στο CI, αυτά είναι η καθημερινότητα — και η ικανότητα να γράφεις σωστά τυποποιημένο, επαναχρησιμοποιήσιμο κώδικα είναι ξεκάθαρο σημάδι senior Python developer.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να γράφεις generic functions/classes με `TypeVar` και `Generic`,
+- να χρησιμοποιείς `Protocol` για structural (duck) typing,
+- να καταλαβαίνεις type narrowing και `TypeGuard`,
+- να χρησιμοποιείς `Optional`, `Union`, `Literal`, `Final`, `TypedDict`,
+- να ρυθμίζεις και να ικανοποιείς `mypy --strict`.
+
+## Generics — τύποι που «θυμούνται»
+
+Χωρίς generics, μια function που επιστρέφει «ό,τι της έδωσες» χάνει τον τύπο. Το `TypeVar` τον κρατά:
+
+```py
+from typing import TypeVar
+
+T = TypeVar("T")
+
+def first(items: list[T]) -> T:        # ο τύπος εξόδου = τύπος στοιχείου
+    return items[0]
+
+first([1, 2, 3])        # ο checker ξέρει: int
+first(["a", "b"])       # ο checker ξέρει: str  (όχι "object")
+```
+
+Χωρίς το `T`, θα έπρεπε να γράψεις `-> object` ή `-> Any` και να χάσεις κάθε ασφάλεια. Με το `T`, ο checker «δένει» είσοδο και έξοδο.
+
+Στη σύγχρονη Python (3.12+) το syntax έγινε καθαρότερο:
+
+```py
+def first[T](items: list[T]) -> T:     # 3.12+ — δηλώνεις το T inline
+    return items[0]
+
+class Stack[T]:                        # generic class
+    def __init__(self) -> None:
+        self._items: list[T] = []
+    def push(self, item: T) -> None:
+        self._items.append(item)
+    def pop(self) -> T:
+        return self._items.pop()
+
+s: Stack[int] = Stack()
+s.push(1)
+reveal_type(s.pop())   # mypy: int
+```
+
+<PredictOutput
+  title="Generic inference"
+  code={`from typing import TypeVar
+T = TypeVar("T")
+def wrap(x: T) -> list[T]:
+    return [x]
+
+# Τι τύπο συμπεραίνει ο mypy για το αποτέλεσμα;
+result = wrap("hello")`}
+  options={["list[str]", "list[Any]", "list[object]", "str"]}
+  correctOptionIndex={0}
+  answer="list[str]"
+  explanation="Το T δένεται στο str (τύπος του 'hello'), άρα το return type γίνεται list[str]. Αυτή είναι η αξία των generics: ο τύπος ταξιδεύει από την είσοδο στην έξοδο, αντί να ισοπεδωθεί σε Any/object."
+/>
+
+## Protocols — structural typing (duck typing με δόντια)
+
+Αντί να απαιτείς συγκεκριμένο base class (nominal typing), ένα `Protocol` λέει «δέχομαι ΟΤΙΔΗΠΟΤΕ έχει αυτές τις μεθόδους» — στατικά ελεγμένο duck typing:
+
+```py
+from typing import Protocol
+
+class Closeable(Protocol):
+    def close(self) -> None: ...
+
+def shutdown(resource: Closeable) -> None:
+    resource.close()
+
+# Οποιοδήποτε object με close() δουλεύει — ΧΩΡΙΣ να κληρονομεί το Closeable
+class File:
+    def close(self) -> None: ...
+class Socket:
+    def close(self) -> None: ...
+
+shutdown(File())     # ✓ ο mypy το δέχεται
+shutdown(Socket())   # ✓ — δομικά ταιριάζει
+```
+
+Αυτό είναι ισχυρό: γράφεις functions που εξαρτώνται από **συμπεριφορά**, όχι από ιεραρχία κληρονομικότητας — το «αληθινό» Pythonic duck typing, αλλά τώρα ο checker το επιβάλλει.
+
+## Type narrowing — ο checker «μαθαίνει» από τους ελέγχους
+
+Ο mypy παρακολουθεί τους ελέγχους σου και στενεύει τον τύπο:
+
+```py
+def process(value: int | str | None) -> str:
+    if value is None:
+        return "empty"          # εδώ: None
+    if isinstance(value, int):
+        return str(value * 2)   # εδώ ο checker ξέρει: int
+    return value.upper()        # εδώ απομένει: str — το .upper() είναι ασφαλές
+```
+
+Μετά από `if value is None: return`, ο checker αφαιρεί το `None` από τους πιθανούς τύπους. Μετά το `isinstance(value, int)`, ξέρει ότι στο `else` απομένει μόνο `str`. Γι' αυτό δεν χρειάζεσαι casts — αρκούν οι σωστοί έλεγχοι.
+
+## Χρήσιμα typing constructs
+
+```py
+from typing import Literal, Final, TypedDict
+
+# Literal — μόνο συγκεκριμένες τιμές επιτρέπονται
+def set_mode(mode: Literal["r", "w", "a"]) -> None: ...
+set_mode("x")    # mypy error! μόνο "r"/"w"/"a"
+
+# Final — σταθερά που δεν αλλάζει
+MAX_RETRIES: Final = 3
+
+# TypedDict — dict με γνωστά keys/τύπους (π.χ. JSON shape)
+class UserDict(TypedDict):
+    id: int
+    name: str
+    active: bool
+
+u: UserDict = {"id": 1, "name": "Ana", "active": True}
+u["age"]   # mypy error! δεν υπάρχει 'age' στο schema
+```
+
+Το `Literal` είναι ιδανικό για enums-σαν-strings (status, mode), το `TypedDict` για JSON payloads όπου ξέρεις το σχήμα αλλά θες να μείνει dict.
+
+## mypy `--strict` — το πραγματικό φίλτρο
+
+Σε production codebase τρέχεις:
+
+```bash
+mypy --strict src/
+```
+
+Το `--strict` ενεργοποιεί όλους τους αυστηρούς ελέγχους: απαγορεύει σιωπηλό `Any`, απαιτεί type hints σε κάθε function, πιάνει `None` που δεν χειρίζεσαι. Είναι ο τρόπος που ένα μεγάλο Python codebase μένει ασφαλές παρά το dynamic typing — και η συνήθης ερώτηση «πώς κρατάτε type safety σε Python project;» έχει απάντηση: strict mypy στο CI.
+
+<Exercise
+  question="Πότε διαλέγεις Protocol αντί για abstract base class (κληρονομικότητα);"
+  options={[
+    "Όταν θες να δεχτείς οποιοδήποτε object 'έχει το σωστό σχήμα' (μεθόδους/attributes) χωρίς να απαιτείς να κληρονομεί συγκεκριμένη κλάση — structural typing, ελεγμένο στατικά.",
+    "Ποτέ — τα ABCs είναι πάντα καλύτερα.",
+    "Μόνο όταν δουλεύεις με async κώδικα."
+  ]}
+  correctOptionIndex={0}
+  explanation="Protocol = static duck typing: εξαρτάσαι από συμπεριφορά, όχι από ιεραρχία. Ιδανικό για να μην επιβάλλεις στους callers να κληρονομούν τη βάση σου — απλώς να ταιριάζουν δομικά."
+/>
+
+<Exercise
+  question="Αν η Python αγνοεί τα hints, πώς εγγυάται type safety ένα μεγάλο codebase;"
+  options={[
+    "Τρέχοντας έναν static type checker (mypy --strict / pyright) στο CI, που πιάνει τα type errors πριν το merge — τα hints γίνονται enforced contract εκτός runtime.",
+    "Δεν γίνεται — η Python δεν μπορεί ποτέ να είναι type-safe.",
+    "Βάζοντας assert isinstance σε κάθε function."
+  ]}
+  correctOptionIndex={0}
+  explanation="Ο checker είναι ξεχωριστό βήμα από το runtime. --strict απαγορεύει σιωπηλό Any και απαιτεί annotations παντού, οπότε το dynamic typing δεν γίνεται πηγή bugs στην παραγωγή."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you keep a large Python codebase type-safe when types aren't enforced at runtime?»
+
+> I lean on a static checker — mypy in strict mode — running in CI, so type errors are caught before merge even though the interpreter ignores annotations. For reusable code I use generics with `TypeVar` so types flow from input to output instead of collapsing to `Any`, and I prefer `Protocol` over base classes when I just need an object with the right shape — structural typing that matches Python's duck-typing spirit but is checked statically. I narrow unions with `isinstance`/`is None` checks so the checker tracks the type without casts, and I reach for `Literal`, `TypedDict`, and `Final` to make string modes, JSON shapes, and constants precise. The payoff is dynamic-language flexibility with static-language safety.
+
+<Flashcards
+  title="Advanced typing — interview drills"
+  cards={[
+    {
+      question: "Τι λύνει το TypeVar / generics;",
+      answer: "Κρατά τη σχέση τύπων ανάμεσα σε είσοδο και έξοδο. def first[T](items: list[T]) -> T επιστρέφει ακριβώς τον τύπο στοιχείου, αντί για object/Any. Δουλεύει και σε generic classes (Stack[T])."
+    },
+    {
+      question: "Protocol vs base class;",
+      answer: "Protocol = structural/duck typing ελεγμένο στατικά: δέχεσαι ό,τι έχει τις σωστές μεθόδους χωρίς κληρονομικότητα. Base class = nominal: απαιτείς να κληρονομεί. Protocol όταν εξαρτάσαι από συμπεριφορά."
+    },
+    {
+      question: "Τι είναι type narrowing;",
+      answer: "Ο checker στενεύει έναν union τύπο βάσει των ελέγχων σου: μετά από `if x is None: return` ή `isinstance(x, int)`, ξέρει τι απομένει στο επόμενο branch — άρα δεν χρειάζεσαι casts."
+    },
+    {
+      question: "Πότε Literal και πότε TypedDict;",
+      answer: "Literal['r','w','a']: περιορίζει μια παράμετρο σε συγκεκριμένες τιμές (modes/status). TypedDict: dict με γνωστά keys+τύπους (JSON payload shape) — μένει dict αλλά ελέγχεται το σχήμα."
+    },
+    {
+      question: "Τι κάνει το mypy --strict;",
+      answer: "Ενεργοποιεί όλους τους αυστηρούς ελέγχους: όχι σιωπηλό Any, υποχρεωτικά annotations, έλεγχος None. Είναι ο τρόπος που μεγάλα codebases κρατούν type safety — στο CI."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Τυποποιημένο, generic utility module"
+  scenario="Γράψε ένα μικρό typed module (π.χ. ένα generic Repository ή Result type) που περνά mypy --strict, χρησιμοποιώντας generics, Protocol και narrowing."
+  outcomes={[
+    "Να γράφεις generic functions/classes με TypeVar.",
+    "Να χρησιμοποιείς Protocol για structural typing.",
+    "Να ικανοποιείς mypy --strict χωρίς Any."
+  ]}
+  steps={[
+    "Φτιάξε generic Stack[T] ή Repository[T] με σωστά typed methods.",
+    "Όρισε ένα Protocol (π.χ. HasId) και function που το δέχεται.",
+    "Γράψε function με union param και narrow-άρε με isinstance/is None.",
+    "Πρόσθεσε Literal για ένα mode param και TypedDict για ένα payload.",
+    "Τρέξε mypy --strict και διόρθωσε κάθε error μέχρι να περάσει καθαρά."
+  ]}
+  checkpoints={[
+    "Κανένα σιωπηλό Any — mypy --strict καθαρό.",
+    "Οι generic τύποι ταξιδεύουν σωστά (reveal_type το επιβεβαιώνει).",
+    "Το Protocol δέχεται κλάσεις χωρίς κοινή κληρονομικότητα."
+  ]}
+  mistakes={[
+    "Να γυρνάς σε Any όταν δυσκολεύει το typing αντί για generic/Protocol.",
+    "Να βάζεις casts εκεί που αρκεί narrowing με isinstance.",
+    "Να αγνοείς τα mypy errors αντί να τα διορθώνεις."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν γράφεις generic class + Protocol που περνά mypy --strict και εξηγείς γιατί structural typing ταιριάζει στη φιλοσοφία της Python."
+/>

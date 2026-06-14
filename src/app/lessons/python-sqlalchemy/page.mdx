@@ -1,0 +1,224 @@
+# Databases with SQLAlchemy & Alembic
+
+Ένα FastAPI service χωρίς σωστό data layer είναι demo, όχι product. Στο Python ecosystem, το **SQLAlchemy** είναι το de facto ORM και το **Alembic** ο standard τρόπος για migrations. Στη συνέντευξη: «πώς μιλάς στη βάση από Python;», «ORM ή raw SQL;», «πώς κάνεις schema changes χωρίς να χάσεις δεδομένα;» — και το N+1 query problem είναι σχεδόν σίγουρο.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να ορίζεις models με το SQLAlchemy 2.0 ORM (typed, declarative),
+- να κάνεις CRUD με `Session` και το σύγχρονο `select()` API,
+- να ορίζεις relationships και να αποφεύγεις το **N+1 query problem**,
+- να διαχειρίζεσαι transactions σωστά,
+- να κάνεις schema migrations με Alembic.
+
+## Models — SQLAlchemy 2.0, typed
+
+Το σύγχρονο API (2.0) είναι πλήρως typed με `Mapped` και `mapped_column`:
+
+```py
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy import ForeignKey
+
+class Base(DeclarativeBase):
+    pass
+
+class User(Base):
+    __tablename__ = "users"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(unique=True, index=True)
+    name: Mapped[str]
+    posts: Mapped[list["Post"]] = relationship(back_populates="author")
+
+class Post(Base):
+    __tablename__ = "posts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str]
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    author: Mapped["User"] = relationship(back_populates="posts")
+```
+
+Τα type hints (`Mapped[int]`, `Mapped[str]`) δεν είναι διακοσμητικά — το SQLAlchemy 2.0 τα διαβάζει για να ορίσει τις στήλες, και ο mypy ελέγχει τα queries σου.
+
+## CRUD με `select()` και `Session`
+
+```py
+from sqlalchemy import select, create_engine
+from sqlalchemy.orm import Session
+
+engine = create_engine("postgresql+psycopg://user:pass@host/db")
+
+with Session(engine) as session:
+    # CREATE
+    user = User(email="ana@x.com", name="Ana")
+    session.add(user)
+    session.commit()
+
+    # READ — το σύγχρονο 2.0 style (όχι το παλιό session.query)
+    stmt = select(User).where(User.email == "ana@x.com")
+    ana = session.scalars(stmt).first()
+
+    # UPDATE — απλώς άλλαξε το attribute, το ORM παρακολουθεί
+    ana.name = "Ana B."
+    session.commit()
+
+    # DELETE
+    session.delete(ana)
+    session.commit()
+```
+
+Το ORM κάνει **dirty tracking**: αλλάζεις ένα attribute και στο `commit()` παράγει το σωστό UPDATE. Δεν γράφεις SQL — αλλά πρέπει να ξέρεις τι SQL παράγεται (γι' αυτό το N+1 παρακάτω).
+
+## Το N+1 Query Problem — η ερώτηση-κλειδί
+
+Το πιο συχνό performance bug με ORMs. Όταν διατρέχεις σχέσεις σε loop, το ORM κάνει ένα query **ανά** εγγραφή:
+
+```py
+users = session.scalars(select(User)).all()   # 1 query: SELECT * FROM users
+for user in users:
+    print(user.posts)    # +1 query ΑΝΑ user! 100 users = 101 queries 💥
+```
+
+Αυτό είναι το N+1: 1 query για τους users + N queries για τα posts τους. Σε 100 users γίνονται 101 database round-trips. Η λύση είναι **eager loading**:
+
+```py
+from sqlalchemy.orm import selectinload
+
+stmt = select(User).options(selectinload(User.posts))
+users = session.scalars(stmt).all()   # 2 queries ΣΥΝΟΛΙΚΑ, ανεξάρτητα από πλήθος
+for user in users:
+    print(user.posts)    # ήδη φορτωμένα — κανένα επιπλέον query
+```
+
+Το `selectinload` φέρνει όλα τα posts σε **ένα** δεύτερο query (`WHERE author_id IN (...)`). Το να αναγνωρίζεις και να λύνεις το N+1 είναι από τα πιο πρακτικά senior signals.
+
+<PredictOutput
+  title="N+1 drill"
+  code={`# 50 users, καθένας με posts.
+users = session.scalars(select(User)).all()
+for u in users:
+    total = len(u.posts)
+
+# Χωρίς eager loading, πόσα queries περίπου;`}
+  options={["1", "2", "51", "2500"]}
+  correctOptionIndex={2}
+  answer="51"
+  explanation="1 query για τους 50 users + 1 query ανά user για τα posts του = 1 + 50 = 51. Αυτό είναι το N+1. Με selectinload(User.posts) θα ήταν 2 συνολικά. Σε production με χιλιάδες records, καταστροφικό."
+/>
+
+## Transactions — atomicity
+
+Πολλαπλές αλλαγές που πρέπει να πετύχουν ή να αποτύχουν **μαζί** ανήκουν σε μία transaction:
+
+```py
+with Session(engine) as session:
+    with session.begin():            # auto commit στο τέλος, rollback σε exception
+        account_from.balance -= 100
+        account_to.balance += 100
+        # αν πεταχτεί exception εδώ → rollback και των δύο, καμία μισή μεταφορά
+```
+
+Το `session.begin()` ως context manager εγγυάται atomicity: ή και οι δύο αλλαγές γράφονται, ή καμία — ποτέ ενδιάμεση κατάσταση όπου αφαιρέθηκαν 100 χωρίς να προστεθούν.
+
+## Migrations με Alembic
+
+Όταν αλλάζει το schema (νέα στήλη, νέος πίνακας), δεν πειράζεις τη βάση με το χέρι — γράφεις **versioned migration**:
+
+```bash
+alembic revision --autogenerate -m "add active flag to users"
+# δημιουργεί migration script συγκρίνοντας models vs τρέχον schema
+alembic upgrade head      # εφαρμόζει τα pending migrations
+alembic downgrade -1      # ξεγυρίζει το τελευταίο
+```
+
+```py
+# το παραγόμενο migration (επιβεβαίωσέ το πάντα — το autogenerate δεν είναι τέλειο)
+def upgrade():
+    op.add_column("users", sa.Column("active", sa.Boolean(), server_default="true"))
+
+def downgrade():
+    op.drop_column("users", "active")
+```
+
+Γιατί έχει σημασία: τα migrations είναι **versioned, σε version control, εφαρμόζονται με σειρά** σε κάθε environment (dev/staging/prod) ίδια. Έτσι το schema είναι reproducible και τα schema changes γίνονται review σαν κώδικας — όχι χειροκίνητα `ALTER TABLE` που ξεχνιούνται.
+
+<Exercise
+  question="Τι είναι το N+1 query problem και πώς το λύνεις;"
+  options={[
+    "Όταν διατρέχεις μια σχέση σε loop, το ORM κάνει 1 query για τη λίστα + 1 query ανά εγγραφή για τη σχέση (1+N). Λύση: eager loading (selectinload/joinedload) που φέρνει τα σχετιζόμενα σε σταθερό αριθμό queries.",
+    "Όταν η βάση έχει N+1 πίνακες. Λύση: ένωσέ τους.",
+    "Bug του SQLAlchemy που διορθώνεται με update."
+  ]}
+  correctOptionIndex={0}
+  explanation="N+1 = lazy loading μέσα σε loop. selectinload φέρνει όλα τα related σε ένα WHERE id IN (...) query, ανεξάρτητα από το πλήθος. Κλασικό senior interview σημείο."
+/>
+
+<Exercise
+  question="Γιατί χρησιμοποιείς Alembic αντί για χειροκίνητα ALTER TABLE;"
+  options={[
+    "Versioned, reviewable migration scripts σε version control που εφαρμόζονται με ίδια σειρά σε κάθε environment — reproducible schema, με upgrade/downgrade αντί για ad-hoc χειροκίνητες αλλαγές που ξεχνιούνται.",
+    "Είναι πιο γρήγορο να γράφεις ALTER TABLE.",
+    "Το Alembic τρέχει τα queries πιο γρήγορα."
+  ]}
+  correctOptionIndex={0}
+  explanation="Migrations = schema-as-code: versioned, ordered, σε git, ίδια παντού. Έτσι το schema είναι reproducible και τα changes γίνονται review όπως ο κώδικας."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you talk to a database from Python, and what's the most common performance pitfall?»
+
+> I use SQLAlchemy's ORM — in 2.0 it's fully typed with `Mapped` columns and the `select()` API, so models double as type-checked schema and I get dirty tracking on updates. The pitfall I watch for is the N+1 query problem: iterating a relationship in a loop makes the ORM fire one query per row, so 100 users becomes 101 queries. I fix it with eager loading like `selectinload`, which fetches all the related rows in one extra query. I wrap multi-step writes in a transaction so they're atomic, and I never change schema by hand — I use Alembic migrations, which are versioned, reviewable, and applied in the same order across every environment.
+
+<Flashcards
+  title="SQLAlchemy & Alembic — interview drills"
+  cards={[
+    {
+      question: "Τι είναι το N+1 query problem;",
+      answer: "Lazy loading σχέσης μέσα σε loop: 1 query για τη λίστα + 1 ανά εγγραφή για τη σχέση. 100 users → 101 queries. Λύση: eager loading (selectinload/joinedload) → σταθερός αριθμός queries."
+    },
+    {
+      question: "SQLAlchemy 2.0 model — τι αλλάζει;",
+      answer: "Typed declarative: Mapped[int] + mapped_column. Queries με select()/session.scalars αντί για το legacy session.query. Τα hints ορίζουν τις στήλες και ελέγχονται από mypy."
+    },
+    {
+      question: "Πώς εγγυάσαι atomicity σε πολλαπλές αλλαγές;",
+      answer: "Transaction: with session.begin() — commit στο happy path, αυτόματο rollback σε exception. Ή όλες οι αλλαγές γράφονται ή καμία· ποτέ ενδιάμεση κατάσταση."
+    },
+    {
+      question: "Τι κάνει το dirty tracking;",
+      answer: "Το ORM παρακολουθεί ποια attributes άλλαξαν· στο commit() παράγει τα σωστά UPDATE statements αυτόματα, χωρίς να γράφεις SQL — αλλά πρέπει να ξέρεις τι SQL παράγεται."
+    },
+    {
+      question: "Γιατί Alembic;",
+      answer: "Versioned, ordered, reviewable migrations σε version control. upgrade/downgrade, autogenerate από model diffs (πάντα review). Reproducible schema σε dev/staging/prod αντί για χειροκίνητα ALTER."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Data layer με ORM & migrations"
+  scenario="Πρόσθεσε σωστό data layer στο FastAPI service: models, CRUD, μια relationship, και Alembic migration — αποφεύγοντας το N+1."
+  outcomes={[
+    "Να ορίζεις typed models και relationships.",
+    "Να αναγνωρίζεις και να λύνεις N+1.",
+    "Να διαχειρίζεσαι transactions και migrations."
+  ]}
+  steps={[
+    "Όρισε δύο models με relationship (π.χ. User → Posts).",
+    "Γράψε CRUD με select()/session και μια transaction με session.begin().",
+    "Διέτρεξε τη σχέση σε loop και μέτρα τα queries (δες το N+1).",
+    "Πρόσθεσε selectinload και επιβεβαίωσε ότι έπεσαν τα queries.",
+    "Φτιάξε Alembic migration για μια νέα στήλη και τρέξε upgrade/downgrade."
+  ]}
+  checkpoints={[
+    "Καμία σχέση σε loop χωρίς eager loading όπου χρειάζεται.",
+    "Πολλαπλές γραφές τυλιγμένες σε transaction.",
+    "Schema changes μόνο μέσω versioned migrations."
+  ]}
+  mistakes={[
+    "Να αγνοείς το N+1 μέχρι να αργήσει το production.",
+    "Χειροκίνητα ALTER TABLE αντί για Alembic.",
+    "Να εμπιστεύεσαι τυφλά το autogenerate χωρίς review.",
+    "Μισές γραφές χωρίς transaction (inconsistent state)."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μπορείς να δείξεις πριν/μετά τον αριθμό queries ενός N+1 και να εξηγήσεις πώς το selectinload το έλυσε."
+/>

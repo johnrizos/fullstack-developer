@@ -1,0 +1,214 @@
+# Async Patterns & Streams
+
+Το Node είναι async μέχρι το κόκαλο. Η εξέλιξη callbacks → promises → async/await, το `EventEmitter`, και τα **streams** (που επεξεργάζονται δεδομένα τμηματικά χωρίς να γεμίζουν τη μνήμη) είναι αυτά που ξεχωρίζουν τον developer που «κάνει await» από αυτόν που καταλαβαίνει τη ροή δεδομένων. Στη συνέντευξη: «τι είναι το callback hell;», «πώς τρέχεις async παράλληλα;», «πότε χρησιμοποιείς streams;».
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς την εξέλιξη callbacks → promises → async/await,
+- να τρέχεις async operations **παράλληλα** με `Promise.all` αντί σειριακά,
+- να χειρίζεσαι σφάλματα σε async σωστά (`try/catch`, `Promise.allSettled`),
+- να καταλαβαίνεις το `EventEmitter` pattern,
+- να χρησιμοποιείς streams και backpressure για μεγάλα δεδομένα.
+
+## Από callbacks σε async/await
+
+```js
+// Callback hell — nested, δύσκολο error handling
+getUser(id, (err, user) => {
+  if (err) return handle(err);
+  getPosts(user.id, (err, posts) => {
+    if (err) return handle(err);
+    // ...pyramid of doom
+  });
+});
+
+// Promises — flat chain
+getUser(id)
+  .then(user => getPosts(user.id))
+  .then(posts => render(posts))
+  .catch(handle);
+
+// async/await — μοιάζει synchronous, με try/catch
+async function load(id) {
+  try {
+    const user = await getUser(id);
+    const posts = await getPosts(user.id);
+    return render(posts);
+  } catch (err) {
+    handle(err);
+  }
+}
+```
+
+Το `async/await` είναι syntactic sugar πάνω σε promises — κάθε `await` «ξετυλίγει» ένα promise. Το `try/catch` πιάνει και τα rejected promises, κάνοντας το error handling να μοιάζει με synchronous κώδικα.
+
+## Σειριακά vs παράλληλα — το #1 async bug
+
+Το πιο συχνό λάθος: `await` σε loop όταν τα operations είναι **ανεξάρτητα**. Γίνονται σειριακά αντί παράλληλα:
+
+```js
+// ❌ Σειριακά — 3 × 1s = 3s
+const a = await fetchA();
+const b = await fetchB();
+const c = await fetchC();
+
+// ✓ Παράλληλα — max(1s) = 1s
+const [a, b, c] = await Promise.all([fetchA(), fetchB(), fetchC()]);
+```
+
+Όταν τα operations **εξαρτώνται** (το b χρειάζεται το a), το σειριακό `await` είναι σωστό. Όταν είναι **ανεξάρτητα**, `Promise.all` τα τρέχει ταυτόχρονα. Αυτό είναι από τα πιο πρακτικά performance σημεία.
+
+<PredictOutput
+  title="Sequential vs parallel"
+  code={`// Κάθε fetch αργεί 1s
+// Εκδοχή A:
+for (const url of urls) { await fetch(url); }
+// Εκδοχή B:
+await Promise.all(urls.map(u => fetch(u)));
+// 3 urls — χρόνος A vs B;`}
+  options={["A: ~3s, B: ~1s", "A: ~1s, B: ~3s", "Και τα δύο ~1s", "Και τα δύο ~3s"]}
+  correctOptionIndex={0}
+  answer="A: ~3s, B: ~1s"
+  explanation="Το await σε loop περιμένει το καθένα πριν ξεκινήσει το επόμενο → σειριακά ~3s. Το Promise.all ξεκινά όλα μαζί και περιμένει το πιο αργό → ~1s. Για ανεξάρτητα async operations, πάντα Promise.all."
+/>
+
+## Error handling σε παράλληλα operations
+
+```js
+// Promise.all — αποτυγχάνει αν ΕΝΑ απορριφθεί (fail-fast)
+await Promise.all([a, b, c]);   // αν το b reject → όλο reject, χάνεις a, c
+
+// Promise.allSettled — περιμένει ΟΛΑ, επιστρέφει status καθενός
+const results = await Promise.allSettled([a, b, c]);
+// [{status:"fulfilled", value}, {status:"rejected", reason}, ...]
+const ok = results.filter(r => r.status === "fulfilled");
+```
+
+Διάλεξε: `Promise.all` όταν θες όλα ή τίποτα· `Promise.allSettled` όταν θες ό,τι πέτυχε ακόμη κι αν κάποια απέτυχαν (π.χ. fan-out σε πολλά services).
+
+## EventEmitter — το event-driven pattern
+
+Πολλά Node APIs (streams, HTTP servers, sockets) είναι χτισμένα πάνω στο `EventEmitter`:
+
+```js
+import { EventEmitter } from "node:events";
+
+class JobQueue extends EventEmitter {
+  add(job) {
+    this.emit("added", job);          // εκπέμπει event
+    process(job).then(r => this.emit("done", r))
+                .catch(e => this.emit("error", e));
+  }
+}
+
+const q = new JobQueue();
+q.on("done", r => console.log("✓", r));   // εγγραφή σε event
+q.on("error", e => console.error("✗", e));
+```
+
+> Σημαντικό: ένα `EventEmitter` που εκπέμπει `"error"` **χωρίς listener** ρίχνει uncaught exception που κρασάρει τη διαδικασία. Πάντα βάλε `error` listener.
+
+## Streams — δεδομένα τμηματικά
+
+Ένα stream επεξεργάζεται δεδομένα **σε κομμάτια (chunks)** αντί να τα φορτώνει όλα στη μνήμη — απαραίτητο για μεγάλα αρχεία/δεδομένα:
+
+```js
+import { createReadStream, createWriteStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
+import { createGzip } from "node:zlib";
+
+// ❌ Φορτώνει ΟΛΟ το αρχείο στη μνήμη — σκάει σε 5GB αρχείο
+const data = await readFile("huge.log");
+
+// ✓ Stream — σταθερή μνήμη, chunk-by-chunk, με backpressure
+await pipeline(
+  createReadStream("huge.log"),
+  createGzip(),
+  createWriteStream("huge.log.gz")
+);
+```
+
+Το **backpressure** είναι το κλειδί: αν ο reader είναι ταχύτερος από τον writer, το stream «φρενάρει» αυτόματα ώστε να μη γεμίσει η μνήμη. Το `pipeline` το διαχειρίζεται και κάνει σωστό cleanup σε σφάλματα — γι' αυτό προτιμάται από το χειροκίνητο `.pipe()`.
+
+<Exercise
+  question="Έχεις 5 ανεξάρτητα API calls. Πώς τα τρέχεις σωστά;"
+  options={[
+    "Promise.all([...]) — ξεκινούν όλα ταυτόχρονα και περιμένεις το πιο αργό. Σειριακό await θα τα έκανε ένα-ένα, πολλαπλασιάζοντας τον χρόνο.",
+    "await σε for loop, ένα-ένα, για σιγουριά.",
+    "Δεν γίνεται να τρέξουν παράλληλα στο single-threaded Node."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το Node είναι single-threaded αλλά τα I/O operations τρέχουν concurrent (libuv). Promise.all ξεκινά όλα τα fetches μαζί· ο thread δεν μπλοκάρει περιμένοντας. Για ανεξάρτητα I/O, πάντα παράλληλα."
+/>
+
+<Exercise
+  question="Πρέπει να συμπιέσεις ένα αρχείο 8GB σε ένα Node service. Σωστή προσέγγιση;"
+  options={[
+    "Streams: createReadStream → gzip → createWriteStream μέσω pipeline — επεξεργάζεται chunks με σταθερή μνήμη και backpressure, χωρίς να φορτώσει το αρχείο στη RAM.",
+    "readFile όλο το αρχείο, gzip, writeFile.",
+    "Σπάσε το αρχείο χειροκίνητα σε κομμάτια του 1MB."
+  ]}
+  correctOptionIndex={0}
+  explanation="readFile σε 8GB θα γέμιζε τη μνήμη και θα έσκαγε. Τα streams είναι ακριβώς γι' αυτό: chunk-by-chunk με αυτόματο backpressure. Το pipeline διαχειρίζεται errors και cleanup σωστά."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you run multiple async operations efficiently in Node?»
+
+> If they're independent, I run them concurrently with `Promise.all` instead of awaiting in a loop — that turns three sequential one-second calls into one second total. I only await sequentially when one depends on another. For error handling I wrap awaits in try/catch, and I pick `Promise.allSettled` over `Promise.all` when I want every result even if some fail, like fanning out to several services. For large data I never read it all into memory — I use streams, which process chunks with automatic backpressure so memory stays flat, and I wire them with `pipeline` because it handles errors and cleanup correctly. Under all of this is the promise model that async/await is just sugar over.
+
+<Flashcards
+  title="Async patterns & streams — interview drills"
+  cards={[
+    {
+      question: "Τι είναι το async/await πραγματικά;",
+      answer: "Syntactic sugar πάνω σε promises: κάθε await ξετυλίγει ένα promise, και το try/catch πιάνει rejections. Κάνει async κώδικα να διαβάζεται σαν synchronous."
+    },
+    {
+      question: "Σειριακό vs παράλληλο async — πότε τι;",
+      answer: "Ανεξάρτητα operations → Promise.all (ταυτόχρονα, χρόνος = ο πιο αργός). Εξαρτημένα (b χρειάζεται a) → σειριακό await. Το await σε loop για ανεξάρτητα είναι το #1 perf bug."
+    },
+    {
+      question: "Promise.all vs Promise.allSettled;",
+      answer: "all: fail-fast — ένα rejection απορρίπτει τα πάντα. allSettled: περιμένει όλα, επιστρέφει {status, value/reason} για καθένα — όταν θες ό,τι πέτυχε παρά τις αποτυχίες."
+    },
+    {
+      question: "Τι είναι το EventEmitter pattern;",
+      answer: "Event-driven: .emit(event, data) εκπέμπει, .on(event, handler) εγγράφεται. Βάση πολλών Node APIs (streams, servers). Προσοχή: 'error' event χωρίς listener κρασάρει τη διαδικασία."
+    },
+    {
+      question: "Τι λύνουν τα streams και τι είναι backpressure;",
+      answer: "Επεξεργασία δεδομένων chunk-by-chunk με σταθερή μνήμη (αντί να φορτώνεις όλα). Backpressure: όταν ο consumer είναι πιο αργός, το stream φρενάρει τον producer ώστε να μη γεμίσει η μνήμη. Χρησιμοποίησε pipeline."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Async & streaming στην πράξη"
+  scenario="Φτιάξε ένα μικρό data-processing flow: παράλληλα API calls με σωστό error handling, και ένα stream pipeline για μεγάλο αρχείο."
+  outcomes={[
+    "Να τρέχεις ανεξάρτητα async παράλληλα και εξαρτημένα σειριακά.",
+    "Να διαλέγεις all vs allSettled ανάλογα με την ανάγκη.",
+    "Να επεξεργάζεσαι μεγάλα δεδομένα με streams + pipeline."
+  ]}
+  steps={[
+    "Μετέτρεψε ένα callback-based flow σε async/await με try/catch.",
+    "Βρες ένα σειριακό await loop ανεξάρτητων calls και κάν' το Promise.all.",
+    "Χρησιμοποίησε allSettled σε fan-out όπου κάποια calls μπορεί να αποτύχουν.",
+    "Φτιάξε stream pipeline (read → transform → write) για μεγάλο αρχείο.",
+    "Πρόσθεσε error handling στο pipeline και στον EventEmitter (error listener)."
+  ]}
+  checkpoints={[
+    "Καμία σειριακή αναμονή ανεξάρτητων operations.",
+    "Τα errors δεν χάνονται (try/catch ή allSettled).",
+    "Το μεγάλο αρχείο δεν φορτώνεται ποτέ ολόκληρο στη μνήμη."
+  ]}
+  mistakes={[
+    "await σε loop για ανεξάρτητα operations.",
+    "Promise.all όταν χρειαζόσουν allSettled (χάνεις τα επιτυχημένα).",
+    "readFile σε τεράστιο αρχείο αντί για stream.",
+    "EventEmitter που εκπέμπει error χωρίς listener → crash."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν αναγνωρίζεις στιγμιαία πότε ένα async loop πρέπει να γίνει Promise.all και πότε χρειάζεσαι stream αντί για readFile."
+/>

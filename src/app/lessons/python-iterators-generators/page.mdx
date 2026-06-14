@@ -1,0 +1,247 @@
+# Iterators, Generators & Lazy Evaluation
+
+Στα collections είδες generators επιφανειακά. Εδώ μπαίνεις στο **iteration protocol** — τον μηχανισμό που κρύβεται πίσω από κάθε `for` loop στην Python. Ένας expert ξέρει ότι `for`, comprehensions, `in`, unpacking, `sum()`, `zip()` όλα μιλάνε το ίδιο πρωτόκολλο, και μπορεί να γράψει lazy pipelines που επεξεργάζονται άπειρα δεδομένα με σταθερή μνήμη. Αυτό είναι από τα πιο διακριτικά σημάδια έμπειρου Python developer.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς το iterator protocol (`__iter__`, `__next__`, `StopIteration`),
+- να ξεχωρίζεις **iterable** από **iterator**,
+- να γράφεις generator functions και generator expressions με άνεση,
+- να χρησιμοποιείς `yield from` και να συνθέτεις lazy pipelines,
+- να αξιοποιείς το `itertools` για άπειρα/συνθετα streams.
+
+## Iterable vs Iterator — η διάκριση που μπερδεύει
+
+Δύο διαφορετικά πράγματα:
+
+- **Iterable**: ό,τι μπορείς να βάλεις σε `for` — list, dict, str, set, generator. Έχει `__iter__()` που επιστρέφει έναν iterator.
+- **Iterator**: το αντικείμενο που κρατά **θέση** και παράγει την επόμενη τιμή με `__next__()`. Έχει και `__iter__()` που επιστρέφει τον εαυτό του.
+
+```py
+nums = [1, 2, 3]          # iterable (ΟΧΙ iterator)
+it = iter(nums)           # iterator — καλεί το nums.__iter__()
+next(it)                  # 1
+next(it)                  # 2
+next(it)                  # 3
+next(it)                  # StopIteration! (το for το πιάνει σιωπηλά)
+```
+
+Το `for x in nums:` κάνει ακριβώς αυτό από κάτω: `it = iter(nums)`, μετά `next(it)` σε loop μέχρι να πεταχτεί `StopIteration`. Κρίσιμη συνέπεια: ένας **iterator εξαντλείται** — μόλις τον διατρέξεις, τελείωσε.
+
+<PredictOutput
+  title="Iterator exhaustion"
+  code={`it = iter([1, 2, 3])
+print(list(it))
+print(list(it))`}
+  options={["[1,2,3] then [1,2,3]", "[1,2,3] then []", "[1,2,3] then StopIteration", "[] then []"]}
+  correctOptionIndex={1}
+  answer="[1, 2, 3] then []"
+  explanation="Το πρώτο list(it) καταναλώνει όλο τον iterator. Ο iterator δεν 'ξαναγυρίζει' — το δεύτερο list(it) βρίσκει StopIteration αμέσως και δίνει []. Γι' αυτό αν χρειάζεσαι δεύτερο pass, κράτα το list, όχι τον iterator/generator."
+/>
+
+## Δικός σου iterator
+
+```py
+class Countdown:
+    def __init__(self, start: int):
+        self.current = start
+
+    def __iter__(self):
+        return self                     # ο ίδιος είναι iterator
+
+    def __next__(self):
+        if self.current <= 0:
+            raise StopIteration         # σήμα "τέλος"
+        self.current -= 1
+        return self.current + 1
+
+for n in Countdown(3):
+    print(n)        # 3, 2, 1
+```
+
+Αυτό δουλεύει — αλλά είναι πολύς κώδικας. Οι **generators** κάνουν το ίδιο με μία function.
+
+## Generators — iterators χωρίς boilerplate
+
+Μια function με `yield` γίνεται generator: η Python φτιάχνει αυτόματα `__iter__`/`__next__` και διαχειρίζεται το `StopIteration` (όταν η function τελειώσει). Κάθε `yield` **παγώνει** την εκτέλεση και κρατά όλη την τοπική κατάσταση:
+
+```py
+def countdown(start: int):
+    while start > 0:
+        yield start          # δίνει τιμή, ΠΑΓΩΝΕΙ εδώ
+        start -= 1           # συνεχίζει από εδώ στο επόμενο next()
+
+list(countdown(3))           # [3, 2, 1]
+
+def integers():              # ΑΠΕΙΡΟΣ generator — αδύνατο με list
+    n = 0
+    while True:
+        yield n
+        n += 1
+```
+
+Το `integers()` δεν θα τελειώσει ποτέ, αλλά είναι ασφαλές: παράγει τιμές μόνο όταν ζητηθούν. Lazy evaluation σημαίνει ότι μπορείς να μοντελοποιήσεις άπειρες ακολουθίες.
+
+<PredictOutput
+  title="Generator laziness"
+  code={`def gen():
+    print("start")
+    yield 1
+    print("middle")
+    yield 2
+
+g = gen()
+print("created")
+next(g)`}
+  options={["start, middle, created, 1", "created, start", "start, created, 1", "created, start, middle"]}
+  correctOptionIndex={1}
+  answer="created then start"
+  explanation="Καλώντας gen() ΔΕΝ τρέχει τίποτα — απλώς φτιάχνει το generator object ('created' τυπώνεται πρώτο). Ο κώδικας τρέχει μόνο στο πρώτο next(): τυπώνει 'start' και παγώνει στο πρώτο yield. Lazy: τίποτα δεν εκτελείται μέχρι να ζητηθεί τιμή."
+/>
+
+## `yield from` — σύνθεση generators
+
+Το `yield from` αναθέτει σε έναν άλλον iterable/generator:
+
+```py
+def chain(*iterables):
+    for it in iterables:
+        yield from it        # αντί για: for x in it: yield x
+
+list(chain([1, 2], [3, 4], [5]))   # [1, 2, 3, 4, 5]
+
+def flatten(nested):
+    for item in nested:
+        if isinstance(item, list):
+            yield from flatten(item)   # αναδρομικό flatten, lazy
+        else:
+            yield item
+
+list(flatten([1, [2, [3, 4]], 5]))   # [1, 2, 3, 4, 5]
+```
+
+## Lazy pipelines — η πραγματική δύναμη
+
+Επειδή οι generators είναι lazy, μπορείς να αλυσιδώσεις μετασχηματισμούς **χωρίς ενδιάμεσες λίστες** — κάθε τιμή ρέει μέσα από όλο το pipeline πριν παραχθεί η επόμενη:
+
+```py
+def read_lines(path):
+    with open(path) as f:
+        for line in f:
+            yield line.rstrip("\n")
+
+def parse(lines):
+    for line in lines:
+        if line and not line.startswith("#"):
+            yield line.split(",")
+
+# Pipeline: διαβάζει αρχείο 50GB με σταθερή μνήμη
+rows = parse(read_lines("huge.csv"))
+total = sum(float(row[2]) for row in rows)   # τίποτα δεν υλοποιείται όλο μαζί
+```
+
+Αν τα έκανες με lists, θα φόρτωνες ολόκληρο το αρχείο στη μνήμη τρεις φορές. Με generators, μία γραμμή τη φορά ρέει μέσα από `read_lines → parse → sum`.
+
+## `itertools` — το εργαλείο των experts
+
+Το standard library `itertools` δίνει έτοιμους, αποδοτικούς iterators:
+
+```py
+import itertools as it
+
+it.count(10, 2)                  # 10, 12, 14, ... (άπειρο)
+it.cycle("AB")                   # A, B, A, B, ... (άπειρο)
+it.islice(it.count(), 5)         # τα πρώτα 5: 0,1,2,3,4 (κόβει άπειρο)
+it.chain([1, 2], [3, 4])         # 1,2,3,4
+it.groupby(data, key=...)        # ομαδοποίηση διαδοχικών
+it.product([1, 2], ["a", "b"])   # (1,'a'),(1,'b'),(2,'a'),(2,'b')
+list(it.batched(range(7), 3))    # [(0,1,2),(3,4,5),(6,)] (3.12+)
+```
+
+Το `islice` σε συνδυασμό με άπειρο generator είναι το κλασικό idiom: «δώσε μου τα πρώτα N από κάτι που δεν τελειώνει».
+
+<Exercise
+  question="Ποια η διαφορά iterable και iterator;"
+  options={[
+    "Iterable: μπορεί να δώσει iterator μέσω __iter__ (list, dict, str). Iterator: κρατά θέση και παράγει επόμενη τιμή με __next__, εξαντλείται μετά από ένα πέρασμα.",
+    "Είναι το ίδιο πράγμα με διαφορετικό όνομα.",
+    "Iterator είναι μόνο τα generators· iterable είναι μόνο οι λίστες."
+  ]}
+  correctOptionIndex={0}
+  explanation="Μια list είναι iterable αλλά ΟΧΙ iterator — μπορείς να τη διατρέξεις πολλές φορές γιατί κάθε for παίρνει φρέσκο iterator μέσω iter(). Ένας generator είναι iterator — εξαντλείται."
+/>
+
+<Exercise
+  question="Θες τα πρώτα 100 prime numbers αλλά δεν ξέρεις εκ των προτέρων πόσο μακριά είναι. Σωστή προσέγγιση;"
+  options={[
+    "Άπειρος generator που παράγει primes + itertools.islice(primes(), 100) — lazy, σταθερή μνήμη, σταματά μόλις βρει 100.",
+    "Φτιάξε list με όλους τους primes μέχρι το 1.000.000 και πάρε τους πρώτους 100.",
+    "Δεν γίνεται χωρίς να ξέρεις το άνω όριο."
+  ]}
+  correctOptionIndex={0}
+  explanation="Ο άπειρος generator μοντελοποιεί 'όλους τους primes' χωρίς όριο· το islice κόβει όσους χρειάζεσαι. Δεν σπαταλάς μνήμη/χρόνο υπολογίζοντας primes που δεν θα χρησιμοποιήσεις."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«What's the difference between a list comprehension and a generator expression?»
+
+> A list comprehension with brackets builds the whole list in memory eagerly. A generator expression with parentheses is lazy — it produces values one at a time on demand and holds constant memory, which matters for large or infinite sequences. Under the hood both rely on the iteration protocol: anything I can `for`-loop over is an iterable that hands out an iterator via `__iter__`, and the iterator yields values through `__next__` until it raises `StopIteration`. Generators give me that protocol for free from a function with `yield`, and chaining them lets me stream data through a pipeline — like processing a 50GB file one line at a time — without ever materializing it all.
+
+<Flashcards
+  title="Iterators & generators — interview drills"
+  cards={[
+    {
+      question: "Τι κάνει το for x in obj από κάτω;",
+      answer: "Καλεί it = iter(obj) (το obj.__iter__), μετά next(it) σε loop· σταματά όταν πεταχτεί StopIteration. Κάθε iterable μιλάει αυτό το πρωτόκολλο."
+    },
+    {
+      question: "Iterable vs iterator;",
+      answer: "Iterable: έχει __iter__, δίνει νέο iterator κάθε φορά (list, str, dict) — διατρέχεται πολλές φορές. Iterator: έχει __next__, κρατά θέση, εξαντλείται μετά από ένα πέρασμα (generators)."
+    },
+    {
+      question: "Τι κάνει το yield;",
+      answer: "Μετατρέπει function σε generator: παγώνει την εκτέλεση στο yield κρατώντας όλη την τοπική κατάσταση και συνεχίζει από εκεί στο επόμενο next(). Τίποτα δεν τρέχει μέχρι να ζητηθεί τιμή (lazy)."
+    },
+    {
+      question: "Πότε χρησιμοποιείς yield from;",
+      answer: "Για να αναθέσεις iteration σε άλλον iterable/generator χωρίς manual loop — π.χ. αλυσίδωση πολλών sources ή αναδρομικό flatten. yield from it ≡ for x in it: yield x."
+    },
+    {
+      question: "Πώς παίρνεις τα πρώτα N από άπειρο generator;",
+      answer: "itertools.islice(gen(), N). Το islice σταματά μόλις πάρει N τιμές — ο άπειρος generator δεν χρειάζεται όριο γιατί είναι lazy."
+    },
+    {
+      question: "Γιατί lazy pipeline αντί για αλυσίδα από lists;",
+      answer: "Σταθερή μνήμη: κάθε τιμή ρέει μέσα από όλους τους μετασχηματισμούς πριν παραχθεί η επόμενη, αντί να φτιάχνεις ολόκληρες ενδιάμεσες λίστες. Κρίσιμο για μεγάλα/streaming δεδομένα."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Lazy data pipeline"
+  scenario="Φτιάξε ένα pipeline που διαβάζει ένα (νοητά τεράστιο) αρχείο γραμμή-γραμμή, φιλτράρει, μετασχηματίζει και υπολογίζει στατιστικά — όλα lazy."
+  outcomes={[
+    "Να γράφεις generator functions και να τις συνθέτεις.",
+    "Να εξηγείς iterator protocol και exhaustion.",
+    "Να αξιοποιείς itertools για άπειρα/σύνθετα streams."
+  ]}
+  steps={[
+    "Γράψε generator read_lines που κάνει yield μία γραμμή τη φορά.",
+    "Πρόσθεσε generator parse που φιλτράρει/μετασχηματίζει με yield.",
+    "Σύνθεσε το pipeline και υπολόγισε ένα aggregate με generator expression.",
+    "Φτιάξε άπειρο generator (π.χ. ids) και πάρε τα πρώτα N με itertools.islice.",
+    "Δοκίμασε να διατρέξεις τον ίδιο generator δύο φορές και παρατήρησε το exhaustion."
+  ]}
+  checkpoints={[
+    "Καμία ενδιάμεση full list όπου αρκεί generator.",
+    "Το pipeline δουλεύει και για 'άπειρη' πηγή με islice.",
+    "Εξηγείς γιατί το δεύτερο πέρασμα του generator είναι άδειο."
+  ]}
+  mistakes={[
+    "Να ξαναχρησιμοποιείς εξαντλημένο iterator και να απορείς γιατί είναι άδειος.",
+    "Να υλοποιείς όλο το stream σε list ενώ χρειάζεσαι single pass.",
+    "Να ξεχνάς το islice και να κρεμάς σε άπειρο generator."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν γράφεις ένα τριών-σταδίων lazy pipeline και εξηγείς γιατί η μνήμη μένει σταθερή ανεξάρτητα από το μέγεθος της εισόδου."
+/>

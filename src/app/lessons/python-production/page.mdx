@@ -1,0 +1,244 @@
+# Testing, Packaging & Production
+
+Το να γράφεις Python που τρέχει είναι το εύκολο μέρος. Το να την κάνεις να τρέχει **αξιόπιστα σε παραγωγή** — με tests, απομονωμένα dependencies, σωστό packaging και observability — είναι αυτό που σε κάνει expert. Στις συνεντεύξεις: «πώς τεστάρεις;», «venv ή Docker;», «πώς κάνεις deploy ένα Python service;».
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να γράφεις tests με `pytest` (fixtures, parametrize, mocking),
+- να απομονώνεις dependencies με virtual environments και να καρφώνεις versions,
+- να δομείς ένα project σωστά (`pyproject.toml`, packages),
+- να κάνεις deploy ένα FastAPI service με production server,
+- να προσθέτεις logging, config από env, και health checks.
+
+## pytest — testing που δεν πονάει
+
+Το `pytest` είναι το de facto standard: σκέτες functions `test_*`, plain `assert`, χωρίς boilerplate classes:
+
+```py
+# app.py
+def total_price(prices: list[float], tax: float = 0.0) -> float:
+    if tax < 0:
+        raise ValueError("tax cannot be negative")
+    return sum(prices) * (1 + tax)
+
+# test_app.py
+import pytest
+from app import total_price
+
+def test_sums_without_tax():
+    assert total_price([10, 20]) == 30
+
+def test_applies_tax():
+    assert total_price([100], tax=0.2) == 120
+
+def test_rejects_negative_tax():
+    with pytest.raises(ValueError):       # επιβεβαιώνει ότι ΣΚΑΕΙ σωστά
+        total_price([10], tax=-1)
+
+@pytest.mark.parametrize("prices,expected", [
+    ([], 0),
+    ([5], 5),
+    ([1, 2, 3], 6),
+])
+def test_various(prices, expected):       # ένα test, πολλές περιπτώσεις
+    assert total_price(prices) == expected
+```
+
+Σημεία:
+- `pytest.raises` τεστάρει ότι ο κώδικας **πετάει** το σωστό exception — όχι μόνο το happy path.
+- `@parametrize` τρέχει το ίδιο test με πολλά inputs — καλύπτεις edge cases (άδειο, ένα στοιχείο, πολλά) χωρίς αντιγραφή.
+
+## Fixtures & mocking
+
+**Fixtures** δίνουν reusable setup (db connection, test client). **Mocking** αντικαθιστά εξωτερικές εξαρτήσεις (APIs, χρόνο) ώστε τα tests να είναι γρήγορα και ντετερμινιστικά:
+
+```py
+from fastapi.testclient import TestClient
+from unittest.mock import patch
+from main import app
+
+@pytest.fixture
+def client():
+    return TestClient(app)
+
+def test_analyze_validates_input(client):
+    resp = client.post("/analyze", json={})   # λείπει το text
+    assert resp.status_code == 422
+
+@patch("main.call_external_ai")
+def test_uses_ai_result(mock_ai, client):
+    mock_ai.return_value = {"sentiment": "positive"}
+    resp = client.post("/analyze", json={"text": "great"})
+    assert resp.json()["sentiment"] == "positive"
+    mock_ai.assert_called_once()
+```
+
+Ο κανόνας mocking: mock στα **σύνορα** του συστήματος (network, filesystem, χρόνος, randomness) — όχι την ίδια τη λογική που τεστάρεις.
+
+<PredictOutput
+  title="pytest.raises drill"
+  code={`def test_negative():
+    total_price([10], tax=-1)   # χωρίς pytest.raises
+
+# Η total_price πετάει ValueError για αρνητικό tax.
+# Τι κάνει αυτό το test;`}
+  options={["Περνά (PASS)", "Αποτυγχάνει (FAIL/ERROR)", "Το skip-άρει", "Περνά με warning"]}
+  correctOptionIndex={1}
+  answer="Αποτυγχάνει (FAIL/ERROR)"
+  explanation="Χωρίς pytest.raises, το ValueError ανεβαίνει και το test καταγράφεται ως ERROR/FAIL. Για να τεστάρεις ότι κάτι σκάει σωστά, ΠΡΕΠΕΙ να τυλίξεις την κλήση σε `with pytest.raises(ValueError):` — αλλιώς το exception σπάει το test αντί να επιβεβαιώνεται."
+/>
+
+## Virtual environments — απομόνωση dependencies
+
+Κάθε project έχει δικά του dependencies σε δικό του απομονωμένο περιβάλλον — ποτέ global install:
+
+```bash
+python -m venv .venv            # φτιάχνει απομονωμένο περιβάλλον
+source .venv/bin/activate       # Windows: .venv\Scripts\activate
+pip install fastapi uvicorn pytest
+pip freeze > requirements.txt   # καρφώνει ΑΚΡΙΒΕΙΣ versions
+```
+
+Γιατί έχει σημασία: χωρίς απομόνωση, δύο projects που θέλουν διαφορετική version της ίδιας βιβλιοθήκης συγκρούονται. Το `requirements.txt` με καρφωμένες versions εγγυάται ότι «δουλεύει στο μηχάνημά μου» = «δουλεύει στο CI/production». Σύγχρονα εργαλεία (`uv`, `poetry`) κάνουν το ίδιο πιο γρήγορα και με lockfile.
+
+## Δομή project & `pyproject.toml`
+
+```txt
+myservice/
+  pyproject.toml          ← metadata, dependencies, tool config (το σύγχρονο standard)
+  src/myservice/
+    __init__.py
+    main.py               ← FastAPI app
+    services/
+    models.py
+  tests/
+    test_main.py
+  .env                    ← τοπικά secrets (ΠΟΤΕ στο Git)
+```
+
+Το `pyproject.toml` αντικαθιστά το παλιό `setup.py` — ένα αρχείο για dependencies, build config και ρυθμίσεις εργαλείων (pytest, mypy, ruff).
+
+## Deploy — production server, όχι το dev
+
+Το `uvicorn main:app --reload` είναι για **development**. Σε παραγωγή τρέχεις πολλαπλά workers, συνήθως πίσω από process manager:
+
+```bash
+# Production: πολλαπλοί workers (όχι --reload)
+uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
+```
+
+```dockerfile
+FROM python:3.12-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY src/ ./src/
+CMD ["uvicorn", "src.myservice.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+```
+
+Production essentials που πρέπει να αναφέρεις:
+- **Config από environment variables** (Pydantic `BaseSettings`) — fail-fast στο startup αν λείπει κάτι. Ποτέ secrets στον κώδικα.
+- **Structured logging** (JSON) αντί για `print` — να φιλτράρεται και να αναζητείται σε log aggregator.
+- **Health check** (`GET /health`) που ελέγχει και τα dependencies (db, queue) — το χρησιμοποιεί ο orchestrator για readiness.
+- **Σταθερές versions** στο `requirements.txt`/lockfile — reproducible builds.
+
+```py
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    database_url: str
+    api_key: str
+    log_level: str = "INFO"
+    class Config:
+        env_file = ".env"
+
+settings = Settings()   # σκάει στο startup αν λείπει υποχρεωτικό env var — fail fast
+```
+
+<Exercise
+  question="Γιατί κάθε project θέλει δικό του virtual environment;"
+  options={[
+    "Για να απομονώνει τα dependencies και τις versions τους — διαφορετικά projects μπορεί να θέλουν ασύμβατες versions της ίδιας βιβλιοθήκης, και το global install τα συγκρούει.",
+    "Για να τρέχει πιο γρήγορα η Python.",
+    "Είναι υποχρεωτικό από το pytest."
+  ]}
+  correctOptionIndex={0}
+  explanation="Απομόνωση + καρφωμένες versions (requirements.txt/lockfile) = reproducible περιβάλλον. 'Δουλεύει στο μηχάνημά μου' γίνεται 'δουλεύει παντού' γιατί όλοι τρέχουν τις ίδιες ακριβώς versions."
+/>
+
+<Exercise
+  question="Πού πρέπει να ζουν τα secrets (database URL, API keys) ενός FastAPI service;"
+  options={[
+    "Σε environment variables, φορτωμένα μέσω config (π.χ. Pydantic BaseSettings) με fail-fast validation στο startup — ποτέ hardcoded, ποτέ στο Git.",
+    "Σε ένα config.py που κάνεις commit για να το έχει η ομάδα.",
+    "Hardcoded στον κώδικα για απλότητα."
+  ]}
+  correctOptionIndex={0}
+  explanation="Env vars + validation στο startup σημαίνει ότι το service αρνείται να ξεκινήσει με ελλιπή config (fail fast) αντί να σκάσει αργότερα στο πρώτο request. Τα secrets δεν μπαίνουν ποτέ σε version control."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you take a Python service to production?»
+
+> I isolate dependencies in a virtual environment and pin exact versions in a lockfile so builds are reproducible. I test with pytest — parametrized cases for edge cases, `pytest.raises` for error paths, fixtures for setup, and mocks only at the system boundaries like network and time. Config comes from environment variables through Pydantic settings that fail fast at startup if something's missing, never hardcoded secrets. I run it with multiple uvicorn workers in a slim Docker image, add a health endpoint the orchestrator can probe, and emit structured JSON logs so I can actually search them in production.
+
+<Flashcards
+  title="Testing & production — interview drills"
+  cards={[
+    {
+      question: "Πώς τεστάρεις ότι ο κώδικας πετάει το σωστό exception;",
+      answer: "Με `with pytest.raises(ValueError):` γύρω από την κλήση. Χωρίς αυτό, το exception σπάει το test (ERROR) αντί να επιβεβαιώνεται. Τεστάρεις error paths, όχι μόνο happy path."
+    },
+    {
+      question: "Τι κάνει το @pytest.mark.parametrize;",
+      answer: "Τρέχει το ίδιο test με πολλά σετ inputs/expected — καλύπτεις edge cases (άδειο, ένα, πολλά, οριακά) χωρίς να αντιγράφεις test functions."
+    },
+    {
+      question: "Τι mockάρεις και τι όχι;",
+      answer: "Mock στα σύνορα: network, filesystem, χρόνος, randomness, εξωτερικά APIs — για ντετερμινιστικά, γρήγορα tests. ΟΧΙ την ίδια τη λογική που τεστάρεις."
+    },
+    {
+      question: "Γιατί virtual environment + pinned versions;",
+      answer: "Απομόνωση dependencies ανά project (αποφυγή συγκρούσεων versions) + reproducibility: το ίδιο requirements.txt/lockfile εγγυάται ίδιο περιβάλλον σε dev, CI και production."
+    },
+    {
+      question: "Dev vs production τρέξιμο FastAPI;",
+      answer: "Dev: uvicorn --reload (single, auto-reload). Production: πολλαπλοί workers χωρίς reload, σε Docker, με health check, structured logging και config από env vars."
+    },
+    {
+      question: "Πού ζει το config/secrets σε production;",
+      answer: "Σε environment variables μέσω Pydantic BaseSettings με fail-fast validation στο startup. Ποτέ hardcoded, ποτέ στο Git. Το service αρνείται να ξεκινήσει αν λείπει υποχρεωτικό setting."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Από script σε production service"
+  scenario="Πάρε το FastAPI service των προηγούμενων μαθημάτων και κάν' το production-ready: tests, απομονωμένο περιβάλλον, config από env, Docker και health check."
+  outcomes={[
+    "Να γράφεις pytest tests για happy path ΚΑΙ error paths.",
+    "Να απομονώνεις dependencies και να καρφώνεις versions.",
+    "Να κάνεις deploy με config από env και observability."
+  ]}
+  steps={[
+    "Στήσε venv, εγκατέστησε deps, κάνε pip freeze > requirements.txt.",
+    "Γράψε tests με TestClient: 422 σε invalid input, mock στο εξωτερικό AI call.",
+    "Πρόσθεσε parametrize για edge cases και pytest.raises για error path.",
+    "Μετέφερε config σε Pydantic BaseSettings από .env (μη το κάνεις commit).",
+    "Γράψε Dockerfile με workers και πρόσθεσε GET /health."
+  ]}
+  checkpoints={[
+    "Τα tests καλύπτουν και error paths, όχι μόνο happy path.",
+    "Κανένα secret στον κώδικα ή στο Git.",
+    "Το service τρέχει σε container με πολλαπλούς workers και health check.",
+    "requirements.txt/lockfile καρφώνει ακριβείς versions."
+  ]}
+  mistakes={[
+    "Να τεστάρεις μόνο το happy path.",
+    "Να mockάρεις τη λογική αντί για τα σύνορα του συστήματος.",
+    "Να τρέχεις --reload σε production ή να αφήνεις secrets στον κώδικα.",
+    "Να μην απομονώνεις dependencies και να σπάει το build αλλού."
+  ]}
+  mastery="Το μάθημα — και η ενότητα Python — πέτυχε όταν μπορείς να πάρεις ένα script και να το παραδώσεις tested, containerized και configurable από env, εξηγώντας κάθε production απόφαση."
+/>

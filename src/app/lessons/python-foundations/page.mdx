@@ -1,0 +1,205 @@
+# Python Foundations
+
+Αν έρχεσαι από JavaScript, η Python δεν είναι «άλλη γλώσσα που μαθαίνεις από την αρχή» — είναι οι ίδιες έννοιες (variables, functions, loops, scope) με διαφορετική φιλοσοφία: **explicit, readable, ένας σωστός τρόπος να γίνει το κάθε πράγμα**. Στις συνεντύεξεις για fullstack/backend ρόλους με Python, το φίλτρο δεν είναι «ξέρεις syntax;» αλλά «γράφεις Python που μοιάζει με Python, ή JavaScript μεταφρασμένο;».
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να διαβάζεις και να γράφεις βασική Python με σωστό indentation και naming (PEP 8),
+- να εξηγείς τη διαφορά dynamic typing της Python από το JavaScript coercion,
+- να χρησιμοποιείς `if/elif/else`, `for`, `while` και να ξέρεις τι είναι truthy/falsy,
+- να γράφεις functions με default args, keyword args, `*args/**kwargs`,
+- να καταλαβαίνεις τι είναι ο `if __name__ == "__main__"` guard.
+
+## Variables & τύποι — dynamic αλλά strong
+
+Η Python είναι **dynamically typed** (δεν δηλώνεις τύπο) αλλά **strongly typed** (δεν κάνει σιωπηλά coercion όπως η JavaScript):
+
+```py
+x = 5            # int
+name = "Giannis" # str
+price = 9.99     # float
+active = True    # bool (κεφαλαίο T!)
+nothing = None   # το ισοδύναμο του null/undefined
+
+# Strong typing: αυτό ΣΚΑΕΙ, δεν γίνεται "55" όπως στη JS
+"5" + 5  # TypeError: can only concatenate str (not "int") to str
+```
+
+Αυτή είναι η πρώτη μεγάλη διαφορά που πρέπει να αρθρώνεις: στη JavaScript `"5" + 5 === "55"` και `"5" * 2 === 10` — σιωπηλό coercion που κρύβει bugs. Στην Python ένα λάθος τύπου **γίνεται αμέσως exception**, που είναι πιο ασφαλές.
+
+<PredictOutput
+  title="Strong typing drill"
+  code={`a = "3"
+b = 4
+print(a * b)`}
+  options={["12", "\"3333\"", "TypeError", "7"]}
+  correctOptionIndex={1}
+  answer="3333"
+  explanation="str * int στην Python σημαίνει repetition — '3' * 4 = '3333'. Δεν γίνεται int το '3' (αυτό θα ήταν coercion). Αλλά str + int θα έσκαγε με TypeError. Η Python επιτρέπει συγκεκριμένα operator overloads, όχι αυθαίρετο coercion."
+/>
+
+## Indentation αντί για `{}`
+
+Στην Python η **στοίχιση ΕΙΝΑΙ το syntax** — δεν υπάρχουν `{}` για blocks. 4 κενά ανά επίπεδο (PEP 8). Λάθος indentation = `IndentationError`, όχι απλώς άσχημο style:
+
+```py
+def greet(name):
+    if name:
+        print(f"Hello {name}")   # 8 κενά: μέσα στο if, μέσα στο def
+    else:
+        print("Hello stranger")  # ίδιο επίπεδο με το if
+    print("Done")                # 4 κενά: πίσω στο σώμα του def
+```
+
+Το `f"..."` είναι **f-string** — interpolation σαν τα template literals της JS (`` `Hello ${name}` ``). Είναι ο σωστός τρόπος για formatting.
+
+## Truthiness — τι θεωρείται falsy
+
+Στα `if` και τα boolean expressions, αυτά είναι **falsy**: `False`, `None`, `0`, `0.0`, `""`, `[]`, `{}`, `()`, `set()`. Όλα τα άλλα είναι truthy. Πρόσεξε: σε αντίθεση με τη JS, **άδειες collections είναι falsy** — πανίσχυρο idiom:
+
+```py
+items = []
+if items:                # "αν έχει στοιχεία" — Pythonic
+    print("has items")
+else:
+    print("empty")       # τυπώνεται αυτό
+
+# ΟΧΙ έτσι (un-Pythonic, σαν JavaScript):
+if len(items) > 0:       # δουλεύει αλλά δεν είναι ο τρόπος
+    ...
+```
+
+## Functions — default, keyword & variadic args
+
+```py
+def create_user(name, role="member", *, active=True):
+    return {"name": name, "role": role, "active": active}
+
+create_user("Ana")                      # role="member", active=True
+create_user("Bob", "admin")             # positional
+create_user("Cleo", role="admin")       # keyword
+create_user("Dan", active=False)        # το * επιβάλλει keyword-only για το active
+```
+
+Δύο πράγματα-κλειδιά:
+- Το `*` μέσα στη λίστα παραμέτρων σημαίνει «ό,τι ακολουθεί είναι **keyword-only**» — ο καλών *πρέπει* να γράψει `active=False`, ποτέ σκέτο `False`. Κάνει το call site αυτο-τεκμηριωμένο.
+- `*args` μαζεύει επιπλέον positional args σε tuple, `**kwargs` μαζεύει επιπλέον keyword args σε dict:
+
+```py
+def log(level, *args, **kwargs):
+    print(level, args, kwargs)
+
+log("INFO", "saved", 42, user="ana", ms=12)
+# INFO ('saved', 42) {'user': 'ana', 'ms': 12}
+```
+
+> Mutable default trap — από τα πιο κλασικά Python gotchas στη συνέντευξη: **ΠΟΤΕ** μη βάζεις mutable object (`[]`, `{}`) ως default argument. Το default αξιολογείται **μία φορά** στον ορισμό της function, όχι σε κάθε κλήση, οπότε μοιράζεται ανάμεσα σε όλες τις κλήσεις.
+
+<PredictOutput
+  title="Mutable default trap"
+  code={`def add(item, bucket=[]):
+    bucket.append(item)
+    return bucket
+
+print(add(1))
+print(add(2))`}
+  options={["[1] then [2]", "[1] then [1, 2]", "[1, 2] both", "Error"]}
+  correctOptionIndex={1}
+  answer="[1] then [1, 2]"
+  explanation="Το default [] φτιάχνεται ΜΙΑ φορά όταν ορίζεται η function και ξαναχρησιμοποιείται. Η πρώτη κλήση το κάνει [1], η δεύτερη προσθέτει στο ΙΔΙΟ list → [1, 2]. Σωστό pattern: def add(item, bucket=None): if bucket is None: bucket = []."
+/>
+
+## Ο `__main__` guard
+
+Κάθε αρχείο Python είναι και module που μπορεί να γίνει import. Ο guard ξεχωρίζει «τρέχω το αρχείο απευθείας» από «κάποιος με κάνει import»:
+
+```py
+def main():
+    print("Running directly")
+
+if __name__ == "__main__":
+    main()   # τρέχει μόνο με `python file.py`, ΟΧΙ όταν γίνει import
+```
+
+Όταν τρέχεις `python file.py`, η Python θέτει `__name__ == "__main__"`. Όταν το κάνεις `import file`, το `__name__` γίνεται `"file"` — έτσι το `main()` δεν τρέχει κατά λάθος στο import. Είναι το standard entry-point pattern κάθε σοβαρού Python script.
+
+<Exercise
+  question="Γιατί η Python είναι 'strongly typed' ενώ είναι dynamic;"
+  options={[
+    "Dynamic = δεν δηλώνεις τύπο στη μεταβλητή· strong = δεν κάνει σιωπηλό coercion ανάμεσα σε ασύμβατους τύπους (π.χ. str + int σκάει αντί να μαντέψει).",
+    "Strong σημαίνει ότι πρέπει να δηλώνεις τύπους όπως στη Java.",
+    "Σημαίνει ότι όλες οι μεταβλητές είναι constants."
+  ]}
+  correctOptionIndex={0}
+  explanation="Ακριβώς. Δύο ανεξάρτητοι άξονες: dynamic vs static (πότε ελέγχονται οι τύποι) και strong vs weak (πόσο coercion γίνεται). Η Python είναι dynamic + strong· η JavaScript dynamic + weak."
+/>
+
+<Exercise
+  question="Πώς διορθώνεις σωστά το mutable default argument bug;"
+  options={[
+    "Βάζεις default=None και μέσα στη function: if x is None: x = []. Έτσι φτιάχνεται φρέσκο list σε κάθε κλήση.",
+    "Βάζεις default=[] αλλά κάνεις x.clear() στην αρχή.",
+    "Δεν είναι bug, δούλευε κανονικά."
+  ]}
+  correctOptionIndex={0}
+  explanation="None ως sentinel και δημιουργία της mutable τιμής μέσα στο σώμα είναι το καθιερωμένο pattern. Το clear() θα άλλαζε το κοινό αντικείμενο και πάλι λάθος."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«Coming from JavaScript, what surprised you about Python?»
+
+> Three things. First, it's strongly typed — `"5" + 5` raises a TypeError instead of silently concatenating, which catches bugs early. Second, whitespace is syntax, not style — indentation defines blocks. Third, the idioms are different: empty collections are falsy, so I write `if items:` not `if len(items) > 0:`, and I use f-strings and comprehensions instead of manual loops. The biggest gotcha I watch for is mutable default arguments, since defaults are evaluated once at definition time.
+
+<Flashcards
+  title="Python foundations — interview drills"
+  cards={[
+    {
+      question: "Dynamic vs strong typing — τι ισχύει για την Python;",
+      answer: "Dynamic (δεν δηλώνεις τύπο, ελέγχεται στο runtime) ΚΑΙ strong (δεν κάνει σιωπηλό coercion). 'str' + int → TypeError. Σε αντίθεση με τη JS που είναι dynamic + weak."
+    },
+    {
+      question: "Τι είναι falsy στην Python;",
+      answer: "False, None, 0, 0.0, '', [], {}, (), set(). Σημαντικό: άδειες collections είναι falsy, γι' αυτό γράφουμε `if items:` αντί `if len(items) > 0:`."
+    },
+    {
+      question: "Γιατί είναι bug το def f(x, items=[]);",
+      answer: "Το default [] αξιολογείται μία φορά στον ορισμό και μοιράζεται σε όλες τις κλήσεις — οι αλλαγές συσσωρεύονται. Λύση: default=None και μέσα `if items is None: items = []`."
+    },
+    {
+      question: "Τι κάνει το if __name__ == '__main__';",
+      answer: "Τρέχει τον κώδικα μόνο όταν εκτελείς το αρχείο απευθείας (python file.py), όχι όταν γίνεται import. Το standard entry point που αποτρέπει side effects στο import."
+    },
+    {
+      question: "Τι κάνει το * στη λίστα παραμέτρων: def f(a, *, b);",
+      answer: "Κάνει το b keyword-only — ο καλών πρέπει να γράψει b=value, όχι σκέτη θέση. Κάνει το call site αυτο-τεκμηριωμένο και αποτρέπει λάθη σειράς ορισμάτων."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Από JavaScript σε Pythonic κώδικα"
+  scenario="Πάρε ένα μικρό κομμάτι λογικής (π.χ. φιλτράρισμα και μετασχηματισμός μιας λίστας χρηστών) γραμμένο με JavaScript-στυλ loops και ξαναγράψ' το Pythonic."
+  outcomes={[
+    "Να γράφεις functions με default/keyword/variadic args σωστά.",
+    "Να χρησιμοποιείς truthiness αντί για len() > 0.",
+    "Να αποφεύγεις τα κλασικά gotchas (mutable defaults, coercion υποθέσεις)."
+  ]}
+  steps={[
+    "Γράψε function create_user με default role και keyword-only active.",
+    "Πρόσθεσε έλεγχο 'αν η λίστα χρηστών είναι άδεια' με Pythonic truthiness.",
+    "Σπάσε σκόπιμα το mutable default bug και μετά διόρθωσέ το με None sentinel.",
+    "Πρόσθεσε __main__ guard και τρέξε το αρχείο και ως script και ως import."
+  ]}
+  checkpoints={[
+    "Καμία χρήση len(x) > 0 όπου αρκεί το if x.",
+    "Default arguments δεν είναι ποτέ mutable.",
+    "Το αρχείο δεν εκτελεί τίποτα όταν γίνεται import."
+  ]}
+  mistakes={[
+    "Να υποθέτεις JS coercion (π.χ. ότι '5' + 5 δίνει '55').",
+    "Να βάζεις [] ή {} ως default argument.",
+    "Να μπερδεύεις indentation επίπεδα — αλλάζει τη σημασία του κώδικα."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μπορείς να εξηγήσεις σε 30 δευτερόλεπτα γιατί def f(x, items=[]) είναι bug και πώς το διορθώνεις."
+/>

@@ -1,0 +1,197 @@
+# Middleware & Error Handling
+
+Το middleware είναι η καρδιά του Express — το pipeline από το οποίο περνά κάθε request πριν φτάσει στον handler. Και το error handling είναι εκεί που ξεχωρίζει το production-grade API από το demo. Στη συνέντευξη: «τι είναι middleware;», «πώς αναγνωρίζει το Express τον error handler;», «τι γίνεται με async errors;» — το τελευταίο είναι το πιο ύπουλο.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς το middleware pipeline και τη σειρά εκτέλεσης,
+- να γράφεις custom middleware (logging, auth) που καλεί `next()`,
+- να ορίζεις centralized error handler (4 παράμετροι),
+- να χειρίζεσαι **async errors** σωστά (το #1 Express trap),
+- να μη διαρρέεις stack traces στον client.
+
+## Middleware: το pipeline
+
+Middleware = functions που τρέχουν **με τη σειρά δήλωσής τους** πριν φτάσει το request στον handler. Κάθε ένα είτε καλεί `next()` (συνέχισε) είτε τερματίζει το request:
+
+```ts
+// Logger — τρέχει για ΟΛΑ τα requests
+app.use((req, _res, next) => {
+  console.info({ method: req.method, path: req.path });
+  next();   // χωρίς next(), το request κρεμάει για πάντα!
+});
+
+// Auth guard — μόνο για /api routes
+app.use("/api", (req, res, next) => {
+  const user = verifyToken(req.headers.authorization);
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+  req.user = user;   // διαθέσιμο σε όλα τα επόμενα στάδια
+  next();
+});
+```
+
+Δύο κανόνες-κλειδιά:
+- **Σειρά = σειρά δήλωσης**. Το middleware που δηλώνεις πρώτο τρέχει πρώτο.
+- Κάθε middleware **πρέπει** να καλέσει `next()` ή να τερματίσει με `res`. Αν δεν κάνει ούτε το ένα, το request κρεμάει.
+
+<PredictOutput
+  title="Middleware order"
+  code={`app.use((req, res, next) => { console.log("A"); next(); });
+
+app.get("/test", (req, res) => {
+  console.log("C");
+  res.json({ ok: true });
+});
+
+app.use((req, res, next) => { console.log("B"); next(); });
+// GET /test — τι τυπώνεται;`}
+  options={["A, C", "A, B, C", "B, A, C", "C"]}
+  correctOptionIndex={0}
+  answer="A, C"
+  explanation="Middleware τρέχει με τη σειρά δήλωσης. Το A δηλώθηκε πριν το route → τρέχει. Το route στέλνει response και το pipeline τελειώνει. Το B δηλώθηκε ΜΕΤΑ το route, άρα δεν φτάνει ποτέ. Η σειρά του app.use είναι κλασικό gotcha."
+/>
+
+## Centralized error handler — 4 παράμετροι
+
+Το Express αναγνωρίζει τον error handler από την **υπογραφή με 4 παραμέτρους** `(err, req, res, next)`, και δηλώνεται **τελευταίος**:
+
+```ts
+// Όλα τα routes πάνω από αυτό...
+
+// Error handler — ΤΕΛΕΥΤΑΙΟΣ, 4 παράμετροι
+app.use((error, _req, res, _next) => {
+  console.error(error);                 // log εσωτερικά (με stack)
+  const status = error.statusCode ?? 500;
+  res.status(status).json({
+    error: status === 500 ? "Internal server error" : error.message,
+    // ΠΟΤΕ stack traces στον client σε production!
+  });
+});
+```
+
+Όταν ένας handler καλεί `next(error)`, το Express παρακάμπτει όλα τα κανονικά middleware και πάει κατευθείαν εδώ. Έτσι έχεις **ένα** σημείο για logging, status mapping, και ασφαλή error responses — αντί για try/catch με διαφορετικό format σε κάθε route.
+
+## Το async error trap — το #1 Express gotcha
+
+Στο Express 4, ένα exception μέσα σε **async** handler **χωρίς** try/catch **ΔΕΝ** φτάνει στον error handler — το request κρεμάει σιωπηλά:
+
+```ts
+// ❌ Express 4: αν το service πετάξει, το request ΚΡΕΜΑΕΙ
+app.get("/tasks", async (req, res) => {
+  const tasks = await taskService.list();   // αν σκάσει → unhandled rejection
+  res.json({ data: tasks });
+});
+
+// ✓ try/catch + next(error)
+app.get("/tasks", async (req, res, next) => {
+  try {
+    const tasks = await taskService.list();
+    res.json({ data: tasks });
+  } catch (error) {
+    next(error);   // τώρα φτάνει στον error handler
+  }
+});
+```
+
+Λύσεις: try/catch + `next(error)` παντού· ένας async wrapper που το κάνει αυτόματα· το package `express-async-errors`· ή το **Express 5** που χειρίζεται async errors αυτόματα. Το να αναφέρεις αυτό το trap δείχνει πραγματική εμπειρία.
+
+```ts
+// Async wrapper — αποφεύγεις το try/catch σε κάθε route
+const asyncHandler = (fn) => (req, res, next) =>
+  Promise.resolve(fn(req, res, next)).catch(next);
+
+app.get("/tasks", asyncHandler(async (req, res) => {
+  res.json({ data: await taskService.list() });   // errors → next αυτόματα
+}));
+```
+
+## 404 handler
+
+Μετά από όλα τα routes (αλλά πριν τον error handler) βάζεις ένα catch-all για unmatched routes:
+
+```ts
+app.use((_req, res) => res.status(404).json({ error: "Not found" }));
+```
+
+<Exercise
+  question="Async handler σου πετάει error αλλά το request απλώς κρεμάει στο Express 4. Γιατί;"
+  options={[
+    "Στο Express 4, rejections από async handlers δεν φτάνουν αυτόματα στον error handler — χρειάζεσαι try/catch + next(error), async wrapper, express-async-errors, ή Express 5.",
+    "Ο error handler πρέπει να δηλωθεί πρώτος.",
+    "Τα async handlers δεν υποστηρίζονται καθόλου."
+  ]}
+  correctOptionIndex={0}
+  explanation="Sync errors φτάνουν αυτόματα στον error handler· async rejections στο Express 4 όχι. Πρέπει ρητά να τα προωθήσεις με next(error) ή να χρησιμοποιήσεις wrapper/Express 5. Κλασικό 'το request κρεμάει' bug."
+/>
+
+<Exercise
+  question="Πώς αναγνωρίζει το Express έναν error handler;"
+  options={[
+    "Από την υπογραφή με 4 παραμέτρους (err, req, res, next) και δηλώνεται τελευταίος, μετά από όλα τα routes/middleware.",
+    "Από το όνομα της function (πρέπει να λέγεται errorHandler).",
+    "Από ένα ειδικό app.error() API."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το Express ξεχωρίζει τον error handler αποκλειστικά από τις 4 παραμέτρους. Γι' αυτό μπαίνει τελευταίος — ώστε κάθε next(error) από οποιοδήποτε route να καταλήγει εκεί."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How does error handling work in Express, and what's the common pitfall?»
+
+> Middleware runs in declaration order, and any handler can forward an error with `next(error)`. Express routes that to a centralized error handler, which it recognizes purely by its four-parameter signature `(err, req, res, next)` and which I declare last — so I have one place to log, map status codes, and return safe responses without leaking stack traces. The pitfall is async: in Express 4, a rejection from an async handler without try/catch never reaches the error handler and the request just hangs. I fix it with try/catch and `next(error)`, an async wrapper that catches and forwards automatically, the `express-async-errors` package, or Express 5, which handles it natively.
+
+<Flashcards
+  title="Middleware & errors — interview drills"
+  cards={[
+    {
+      question: "Τι είναι middleware και ποια η σειρά;",
+      answer: "Functions στο request pipeline που τρέχουν με τη ΣΕΙΡΑ ΔΗΛΩΣΗΣ πριν τον handler — logging, auth, parsing. Κάθε ένα καλεί next() ή τερματίζει με res. Αν δεν κάνει ούτε, το request κρεμάει."
+    },
+    {
+      question: "Πώς αναγνωρίζεται ο error handler;",
+      answer: "Από τις 4 παραμέτρους (err, req, res, next). Δηλώνεται ΤΕΛΕΥΤΑΙΟΣ. Κάθε next(error) παρακάμπτει τα κανονικά middleware και πάει εκεί."
+    },
+    {
+      question: "Το #1 Express async trap;",
+      answer: "Express 4: rejection από async handler χωρίς try/catch ΔΕΝ φτάνει στον error handler — το request κρεμάει. Λύση: try/catch+next(error), async wrapper, express-async-errors, ή Express 5."
+    },
+    {
+      question: "Τι ΔΕΝ επιστρέφεις στον client σε error;",
+      answer: "Stack traces / εσωτερικές λεπτομέρειες — διαρροή πληροφορίας. Log τα εσωτερικά, στείλε γενικό 'Internal server error' για 500. Για γνωστά errors (422/404) στείλε καθαρό message."
+    },
+    {
+      question: "Πώς αποφεύγεις try/catch σε κάθε route;",
+      answer: "Async wrapper: (fn)=>(req,res,next)=>Promise.resolve(fn(...)).catch(next). Τυλίγεις τους handlers και τα rejections πάνε αυτόματα στο next/error handler."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Production-grade error handling"
+  scenario="Πρόσθεσε σωστό middleware pipeline και centralized error handling σε ένα Express API, με ασφαλείς error responses."
+  outcomes={[
+    "Να γράφεις custom middleware με σωστή σειρά και next().",
+    "Να συγκεντρώνεις error handling σε ένα σημείο.",
+    "Να χειρίζεσαι async errors χωρίς κρεμασμένα requests."
+  ]}
+  steps={[
+    "Πρόσθεσε logging middleware και auth guard στο /api.",
+    "Φτιάξε centralized error handler (4 params) με status mapping.",
+    "Πέτα error από async service ΧΩΡΙΣ try/catch και δες το request να κρεμάει.",
+    "Διόρθωσέ το με async wrapper ή try/catch + next(error).",
+    "Πρόσθεσε 404 handler και επιβεβαίωσε ότι δεν διαρρέει stack trace."
+  ]}
+  checkpoints={[
+    "Το middleware τρέχει στη σωστή σειρά.",
+    "Async errors φτάνουν στον error handler.",
+    "Ο client παίρνει καθαρό JSON, όχι stack trace."
+  ]}
+  mistakes={[
+    "Middleware που ξεχνά το next() → κρεμασμένο request.",
+    "Error handler που δεν είναι τελευταίος ή δεν έχει 4 params.",
+    "Async handler χωρίς try/catch/wrapper σε Express 4.",
+    "Διαρροή stack traces στον client σε production."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μπορείς να εξηγήσεις γιατί ένα async handler κρεμάει και να το διορθώσεις με wrapper, χωρίς try/catch σε κάθε route."
+/>

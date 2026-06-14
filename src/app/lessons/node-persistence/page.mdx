@@ -1,0 +1,214 @@
+# Persistence with Prisma
+
+Ένα Node API χωρίς αξιόπιστο data layer είναι demo. Στο TypeScript ecosystem, το **Prisma** είναι ο πιο διαδεδομένος type-safe ORM: ορίζεις schema, παίρνεις fully-typed client, και κάνεις migrations με version control. Στη συνέντευξη: «πώς μιλάς στη βάση από Node;», «τι είναι το N+1;», «πώς κάνεις schema changes με ασφάλεια;».
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να ορίζεις Prisma schema με models και relations,
+- να κάνεις type-safe CRUD με τον Prisma Client,
+- να αναγνωρίζεις και να λύνεις το **N+1 query problem**,
+- να χρησιμοποιείς transactions για atomicity,
+- να κάνεις schema migrations με ασφάλεια.
+
+## Schema-first με Prisma
+
+Ορίζεις το data model δηλωτικά· το Prisma παράγει typed client:
+
+```prisma
+// schema.prisma
+model User {
+  id    Int    @id @default(autoincrement())
+  email String @unique
+  name  String
+  posts Post[]                    // relation: ένας user → πολλά posts
+}
+
+model Post {
+  id       Int    @id @default(autoincrement())
+  title    String
+  author   User   @relation(fields: [authorId], references: [id])
+  authorId Int
+}
+```
+
+```bash
+npx prisma migrate dev --name init   # φτιάχνει migration + ενημερώνει DB + client
+```
+
+Ο παραγόμενος client είναι **πλήρως typed** — το autocomplete ξέρει κάθε field, και λάθη πιάνονται στο compile time.
+
+## Type-safe CRUD
+
+```ts
+import { PrismaClient } from "@prisma/client";
+const prisma = new PrismaClient();
+
+// CREATE
+const user = await prisma.user.create({
+  data: { email: "ana@x.com", name: "Ana" },
+});
+
+// READ — typed filters, typed result
+const found = await prisma.user.findUnique({ where: { email: "ana@x.com" } });
+
+// UPDATE
+await prisma.user.update({ where: { id: 1 }, data: { name: "Ana B." } });
+
+// DELETE
+await prisma.user.delete({ where: { id: 1 } });
+
+// Filtering, pagination, ordering
+const posts = await prisma.post.findMany({
+  where: { author: { email: "ana@x.com" } },
+  orderBy: { id: "desc" },
+  take: 10,
+  skip: 0,
+});
+```
+
+## Το N+1 Query Problem — η ερώτηση-κλειδί
+
+Το πιο συχνό ORM performance bug. Όταν φέρνεις σχέσεις σε loop, γίνεται ένα query **ανά** εγγραφή:
+
+```ts
+// ❌ N+1: 1 query για users + 1 ΑΝΑ user για posts
+const users = await prisma.user.findMany();          // 1 query
+for (const user of users) {
+  const posts = await prisma.post.findMany({          // +1 query ΑΝΑ user!
+    where: { authorId: user.id },
+  });
+}
+// 100 users = 101 queries 💥
+
+// ✓ include — eager loading σε σταθερό αριθμό queries
+const users = await prisma.user.findMany({
+  include: { posts: true },                           // posts μαζί
+});
+// 2 queries συνολικά, ανεξάρτητα από πλήθος
+```
+
+Το `include` (ή `select`) φέρνει τα σχετιζόμενα δεδομένα μαζί. Το να αναγνωρίζεις το N+1 — 1 query για τη λίστα + N για τις σχέσεις — και να το λύνεις με eager loading είναι από τα πιο πρακτικά senior signals.
+
+<PredictOutput
+  title="N+1 drill"
+  code={`// 30 users, ο καθένας με posts.
+const users = await prisma.user.findMany();
+for (const u of users) {
+  const posts = await prisma.post.findMany({ where: { authorId: u.id } });
+}
+// Πόσα queries περίπου;`}
+  options={["1", "2", "31", "900"]}
+  correctOptionIndex={2}
+  answer="31"
+  explanation="1 query για τους 30 users + 1 query ανά user για τα posts = 1 + 30 = 31. Αυτό είναι το N+1. Με include: { posts: true } θα ήταν ~2 συνολικά. Σε production με χιλιάδες records, καταστροφικό."
+/>
+
+## Transactions — atomicity
+
+Πολλαπλές γραφές που πρέπει να πετύχουν ή να αποτύχουν **μαζί**:
+
+```ts
+await prisma.$transaction(async (tx) => {
+  await tx.account.update({ where: { id: from }, data: { balance: { decrement: 100 } } });
+  await tx.account.update({ where: { id: to },   data: { balance: { increment: 100 } } });
+  // αν πεταχτεί error εδώ → rollback ΚΑΙ των δύο, καμία μισή μεταφορά
+});
+```
+
+Το `$transaction` εγγυάται ότι ή και οι δύο updates γράφονται ή καμία — ποτέ ενδιάμεση κατάσταση όπου αφαιρέθηκαν 100 χωρίς να προστεθούν.
+
+## Migrations — schema as code
+
+Όταν αλλάζει το schema, δεν πειράζεις τη βάση με το χέρι:
+
+```bash
+npx prisma migrate dev --name add_active_flag   # dev: φτιάχνει & εφαρμόζει migration
+npx prisma migrate deploy                        # production: εφαρμόζει pending migrations
+```
+
+Τα migrations είναι **versioned αρχεία σε git**, εφαρμόζονται με **ίδια σειρά** σε κάθε environment (dev/staging/prod). Έτσι το schema είναι reproducible και τα changes γίνονται review σαν κώδικας — αντί για ad-hoc `ALTER TABLE` που ξεχνιούνται ή διαφέρουν ανά περιβάλλον.
+
+> Connection pooling: σε serverless/πολλά instances, άνοιγε **έναν** PrismaClient (singleton), όχι νέο ανά request — αλλιώς εξαντλείς τα database connections. Σε serverless χρησιμοποιείς pooler (π.χ. PgBouncer/Prisma Accelerate).
+
+<Exercise
+  question="Τι είναι το N+1 query problem και πώς το λύνεις στο Prisma;"
+  options={[
+    "Φέρνεις μια λίστα (1 query) και μετά σε loop φέρνεις τη σχέση κάθε εγγραφής (N queries) → 1+N. Λύση: eager loading με include/select που φέρνει τα σχετιζόμενα σε σταθερό αριθμό queries.",
+    "Όταν η βάση έχει πάρα πολλούς πίνακες. Λύση: λιγότεροι πίνακες.",
+    "Bug του Prisma που φτιάχνεται με update."
+  ]}
+  correctOptionIndex={0}
+  explanation="N+1 = lazy loading σχέσεων σε loop. include/select κάνει eager loading. 100 users: από 101 queries σε ~2. Κλασικό senior interview σημείο σε κάθε ORM."
+/>
+
+<Exercise
+  question="Γιατί Prisma migrations αντί για χειροκίνητα ALTER TABLE;"
+  options={[
+    "Versioned, reviewable migration αρχεία σε git, εφαρμοσμένα με ίδια σειρά σε κάθε environment — reproducible schema, αντί για ad-hoc χειροκίνητες αλλαγές που ξεχνιούνται ή διαφέρουν ανά περιβάλλον.",
+    "Είναι πιο γρήγορο να γράφεις ALTER TABLE.",
+    "Το Prisma τρέχει τα queries γρηγορότερα."
+  ]}
+  correctOptionIndex={0}
+  explanation="Migrations = schema as code: versioned, ordered, σε git, ίδια παντού. Reproducibility και review όπως ο κώδικας — αντί για χειροκίνητες αλλαγές που αποκλίνουν ανά environment."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you handle persistence in a Node/TypeScript backend?»
+
+> I use Prisma — I define the schema declaratively and get a fully typed client, so filters and results are checked at compile time. The pitfall I watch for is N+1: fetching a list and then loading each row's relation in a loop fires one query per row, so 100 users becomes 101 queries. I fix it with eager loading via `include` or `select`, which fetches the relations in a constant number of queries. Multi-step writes go in `$transaction` for atomicity, schema changes go through versioned migrations applied in the same order across environments rather than manual ALTERs, and I reuse a single PrismaClient instead of one per request so I don't exhaust the connection pool.
+
+<Flashcards
+  title="Persistence with Prisma — interview drills"
+  cards={[
+    {
+      question: "Τι σου δίνει το Prisma;",
+      answer: "Schema-first, type-safe ORM: ορίζεις models/relations, παίρνεις fully-typed client (autocomplete + compile-time checks), και versioned migrations. CRUD με typed filters/results."
+    },
+    {
+      question: "Τι είναι το N+1 και η λύση;",
+      answer: "1 query για λίστα + 1 ανά εγγραφή για σχέση (1+N). 100 users → 101 queries. Λύση: include/select (eager loading) → σταθερός αριθμός queries."
+    },
+    {
+      question: "Πώς εγγυάσαι atomicity;",
+      answer: "prisma.$transaction(async tx => {...}) — όλες οι γραφές πετυχαίνουν ή κάνουν rollback μαζί. Ποτέ μισή μεταφορά/inconsistent state."
+    },
+    {
+      question: "Γιατί migrations αντί για χειροκίνητα ALTER;",
+      answer: "Versioned, ordered, reviewable σε git· ίδια σειρά σε dev/staging/prod → reproducible schema. migrate dev (local) / migrate deploy (prod)."
+    },
+    {
+      question: "Connection pooling gotcha;",
+      answer: "Ένας PrismaClient singleton, όχι νέος ανά request — αλλιώς εξαντλείς τα db connections. Σε serverless χρησιμοποίησε pooler (PgBouncer/Accelerate)."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Data layer με Prisma"
+  scenario="Πρόσθεσε type-safe persistence σε ένα Node API: schema, CRUD, μια relation, transaction, migration — αποφεύγοντας το N+1."
+  outcomes={[
+    "Να ορίζεις schema με relations και να κάνεις typed CRUD.",
+    "Να αναγνωρίζεις και να λύνεις N+1.",
+    "Να διαχειρίζεσαι transactions και migrations."
+  ]}
+  steps={[
+    "Όρισε δύο models με relation (User → Posts) και τρέξε migrate dev.",
+    "Γράψε CRUD με τον typed client.",
+    "Διέτρεξε τη σχέση σε loop και μέτρα τα queries (δες το N+1).",
+    "Πρόσθεσε include και επιβεβαίωσε ότι έπεσαν τα queries.",
+    "Τύλιξε δύο updates σε $transaction και δοκίμασε rollback σε error."
+  ]}
+  checkpoints={[
+    "Καμία σχέση σε loop χωρίς include όπου χρειάζεται.",
+    "Πολλαπλές γραφές σε transaction.",
+    "Schema changes μόνο μέσω migrations· ένας PrismaClient."
+  ]}
+  mistakes={[
+    "Να αγνοείς το N+1 μέχρι να αργήσει το production.",
+    "Χειροκίνητα ALTER TABLE αντί για migrations.",
+    "Νέος PrismaClient ανά request → εξάντληση connections.",
+    "Μισές γραφές χωρίς transaction (inconsistent state)."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν δείχνεις πριν/μετά τον αριθμό queries ενός N+1 και εξηγείς πώς το include το έλυσε."
+/>

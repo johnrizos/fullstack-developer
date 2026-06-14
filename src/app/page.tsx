@@ -1,8 +1,58 @@
 "use client";
 
 import Link from "next/link";
-import { allLessons, curriculum } from "@/lib/curriculum";
+import { allLessons, curriculum, flattenItems, isLessonGroup, type Lesson } from "@/lib/curriculum";
 import { useProgress } from "@/hooks/useProgress";
+
+function LessonCard({ lesson, label, completed }: { lesson: Lesson; label: number; completed: boolean }) {
+  return (
+    <Link
+      href={lesson.href}
+      className={`group block p-5 transition-colors hover:bg-blue-50/50 dark:hover:bg-blue-950/20 ${
+        completed ? "bg-green-50/50 dark:bg-green-950/10" : ""
+      }`}
+    >
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold ${
+                completed ? "bg-green-500 text-white" : "bg-blue-600 text-white"
+              }`}
+            >
+              {completed ? "✓" : label}
+            </span>
+            <h4 className="text-lg font-bold text-gray-900 group-hover:text-blue-700 dark:text-gray-100 dark:group-hover:text-blue-400">
+              {lesson.title}
+            </h4>
+          </div>
+          <p className="mt-2 text-gray-600 dark:text-gray-400">{lesson.description}</p>
+          <p className="mt-2 text-sm font-medium text-gray-700 dark:text-gray-300">Mini project: {lesson.project}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {lesson.skills.map((skill) => (
+              <span
+                key={skill}
+                className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+              >
+                {skill}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <span
+          className={`hidden shrink-0 items-center justify-center rounded-lg px-5 py-2.5 font-medium md:inline-flex ${
+            completed
+              ? "border border-green-200 bg-white text-green-700 dark:border-green-900 dark:bg-gray-900 dark:text-green-400"
+              : "bg-blue-600 text-white group-hover:bg-blue-700"
+          }`}
+        >
+          {completed ? "Επανάληψη" : "Άνοιγμα"}
+        </span>
+      </div>
+    </Link>
+  );
+}
 
 export default function Home() {
   const { isCompleted, isLoaded } = useProgress();
@@ -67,8 +117,9 @@ export default function Home() {
 
       <section className="space-y-6">
         {curriculum.map((section, sectionIndex) => {
-          const completedInSection = section.lessons.filter((lesson) => isLoaded && isCompleted(lesson.id)).length;
-          const sectionPercent = Math.round((completedInSection / section.lessons.length) * 100);
+          const sectionLessons = flattenItems(section.lessons);
+          const completedInSection = sectionLessons.filter((lesson) => isLoaded && isCompleted(lesson.id)).length;
+          const sectionPercent = Math.round((completedInSection / sectionLessons.length) * 100);
 
           return (
             <article
@@ -86,7 +137,7 @@ export default function Home() {
                   </div>
                   <div className="shrink-0 md:text-right">
                     <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                      {completedInSection}/{section.lessons.length} ολοκληρωμένα
+                      {completedInSection}/{sectionLessons.length} ολοκληρωμένα
                     </span>
                     <div className="mt-2 h-2 w-32 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800">
                       <div className="h-full rounded-full bg-green-500 transition-all" style={{ width: `${sectionPercent}%` }} />
@@ -96,60 +147,52 @@ export default function Home() {
               </div>
 
               <div className="divide-y divide-gray-100 dark:divide-gray-800">
-                {section.lessons.map((lesson, lessonIndex) => {
-                  const completed = Boolean(isLoaded && isCompleted(lesson.id));
-
-                  return (
-                    <Link
-                      key={lesson.id}
-                      href={lesson.href}
-                      className={`group block p-5 transition-colors hover:bg-blue-50/50 dark:hover:bg-blue-950/20 ${
-                        completed ? "bg-green-50/50 dark:bg-green-950/10" : ""
-                      }`}
-                    >
-                      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span
-                              className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold ${
-                                completed ? "bg-green-500 text-white" : "bg-blue-600 text-white"
-                              }`}
-                            >
-                              {completed ? "✓" : lessonIndex + 1}
-                            </span>
-                            <h4 className="text-lg font-bold text-gray-900 group-hover:text-blue-700 dark:text-gray-100 dark:group-hover:text-blue-400">
-                              {lesson.title}
-                            </h4>
-                          </div>
-                          <p className="mt-2 text-gray-600 dark:text-gray-400">{lesson.description}</p>
-                          <p className="mt-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                            Mini project: {lesson.project}
-                          </p>
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            {lesson.skills.map((skill) => (
-                              <span
-                                key={skill}
-                                className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-400"
-                              >
-                                {skill}
+                {(() => {
+                  let counter = 0;
+                  return section.lessons.map((item) => {
+                    if (isLessonGroup(item)) {
+                      const groupDone = item.lessons.filter((l) => isLoaded && isCompleted(l.id)).length;
+                      return (
+                        <div key={item.id} className="bg-gray-50/40 dark:bg-gray-900/30">
+                          <div className="border-l-4 border-blue-500 px-5 pt-4 pb-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <h4 className="text-sm font-extrabold uppercase tracking-wide text-blue-600 dark:text-blue-400">
+                                {item.title}
+                              </h4>
+                              <span className="shrink-0 text-xs font-semibold text-gray-500 dark:text-gray-400">
+                                {groupDone}/{item.lessons.length}
                               </span>
-                            ))}
+                            </div>
+                            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{item.description}</p>
+                          </div>
+                          <div className="divide-y divide-gray-100 border-l-4 border-blue-500/40 dark:divide-gray-800">
+                            {item.lessons.map((lesson) => {
+                              counter += 1;
+                              return (
+                                <LessonCard
+                                  key={lesson.id}
+                                  lesson={lesson}
+                                  label={counter}
+                                  completed={Boolean(isLoaded && isCompleted(lesson.id))}
+                                />
+                              );
+                            })}
                           </div>
                         </div>
+                      );
+                    }
 
-                        <span
-                          className={`hidden shrink-0 items-center justify-center rounded-lg px-5 py-2.5 font-medium md:inline-flex ${
-                            completed
-                              ? "border border-green-200 bg-white text-green-700 dark:border-green-900 dark:bg-gray-900 dark:text-green-400"
-                              : "bg-blue-600 text-white group-hover:bg-blue-700"
-                          }`}
-                        >
-                          {completed ? "Επανάληψη" : "Άνοιγμα"}
-                        </span>
-                      </div>
-                    </Link>
-                  );
-                })}
+                    counter += 1;
+                    return (
+                      <LessonCard
+                        key={item.id}
+                        lesson={item}
+                        label={counter}
+                        completed={Boolean(isLoaded && isCompleted(item.id))}
+                      />
+                    );
+                  });
+                })()}
               </div>
             </article>
           );
