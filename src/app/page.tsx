@@ -1,7 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { allLessons, curriculum, flattenItems, isLessonGroup, type Lesson } from "@/lib/curriculum";
+import {
+  allLessons,
+  curriculum,
+  flattenItems,
+  formatDuration,
+  getLessonsEstimatedMinutes,
+  isLessonGroup,
+  lessonDurationsMinutes,
+  totalEstimatedMinutes,
+  type Lesson,
+} from "@/lib/curriculum";
 import { useProgress } from "@/hooks/useProgress";
 
 function LessonCard({
@@ -16,6 +26,7 @@ function LessonCard({
   variant?: "primary" | "sub";
 }) {
   const isSub = variant === "sub";
+  const estimatedMinutes = lessonDurationsMinutes[lesson.id] ?? 60;
   return (
     <Link
       href={lesson.href}
@@ -48,7 +59,10 @@ function LessonCard({
             </h4>
           </div>
           <p className="mt-2 text-gray-600 dark:text-gray-400">{lesson.description}</p>
-          <p className="mt-2 text-sm font-medium text-gray-700 dark:text-gray-300">Mini project: {lesson.project}</p>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm font-medium text-gray-700 dark:text-gray-300">
+            <span>Mini project: {lesson.project}</span>
+            <span className="text-blue-600 dark:text-blue-400">Εκτίμηση: {formatDuration(estimatedMinutes)}</span>
+          </div>
           <div className="mt-3 flex flex-wrap gap-2">
             {lesson.skills.map((skill) => (
               <span
@@ -76,11 +90,12 @@ function LessonCard({
 }
 
 export default function Home() {
-  const { isCompleted, isLoaded } = useProgress();
+  const { isCompleted, isLoaded, studiedMinutes } = useProgress();
 
   const completedCount = isLoaded ? allLessons.filter((lesson) => isCompleted(lesson.id)).length : 0;
   const progressPercent = Math.round((completedCount / allLessons.length) * 100);
   const nextLesson = allLessons.find((lesson) => !isCompleted(lesson.id));
+  const remainingMinutes = Math.max(totalEstimatedMinutes - studiedMinutes, 0);
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-10 px-4 py-8 md:py-12">
@@ -104,7 +119,7 @@ export default function Home() {
             </Link>
             {completedCount > 0 && (
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                {completedCount}/{allLessons.length} μαθήματα ολοκληρωμένα · {progressPercent}%
+                {completedCount}/{allLessons.length} μαθήματα ολοκληρωμένα · {progressPercent}% · {formatDuration(studiedMinutes)} διαβασμένα
               </p>
             )}
           </div>
@@ -125,14 +140,22 @@ export default function Home() {
           />
         </div>
         <div className="mt-4 grid gap-3 text-center sm:grid-cols-4">
-          {["Θεωρία με βάθος", "Live κώδικας", "Predict drills", "Mini projects"].map((item) => (
-            <div
-              key={item}
-              className="rounded-lg bg-gray-50 p-3 text-sm font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-            >
-              {item}
-            </div>
-          ))}
+          <div className="rounded-lg bg-gray-50 p-3 text-sm font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+            <span className="block text-xs font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">Σύνολο χρόνου</span>
+            {formatDuration(totalEstimatedMinutes)}
+          </div>
+          <div className="rounded-lg bg-gray-50 p-3 text-sm font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+            <span className="block text-xs font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">Έχει διαβαστεί</span>
+            {formatDuration(studiedMinutes)}
+          </div>
+          <div className="rounded-lg bg-gray-50 p-3 text-sm font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+            <span className="block text-xs font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">Απομένει</span>
+            {formatDuration(remainingMinutes)}
+          </div>
+          <div className="rounded-lg bg-gray-50 p-3 text-sm font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+            <span className="block text-xs font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">Μαθήματα</span>
+            {allLessons.length}
+          </div>
         </div>
       </section>
 
@@ -141,6 +164,11 @@ export default function Home() {
           const sectionLessons = flattenItems(section.lessons);
           const completedInSection = sectionLessons.filter((lesson) => isLoaded && isCompleted(lesson.id)).length;
           const sectionPercent = Math.round((completedInSection / sectionLessons.length) * 100);
+          const sectionEstimatedMinutes = getLessonsEstimatedMinutes(sectionLessons);
+          const sectionStudiedMinutes = sectionLessons.reduce(
+            (total, lesson) => (isLoaded && isCompleted(lesson.id) ? total + (lessonDurationsMinutes[lesson.id] ?? 60) : total),
+            0,
+          );
 
           return (
             <article
@@ -160,6 +188,9 @@ export default function Home() {
                     <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
                       {completedInSection}/{sectionLessons.length} ολοκληρωμένα
                     </span>
+                    <p className="mt-1 text-xs font-medium text-gray-500 dark:text-gray-400">
+                      {formatDuration(sectionStudiedMinutes)} / {formatDuration(sectionEstimatedMinutes)}
+                    </p>
                     <div className="mt-2 h-2 w-32 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800">
                       <div className="h-full rounded-full bg-green-500 transition-all" style={{ width: `${sectionPercent}%` }} />
                     </div>
@@ -177,6 +208,7 @@ export default function Home() {
                     if (isLessonGroup(item)) {
                       const groupDone = item.lessons.filter((l) => isLoaded && isCompleted(l.id)).length;
                       const groupComplete = isLoaded && groupDone === item.lessons.length;
+                      const groupMinutes = getLessonsEstimatedMinutes(item.lessons);
                       return (
                         <details key={item.id} className="group/acc bg-gray-50/40 dark:bg-gray-900/30">
                           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 border-l-4 border-blue-500 px-5 py-4 transition-colors hover:bg-blue-50/40 dark:hover:bg-blue-950/20">
@@ -204,7 +236,7 @@ export default function Home() {
                               </div>
                             </div>
                             <span className="shrink-0 text-xs font-semibold text-gray-500 dark:text-gray-400">
-                              {groupDone}/{item.lessons.length}
+                              {groupDone}/{item.lessons.length} · {formatDuration(groupMinutes)}
                             </span>
                           </summary>
                           <div className="divide-y divide-gray-100 border-l-4 border-blue-500/40 dark:divide-gray-800">

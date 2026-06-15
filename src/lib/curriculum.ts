@@ -7,6 +7,104 @@ export type Lesson = {
   href: string;
 };
 
+export const lessonDurationsMinutes: Record<string, number> = {
+  "web-basics": 35,
+  "html-css": 45,
+  "html-semantics": 40,
+  "html-forms-accessibility": 50,
+  "css-box-model": 40,
+  "css-flex-responsive": 55,
+  "css-grid-layouts": 55,
+  "javascript-intro": 50,
+  "javascript-logic": 55,
+  "javascript-arrays-objects": 60,
+  "javascript-dom-forms": 65,
+  "javascript-scope-closures": 70,
+  "javascript-this-prototypes": 70,
+  "javascript-async-event-loop": 75,
+  "javascript-fetch-errors": 70,
+  "javascript-modules-patterns": 65,
+  "javascript-interview-drills": 80,
+  "git-github": 55,
+  "agile-scrum-kanban": 45,
+  "job-ready-practice": 60,
+  "milestone-projects": 70,
+  "code-review-practice": 70,
+  "typescript": 75,
+  "testing-debugging": 70,
+  "react-rendering-model": 70,
+  "react-components-props": 65,
+  "react-state-events": 70,
+  "react-effects": 75,
+  "react-hooks-in-depth": 80,
+  "react-context-state": 75,
+  "react-performance": 80,
+  "react-data-fetching": 80,
+  "react-patterns-production": 85,
+  "nextjs-routing-layouts": 70,
+  "nextjs-server-client-components": 75,
+  "nextjs-data-fetching-streaming": 80,
+  "nextjs-caching-rendering": 85,
+  "nextjs-server-actions": 75,
+  "nextjs-route-handlers": 70,
+  "nextjs-error-loading": 65,
+  "nextjs-metadata-seo": 60,
+  "nextjs-optimization-production": 85,
+  "frontend-testing": 80,
+  "node-runtime-modules": 70,
+  "node-async-streams": 80,
+  "node-express": 75,
+  "node-middleware-errors": 70,
+  "node-validation-security": 80,
+  "node-architecture": 80,
+  "node-nestjs": 85,
+  "node-persistence": 80,
+  "node-testing": 75,
+  "node-production": 85,
+  "rest-apis": 75,
+  "graphql-basics": 70,
+  "python-foundations": 60,
+  "python-collections": 65,
+  "python-iterators-generators": 70,
+  "python-oop-typing": 75,
+  "python-decorators-context-managers": 75,
+  "python-advanced-typing": 80,
+  "python-stdlib": 75,
+  "python-fastapi": 80,
+  "python-sqlalchemy": 85,
+  "python-async-jobs": 85,
+  "python-data-ai": 85,
+  "python-performance": 80,
+  "python-production": 85,
+  "websockets-realtime": 75,
+  "api-integrations": 70,
+  "architecture-monolith-microservices": 80,
+  "db-relational-modeling": 75,
+  "db-sql-queries": 80,
+  "db-indexing-performance": 85,
+  "db-transactions-acid": 80,
+  "db-orm-n-plus-one": 80,
+  "db-migrations-schema": 80,
+  "db-scaling-replication": 85,
+  "db-design-interview": 85,
+  "nosql-foundations": 70,
+  "nosql-document": 75,
+  "nosql-key-value": 70,
+  "nosql-wide-column": 75,
+  "nosql-data-modeling": 80,
+  "nosql-consistency-scaling": 80,
+  "nosql-choosing-polyglot": 75,
+  "redis-caching-sessions": 75,
+  "db-engines-compared": 65,
+  "authentication": 80,
+  "web-security": 80,
+  "deployment": 75,
+  "docker-ci-cd": 80,
+  "observability": 75,
+  "capstone": 120,
+  "final-assessment": 60,
+};
+
 // A topic that is too big for one page (π.χ. Python, Node.js): groups several
 // sub-lessons under a single heading inside a section.
 export type LessonGroup = {
@@ -921,17 +1019,40 @@ export type LessonWithSection = Lesson & {
   sectionTitle: string;
   sectionIndex: number;
   groupTitle?: string;
+  estimatedMinutes: number;
 };
 
 export const allLessons: LessonWithSection[] = curriculum.flatMap((section, sectionIndex) =>
   section.lessons.flatMap((item) => {
     const base = { sectionId: section.id, sectionTitle: section.title, sectionIndex };
     if (isLessonGroup(item)) {
-      return item.lessons.map((lesson) => ({ ...lesson, ...base, groupTitle: item.title }));
+      return item.lessons.map((lesson) => ({
+        ...lesson,
+        ...base,
+        groupTitle: item.title,
+        estimatedMinutes: lessonDurationsMinutes[lesson.id] ?? 60,
+      }));
     }
-    return [{ ...item, ...base }];
+    return [{ ...item, ...base, estimatedMinutes: lessonDurationsMinutes[item.id] ?? 60 }];
   }),
 );
+
+export const totalEstimatedMinutes = allLessons.reduce((total, lesson) => total + lesson.estimatedMinutes, 0);
+
+export function getLessonsEstimatedMinutes(lessons: Lesson[]) {
+  return lessons.reduce((total, lesson) => total + (lessonDurationsMinutes[lesson.id] ?? 60), 0);
+}
+
+export function formatDuration(minutes: number) {
+  if (minutes < 60) return `${minutes} λεπτά`;
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  const hourLabel = hours === 1 ? "ώρα" : "ώρες";
+
+  if (remainingMinutes === 0) return `${hours} ${hourLabel}`;
+  return `${hours} ${hourLabel} ${remainingMinutes} λεπτά`;
+}
 
 export function getLessonBySlug(slug: string): LessonWithSection | undefined {
   return allLessons.find((lesson) => lesson.href === `/lessons/${slug}`);

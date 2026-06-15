@@ -2,12 +2,43 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
-import { curriculum, getAdjacentLessons, getLessonBySlug, isLessonGroup, type Lesson } from "@/lib/curriculum";
+import { useSyncExternalStore } from "react";
+import {
+  curriculum,
+  formatDuration,
+  getAdjacentLessons,
+  getLessonBySlug,
+  getLessonsEstimatedMinutes,
+  isLessonGroup,
+  lessonDurationsMinutes,
+  type Lesson,
+} from "@/lib/curriculum";
 import { useProgress } from "@/hooks/useProgress";
 import { CompleteLessonButton } from "./CompleteLessonButton";
 
 const SIDEBAR_STORAGE_KEY = "lessons-sidebar-collapsed";
+const SIDEBAR_CHANGE_EVENT = "lessons-sidebar-collapsed-change";
+
+function readStoredSidebarState() {
+  if (typeof window === "undefined") return "false";
+  return window.localStorage.getItem(SIDEBAR_STORAGE_KEY) ?? "false";
+}
+
+function subscribeToSidebarState(onStoreChange: () => void) {
+  if (typeof window === "undefined") return () => {};
+
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key === SIDEBAR_STORAGE_KEY) onStoreChange();
+  };
+
+  window.addEventListener("storage", handleStorage);
+  window.addEventListener(SIDEBAR_CHANGE_EVENT, onStoreChange);
+
+  return () => {
+    window.removeEventListener("storage", handleStorage);
+    window.removeEventListener(SIDEBAR_CHANGE_EVENT, onStoreChange);
+  };
+}
 
 function LessonLink({
   lesson,
@@ -20,6 +51,7 @@ function LessonLink({
 }) {
   const slug = lesson.href.replace("/lessons/", "");
   const isActive = slug === activeSlug;
+  const estimatedMinutes = lessonDurationsMinutes[lesson.id] ?? 60;
 
   return (
     <Link
@@ -41,7 +73,10 @@ function LessonLink({
       >
         ✓
       </span>
-      <span className="truncate">{lesson.title}</span>
+      <span className="min-w-0 flex-1 truncate">{lesson.title}</span>
+      <span className="shrink-0 text-[10px] font-medium text-gray-400 dark:text-gray-500">
+        {formatDuration(estimatedMinutes)}
+      </span>
     </Link>
   );
 }
@@ -60,6 +95,7 @@ function SidebarNav({ activeSlug }: { activeSlug: string }) {
             {section.lessons.map((item) => {
               if (isLessonGroup(item)) {
                 const doneCount = item.lessons.filter((l) => isCompleted(l.id)).length;
+                const groupMinutes = getLessonsEstimatedMinutes(item.lessons);
                 const groupActive = item.lessons.some(
                   (l) => l.href.replace("/lessons/", "") === activeSlug,
                 );
@@ -76,7 +112,7 @@ function SidebarNav({ activeSlug }: { activeSlug: string }) {
                         </span>
                         <span className="truncate font-semibold">{item.title}</span>
                         <span className="ml-auto shrink-0 text-[10px] font-medium text-gray-400 dark:text-gray-500">
-                          {doneCount}/{item.lessons.length}
+                          {doneCount}/{item.lessons.length} · {formatDuration(groupMinutes)}
                         </span>
                       </summary>
                       <ul className="mt-0.5 ml-2 space-y-0.5 border-l border-gray-200 pl-2 dark:border-gray-800">
@@ -110,18 +146,11 @@ export function LessonShell({ children }: { children: React.ReactNode }) {
   const lesson = getLessonBySlug(slug);
   const { previous, next } = getAdjacentLessons(slug);
 
-  const [collapsed, setCollapsed] = useState(false);
-
-  useEffect(() => {
-    setCollapsed(localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true");
-  }, []);
+  const collapsed = useSyncExternalStore(subscribeToSidebarState, readStoredSidebarState, () => "false") === "true";
 
   const toggleCollapsed = () => {
-    setCollapsed((prev) => {
-      const next = !prev;
-      localStorage.setItem(SIDEBAR_STORAGE_KEY, String(next));
-      return next;
-    });
+    localStorage.setItem(SIDEBAR_STORAGE_KEY, String(!collapsed));
+    window.dispatchEvent(new Event(SIDEBAR_CHANGE_EVENT));
   };
 
   return (
@@ -167,9 +196,11 @@ export function LessonShell({ children }: { children: React.ReactNode }) {
         </details>
 
         {lesson && (
-          <p className="mb-2 text-sm font-bold uppercase tracking-wide text-blue-600 dark:text-blue-400">
-            {lesson.sectionTitle}
-          </p>
+          <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-bold uppercase tracking-wide text-blue-600 dark:text-blue-400">
+            <span>{lesson.sectionTitle}</span>
+            <span className="text-gray-400 dark:text-gray-500">·</span>
+            <span>{formatDuration(lesson.estimatedMinutes)}</span>
+          </div>
         )}
 
         <article className="min-w-0">{children}</article>

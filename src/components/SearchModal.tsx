@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { allLessons } from "@/lib/curriculum";
+import { allLessons, formatDuration } from "@/lib/curriculum";
 import { useProgress } from "@/hooks/useProgress";
 
 function matchesQuery(haystack: string, query: string) {
@@ -109,7 +109,7 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{lesson.title}</span>
                   <span className="block truncate text-xs text-gray-500 dark:text-gray-400">
-                    {lesson.sectionTitle} · {lesson.description}
+                    {lesson.sectionTitle} · {formatDuration(lesson.estimatedMinutes)} · {lesson.description}
                   </span>
                 </span>
               </button>
