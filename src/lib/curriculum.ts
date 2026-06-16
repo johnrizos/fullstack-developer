@@ -98,6 +98,9 @@ export const lessonDurationsMinutes: Record<string, number> = {
   "db-engines-compared": 65,
   "authentication": 80,
   "web-security": 80,
+  "linux-command-line": 55,
+  "linux-server-ssh": 70,
+  "linux-processes-logs-services": 70,
   "deployment": 75,
   "docker-ci-cd": 80,
   "observability": 75,
@@ -970,6 +973,38 @@ export const curriculum: CurriculumSection[] = [
     title: "Cloud & DevOps",
     description: "Κάνεις deploy, διαβάζεις logs και οργανώνεις delivery pipeline.",
     lessons: [
+      {
+        id: "linux",
+        title: "Linux & Command Line",
+        description:
+          "Το terminal που τρέχει πίσω από κάθε deploy: command line basics, Linux server με SSH, και πώς κρατάς processes/services ζωντανά με logs — η βάση κάθε backend/DevOps δουλειάς.",
+        lessons: [
+          {
+            id: "linux-command-line",
+            title: "Command Line Basics",
+            description: "Terminal vs shell, navigation, χειρισμός αρχείων, pipes/redirection, exit codes και αλυσίδωση εντολών.",
+            project: "Βρες το πιο πρόσφατο error ενός app μόνο μέσω terminal.",
+            skills: ["shell", "pipes", "redirection"],
+            href: "/lessons/linux-command-line",
+          },
+          {
+            id: "linux-server-ssh",
+            title: "Linux Server & SSH",
+            description: "VPS, SSH keys vs passwords, scp/rsync, users/sudo, permissions (chmod/chown), firewall/ports και reverse proxy.",
+            project: "Στήσε key-based, hardened πρόσβαση σε φρέσκο VPS.",
+            skills: ["SSH", "permissions", "reverse proxy"],
+            href: "/lessons/linux-server-ssh",
+          },
+          {
+            id: "linux-processes-logs-services",
+            title: "Processes, Logs & Services",
+            description: "Processes & signals, graceful shutdown, ports, systemd services με auto-restart, journalctl/logs και cron.",
+            project: "Κάνε ένα Node app production-grade systemd service.",
+            skills: ["systemd", "signals", "journalctl"],
+            href: "/lessons/linux-processes-logs-services",
+          },
+        ],
+      },
       {
         id: "deployment",
         title: "Deployment & Cloud",

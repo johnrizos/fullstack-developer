@@ -1,0 +1,247 @@
+# Command Line Basics
+
+Κάθε deploy, κάθε log, κάθε server τρέχει πίσω από ένα terminal. Όσο μένεις μόνο στο GUI, εξαρτάσαι από κουμπιά που σε production δεν υπάρχουν. Το command line είναι το κοινό λεξιλόγιο κάθε backend/DevOps δουλειάς.
+
+## Τι θα μάθεις
+
+- να διακρίνεις **terminal** από **shell** και να διαβάζεις τη δομή μιας εντολής,
+- να κινείσαι στο filesystem και να χειρίζεσαι αρχεία με σιγουριά,
+- να συνδυάζεις εντολές με **pipes** και **redirection**,
+- να διαβάζεις exit codes και να αλυσιδώνεις εντολές υπό συνθήκη.
+
+## Terminal vs shell
+
+Δύο διαφορετικά πράγματα που συχνά μπερδεύονται:
+
+- **Terminal**: το πρόγραμμα-παράθυρο που δείχνει κείμενο (Terminal.app, Windows Terminal, iTerm).
+- **Shell**: ο διερμηνέας που εκτελεί τις εντολές σου (`bash`, `zsh`, `sh`, `fish`). Σε Linux servers σχεδόν πάντα `bash`.
+
+Όταν λέμε «τρέξε στο terminal», στην ουσία δίνεις εντολή στο shell.
+
+## Η δομή μιας εντολής
+
+Κάθε εντολή διαβάζεται το ίδιο:
+
+```bash
+ls -l -a /var/log
+# │  │  │  └── argument (σε ποιο πράγμα)
+# │  └──┴───── options/flags (πώς)
+# └─────────── command (τι)
+```
+
+- Τα short flags ενώνονται: `ls -la` == `ls -l -a`.
+- Τα long flags είναι αυτο-επεξηγηματικά: `ls --all`.
+- Όταν κολλήσεις: `man ls` ή `ls --help`.
+
+## Πού είμαι; — πλοήγηση
+
+```bash
+pwd                 # print working directory — πού βρίσκομαι τώρα
+ls                  # τι υπάρχει εδώ
+ls -la              # τα πάντα (και κρυφά .files) με λεπτομέρειες
+cd /var/www         # πήγαινε σε absolute path
+cd projects         # πήγαινε σε relative path (μέσα από εδώ)
+cd ..               # ένα επίπεδο πάνω
+cd ~                # home directory σου
+cd -                # πίσω στον προηγούμενο φάκελο
+```
+
+Κλειδί που μπερδεύει αρχάριους — τα ειδικά paths:
+
+| Σύμβολο | Σημαίνει |
+| --- | --- |
+| `/` | root του filesystem (η κορυφή) |
+| `~` | το home σου (π.χ. `/home/john`) |
+| `.` | ο τρέχων φάκελος |
+| `..` | ο γονικός φάκελος |
+
+**Absolute path** ξεκινά από `/` και δουλεύει από οπουδήποτε. **Relative path** εξαρτάται από το `pwd` σου.
+
+## Δημιουργία & χειρισμός αρχείων
+
+```bash
+mkdir logs                  # νέος φάκελος
+mkdir -p app/src/utils      # -p: φτιάξε και τους ενδιάμεσους
+touch app.js                # δημιούργησε άδειο αρχείο
+cp config.json config.bak   # copy
+cp -r src/ backup/          # -r: αναδρομικά για φακέλους
+mv old.txt new.txt          # rename ή move
+rm temp.log                 # διαγραφή αρχείου
+rm -r node_modules/         # -r: διαγραφή φακέλου με περιεχόμενο
+```
+
+> ⚠️ Δεν υπάρχει «κάδος ανακύκλωσης». Το `rm -rf /` ή το `rm -rf $VAR/` με κενό `$VAR` έχουν διαλύσει production servers. Κοίτα δύο φορές πριν πατήσεις Enter.
+
+## Διάβασμα αρχείων
+
+```bash
+cat app.log            # όλο το αρχείο στην οθόνη
+less app.log           # σελιδοποιημένα (q για έξοδο, / για search)
+head -n 20 app.log     # τις πρώτες 20 γραμμές
+tail -n 50 app.log     # τις τελευταίες 50 γραμμές
+tail -f app.log        # follow: live νέες γραμμές (το #1 εργαλείο για logs)
+```
+
+Το `tail -f` είναι αυτό που τρέχεις όταν θες να δεις τι κάνει ένα app **την ώρα** που το χτυπάς με requests.
+
+## Αναζήτηση — grep & find
+
+```bash
+grep "ERROR" app.log              # γραμμές που περιέχουν ERROR
+grep -i "error" app.log           # case-insensitive
+grep -r "TODO" src/               # αναδρομικά σε φάκελο
+grep -n "timeout" app.log         # με αριθμούς γραμμής
+
+find . -name "*.log"              # όλα τα .log από εδώ και κάτω
+find /var -type f -mtime -1       # αρχεία που άλλαξαν τις τελευταίες 24h
+which node                        # πού βρίσκεται το εκτελέσιμο
+```
+
+## Pipes & redirection — η υπερδύναμη του shell
+
+Εδώ το command line σταματά να είναι «μενού εντολών» και γίνεται γλώσσα. Το **pipe** `|` στέλνει το output της μιας εντολής ως input στην επόμενη:
+
+```bash
+cat app.log | grep "ERROR" | wc -l       # πόσα ERROR συνολικά;
+ps aux | grep node                        # ποιες node διεργασίες τρέχουν;
+history | grep ssh                         # ποιες ssh εντολές έτρεξα;
+```
+
+**Redirection** στέλνει output σε αρχείο αντί για την οθόνη:
+
+```bash
+echo "hello" > out.txt        # > overwrite (σβήνει ό,τι είχε)
+echo "world" >> out.txt       # >> append (προσθέτει στο τέλος)
+node app.js > app.log 2>&1    # stdout ΚΑΙ stderr στο ίδιο αρχείο
+node app.js 2> errors.log     # μόνο τα errors (stderr) χωριστά
+```
+
+Τα τρία streams που πρέπει να ξέρεις: **stdin** (0), **stdout** (1), **stderr** (2). Το `2>&1` σημαίνει «στείλε το stderr εκεί που πάει το stdout».
+
+<PredictOutput
+  title="Τι θα γράψει το final.txt;"
+  code={`echo "a" > final.txt
+echo "b" >> final.txt
+echo "c" > final.txt`}
+  answer="c"
+  explanation="Το πρώτο > γράφει 'a'. Το >> προσθέτει 'b' (a, b). Αλλά το τρίτο > κάνει overwrite όλο το αρχείο με 'c'. Το > σβήνει· το >> προσθέτει — η πιο συχνή αιτία 'χάθηκαν τα logs μου'."
+/>
+
+## Αλυσίδωση εντολών
+
+```bash
+npm run build && npm start     # τρέξε το 2ο ΜΟΝΟ αν το 1ο πέτυχε
+npm test || echo "tests failed" # τρέξε το 2ο ΜΟΝΟ αν το 1ο απέτυχε
+git pull ; npm install          # τρέξε και τα δύο, ανεξάρτητα
+```
+
+Πίσω από αυτά κρύβεται το **exit code**: κάθε εντολή επιστρέφει `0` για επιτυχία, ≠`0` για αποτυχία.
+
+```bash
+ls /tmp
+echo $?        # 0  → πέτυχε
+ls /nope
+echo $?        # 2  → απέτυχε
+```
+
+Το `$?` και τα `&&`/`||` είναι ο πυρήνας κάθε deploy script και CI pipeline.
+
+## Wildcards & μεταβλητές
+
+```bash
+rm *.tmp                  # όλα τα αρχεία που τελειώνουν σε .tmp
+ls log-202?.txt           # ? = ένας χαρακτήρας
+echo $HOME                # μεταβλητή περιβάλλοντος
+echo $PATH                # πού ψάχνει το shell για εκτελέσιμα
+export NODE_ENV=production # όρισε env var για τη session
+```
+
+<Exercise
+  question="Θες να δεις live τις νέες γραμμές που γράφει ένα app στο app.log. Ποια εντολή;"
+  options={[
+    "tail -f app.log",
+    "cat app.log",
+    "head app.log"
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Το tail -f κάνει 'follow' και τυπώνει κάθε νέα γραμμή μόλις γραφτεί. Το cat δείχνει μία φορά το παρόν περιεχόμενο, το head μόνο την αρχή."
+/>
+
+<Exercise
+  question="Τι κάνει το node app.js > app.log 2>&1;"
+  options={[
+    "Στέλνει και το stdout και το stderr στο app.log.",
+    "Στέλνει μόνο τα errors στο app.log.",
+    "Διαβάζει το app.log ως input για το app.js."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Το > app.log ανακατευθύνει το stdout (1), και το 2>&1 λέει 'στείλε το stderr (2) εκεί που πάει κιόλας το stdout' — άρα και τα δύο streams καταλήγουν στο ίδιο αρχείο."
+/>
+
+<Exercise
+  question="Σε deploy script θες: τρέξε migrations, και ΜΟΝΟ αν πετύχουν, ξεκίνα τον server. Ποιο;"
+  options={[
+    "npm run migrate && npm start",
+    "npm run migrate ; npm start",
+    "npm run migrate || npm start"
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Το && τρέχει το δεύτερο μόνο αν το πρώτο επέστρεψε exit code 0. Το ; τρέχει και τα δύο ανεξάρτητα (κίνδυνος: εκκίνηση πάνω σε αποτυχημένο migration), και το || θα ξεκινούσε τον server μόνο αν αποτύγχανε το migration."
+/>
+
+<Flashcards
+  title="Command line — interview drills"
+  cards={[
+    {
+      question: "Διαφορά absolute vs relative path;",
+      answer: "Absolute ξεκινά από / (π.χ. /var/www/app) και δουλεύει από οπουδήποτε. Relative εξαρτάται από το τρέχον directory (pwd) — π.χ. ./src ή ../config. Σε scripts/cron προτιμάς absolute γιατί δεν ξέρεις από πού θα τρέξουν."
+    },
+    {
+      question: "> vs >> ;",
+      answer: "> κάνει overwrite — σβήνει το αρχείο και γράφει από την αρχή. >> κάνει append — προσθέτει στο τέλος χωρίς να χάσει το υπάρχον. Το κλασικό λάθος είναι > σε log αρχείο που σου σβήνει το ιστορικό."
+    },
+    {
+      question: "Τι είναι stdout, stderr, stdin;",
+      answer: "Τα τρία standard streams: stdin (0) η είσοδος, stdout (1) η κανονική έξοδος, stderr (2) η έξοδος σφαλμάτων. Τα κρατάμε χωριστά ώστε να μπορείς π.χ. να φιλτράρεις μόνο τα errors (2> errors.log) ή να τα ενώσεις (2>&1)."
+    },
+    {
+      question: "Τι κάνει το pipe | ;",
+      answer: "Στέλνει το stdout της αριστερής εντολής ως stdin στη δεξιά, χτίζοντας pipelines: cat file | grep ERROR | wc -l. Είναι η φιλοσοφία του Unix — μικρά εργαλεία που το καθένα κάνει ένα πράγμα και συνδυάζονται."
+    },
+    {
+      question: "Τι είναι το exit code και πού φαίνεται;",
+      answer: "Ο αριθμός που επιστρέφει κάθε εντολή: 0 = επιτυχία, οτιδήποτε άλλο = αποτυχία (με το είδος του λάθους). Το βλέπεις με echo $?. Πάνω του στηρίζονται τα && (τρέξε αν πέτυχε) και || (τρέξε αν απέτυχε) σε κάθε CI/deploy script."
+    },
+    {
+      question: "Τι είναι το $PATH;",
+      answer: "Μια env var με λίστα φακέλων χωρισμένη με : όπου το shell ψάχνει εκτελέσιμα όταν γράφεις μια εντολή χωρίς full path. Γι' αυτό το 'command not found' συχνά σημαίνει ότι το binary δεν είναι σε κανέναν φάκελο του PATH."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Πλοηγήσου και μάζεψε logs χωρίς το GUI"
+  scenario="Σου δίνουν SSH σε ένα μηχάνημα με ένα Node app που γράφει σε /var/log/app/. Πρέπει να βρεις τι πάει στραβά χρησιμοποιώντας ΜΟΝΟ το terminal."
+  outcomes={[
+    "Να κινείσαι στο filesystem χωρίς δεύτερη σκέψη.",
+    "Να φιλτράρεις μεγάλα log αρχεία με grep/tail.",
+    "Να συνδυάζεις εντολές με pipes και redirection."
+  ]}
+  steps={[
+    "Βρες πού είσαι (pwd) και πήγαινε στο /var/log/app.",
+    "Δες τα τελευταία 100 logs και κράτα τα live με tail -f.",
+    "Μέτρα πόσες γραμμές περιέχουν 'ERROR' με grep | wc -l.",
+    "Γράψε μόνο τα errors της τελευταίας ώρας σε ένα today-errors.txt."
+  ]}
+  checkpoints={[
+    "Ξέρεις πάντα σε ποιον φάκελο βρίσκεσαι.",
+    "Διακρίνεις > (overwrite) από >> (append) πριν πατήσεις Enter.",
+    "Μπορείς να αλυσιδώσεις 3 εντολές με pipe χωρίς ενδιάμεσα αρχεία."
+  ]}
+  mistakes={[
+    "Χρήση rm -rf χωρίς να ελέγξεις το pwd και το path.",
+    "Overwrite log με > ενώ ήθελες >>.",
+    "Να ψάχνεις χειροκίνητα σε αρχείο 100k γραμμών αντί για grep."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μπορείς να μπεις σε άγνωστο server και μέσα σε 2 λεπτά να βρεις τι λέει το πιο πρόσφατο error, χωρίς να αγγίξεις ποντίκι."
+/>

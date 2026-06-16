@@ -1,0 +1,253 @@
+# Processes, Logs & Services
+
+Το app σου τρέχει. Μετά πέφτει στις 3 το πρωί. Κανείς δεν το ξανασηκώνει χειροκίνητα, και πρέπει να βρεις τι έγινε χωρίς να ήσουν εκεί. Αυτό το μάθημα είναι για το «πώς κρατάς ένα app ζωντανό σε production και πώς διαβάζεις τι έκανε».
+
+## Τι θα μάθεις
+
+- να βλέπεις και να σκοτώνεις **processes** σωστά (signals, graceful shutdown),
+- να βρίσκεις **ποιος ακούει σε ποιο port**,
+- να τρέχεις το app ως **systemd service** που auto-restartάρει,
+- να διαβάζεις **logs** με `journalctl` και αρχεία στο `/var/log`,
+- να παρακολουθείς **πόρους** (CPU, μνήμη, δίσκο) και να προγραμματίζεις jobs με **cron**.
+
+## Processes — τι τρέχει αυτή τη στιγμή
+
+```bash
+ps aux                  # όλα τα processes με CPU/μνήμη/user
+ps aux | grep node      # μόνο τα node
+top                     # live πίνακας (q για έξοδο)
+htop                    # ωραιότερο top (αν είναι εγκατεστημένο)
+pgrep -fl node          # PIDs που ταιριάζουν στο 'node'
+```
+
+Κάθε process έχει ένα μοναδικό **PID** (process ID). Με αυτό το ελέγχεις.
+
+## Foreground, background & nohup
+
+```bash
+node app.js             # foreground — δεσμεύει το terminal
+node app.js &           # background — σου επιστρέφει τον έλεγχο
+jobs                    # τι τρέχει σε background αυτής της session
+fg                      # φέρε το πίσω σε foreground
+nohup node app.js &     # τρέξε ανεξάρτητα από το terminal (επιβιώνει στο logout)
+```
+
+> Το `&`/`nohup` είναι «πρόχειρη» λύση. Σε production **δεν** κρατάς απλώς ένα background process — χρησιμοποιείς service manager (παρακάτω) που το ξανανοίγει αν πέσει.
+
+## Signals & kill — graceful vs forced
+
+Όταν «σκοτώνεις» ένα process, στέλνεις ένα **signal**:
+
+```bash
+kill <PID>          # στέλνει SIGTERM (15) — "κλείσε ευγενικά"
+kill -9 <PID>       # στέλνει SIGKILL (9)  — "πέθανε τώρα", χωρίς cleanup
+kill -HUP <PID>     # SIGHUP — συχνά "reload config"
+```
+
+Η διάκριση είναι **κρίσιμη** σε interview:
+
+- **SIGTERM** δίνει στο app χρόνο να κλείσει σωστά: να τελειώσει τα ενεργά requests, να κλείσει DB connections, να γράψει logs. Αυτό είναι **graceful shutdown**.
+- **SIGKILL** (`-9`) δεν μπορεί να το πιάσει το app — κόβεται απότομα στη μέση, με κίνδυνο μισές εγγραφές/corrupt state. Είναι η έσχατη λύση όταν δεν ανταποκρίνεται.
+
+Σε Node:
+
+```js
+process.on("SIGTERM", async () => {
+  await server.close();   // σταμάτα να δέχεσαι νέα requests
+  await db.disconnect();  // καθάρισε connections
+  process.exit(0);
+});
+```
+
+## Ποιος ακούει στο port;
+
+Το κλασικό «EADDRINUSE: port 3000 already in use»:
+
+```bash
+ss -tlnp                  # όλα τα listening TCP ports + process
+ss -tlnp | grep :3000     # ποιος κρατά το 3000;
+lsof -i :3000             # εναλλακτικά, ποιος έχει το 3000
+kill <PID>                # ελευθέρωσέ το
+```
+
+## systemd — να κρατάς το app ζωντανό
+
+Το **systemd** είναι ο init/service manager των περισσότερων Linux. Φτιάχνεις ένα **unit file** και το app γίνεται service που ξεκινά στο boot και auto-restartάρει αν πέσει:
+
+```ini
+# /etc/systemd/system/myapp.service
+[Unit]
+Description=My Node App
+After=network.target
+
+[Service]
+WorkingDirectory=/var/www/app
+ExecStart=/usr/bin/node server.js
+Restart=always
+User=www-data
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Και το ελέγχεις:
+
+```bash
+sudo systemctl daemon-reload        # μετά από αλλαγή unit file
+sudo systemctl enable myapp         # ξεκίνα αυτόματα στο boot
+sudo systemctl start myapp          # ξεκίνα τώρα
+sudo systemctl status myapp         # τρέχει; πότε ξεκίνησε; τελευταία logs
+sudo systemctl restart myapp        # μετά από deploy
+```
+
+Το `Restart=always` είναι ο λόγος που το app «ξανασηκώνεται μόνο του» — δεν χρειάζεσαι κανέναν στις 3 το πρωί.
+
+## Logs — journalctl & /var/log
+
+Αν το app τρέχει ως systemd service, τα logs του πάνε στο **journal**:
+
+```bash
+journalctl -u myapp              # όλα τα logs του service
+journalctl -u myapp -f           # live follow (το #1 για debugging)
+journalctl -u myapp --since "1 hour ago"
+journalctl -u myapp -p err       # μόνο error-level και πάνω
+```
+
+Πολλά services γράφουν και σε αρχεία στο `/var/log`:
+
+```bash
+tail -f /var/log/nginx/error.log     # live errors του nginx
+grep "500" /var/log/nginx/access.log # ψάξε HTTP 500
+```
+
+Τα logs μεγαλώνουν — γι' αυτό υπάρχει **log rotation** (`logrotate`): σπάει, συμπιέζει και σβήνει παλιά logs ώστε να μη γεμίσει ο δίσκος.
+
+<PredictOutput
+  title="Τι κάνει η διαφορά: kill 4210 vs kill -9 4210;"
+  code={`kill 4210      # process A
+kill -9 4210   # process B`}
+  answer="A: SIGTERM — graceful. B: SIGKILL — άμεσος, χωρίς cleanup."
+  explanation="Το kill (SIGTERM) ζητά από το process να κλείσει μόνο του — να τελειώσει requests, να κλείσει DB, να γράψει logs. Το kill -9 (SIGKILL) δεν πιάνεται από το app και το κόβει ακαριαία στη μέση. Χρησιμοποιείς -9 ΜΟΝΟ όταν το SIGTERM αγνοήθηκε."
+/>
+
+## Πόροι — δίσκος, μνήμη, CPU
+
+```bash
+df -h                # ελεύθερος χώρος ανά disk/partition
+du -sh /var/log/*    # ποιοι φάκελοι τρώνε χώρο
+free -h              # μνήμη: used / free / available
+uptime               # load average + πόσο τρέχει το μηχάνημα
+```
+
+Το «το app έπεσε ξαφνικά» πολλές φορές είναι **disk full** (logs που δεν έγιναν rotate) ή **out of memory** (OOM killer). Το `df -h` και το `free -h` είναι τα πρώτα που τρέχεις.
+
+## cron — προγραμματισμένα jobs
+
+Για επαναλαμβανόμενες δουλειές (backups, cleanups, reports):
+
+```bash
+crontab -e            # επεξεργασία των cron jobs σου
+crontab -l            # λίστα
+```
+
+Η σύνταξη (5 πεδία: λεπτό ώρα μέρα μήνας μέρα-εβδομάδας):
+
+```bash
+# ┌ min  ┌ hour  ┌ day  ┌ month  ┌ weekday
+  0      3       *      *        *      /usr/local/bin/backup.sh
+# κάθε μέρα στις 03:00
+
+*/15 * * * * /usr/local/bin/healthcheck.sh
+# κάθε 15 λεπτά
+```
+
+<Exercise
+  question="Κάνεις deploy νέα έκδοση. Θες το app να κλείσει χωρίς να κόψει ενεργά requests. Ποιο signal;"
+  options={[
+    "SIGTERM (kill / systemctl restart) — graceful shutdown.",
+    "SIGKILL (kill -9) — άμεσος τερματισμός.",
+    "Δεν στέλνεις signal, τραβάς το καλώδιο."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Το SIGTERM δίνει στο app χρόνο να τελειώσει τα τρέχοντα requests, να κλείσει DB connections και να καθαρίσει. Το systemctl restart στέλνει ακριβώς SIGTERM. Το SIGKILL κόβει στη μέση και ρισκάρεις corrupt state — μόνο ως έσχατη λύση."
+/>
+
+<Exercise
+  question="Παίρνεις 'EADDRINUSE: port 3000 in use'. Πώς βρίσκεις και ελευθερώνεις το port;"
+  options={[
+    "ss -tlnp | grep :3000 για το PID, μετά kill <PID>.",
+    "Restartάρεις όλο τον server.",
+    "Αλλάζεις το app να τρέχει σε τυχαίο port κάθε φορά."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Το ss -tlnp (ή lsof -i :3000) σου δείχνει ποιο process κρατά το port· με το PID κάνεις kill και ελευθερώνεις το 3000. Συνήθως είναι μια παλιά instance που δεν τερμάτισε σωστά."
+/>
+
+<Exercise
+  question="Θες το Node app να ξεκινά στο boot και να ξανασηκώνεται μόνο του αν κρασάρει. Τι χρησιμοποιείς;"
+  options={[
+    "systemd service με Restart=always και systemctl enable.",
+    "nohup node app.js & και ελπίζεις.",
+    "Ένα terminal ανοιχτό 24/7 με το app σε foreground."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Ένα systemd unit με Restart=always το επανεκκινεί αυτόματα σε crash, και το systemctl enable το ξεκινά στο boot. Το nohup & δεν επιβιώνει σε crash/reboot και δεν διαχειρίζεται logs/restarts."
+/>
+
+<Flashcards
+  title="Processes, logs & services — interview drills"
+  cards={[
+    {
+      question: "SIGTERM vs SIGKILL;",
+      answer: "SIGTERM (kill, signal 15): ζητά ευγενικό κλείσιμο — το app το πιάνει και κάνει cleanup (κλείσιμο requests/DB, γράψιμο logs). SIGKILL (kill -9, signal 9): δεν πιάνεται, σκοτώνει ακαριαία χωρίς cleanup. Πάντα SIGTERM πρώτα· -9 μόνο αν δεν ανταποκρίνεται."
+    },
+    {
+      question: "Τι είναι graceful shutdown και γιατί έχει σημασία;",
+      answer: "Όταν το app λάβει SIGTERM, σταματά να δέχεται νέα requests, τελειώνει τα ενεργά, κλείνει DB connections και βγαίνει καθαρά. Χωρίς αυτό, κάθε deploy/restart ρισκάρει κομμένα requests και μισές εγγραφές. Σε Node: process.on('SIGTERM', ...)."
+    },
+    {
+      question: "Γιατί systemd αντί για nohup/pm2 σε production;",
+      answer: "Το systemd ξεκινά το app στο boot, το auto-restartάρει σε crash (Restart=always), τρέχει ως συγκεκριμένος user, διαχειρίζεται env και μαζεύει logs στο journal. Το nohup & δεν επιβιώνει σε reboot/crash. (Το pm2 κάνει παρόμοια για Node, αλλά το systemd είναι ο native, καθολικός τρόπος.)"
+    },
+    {
+      question: "Πώς βλέπεις live τα logs ενός service;",
+      answer: "journalctl -u <service> -f για systemd services (-f = follow), ή tail -f σε αρχείο μέσα στο /var/log για services που γράφουν εκεί (π.χ. nginx). Με --since και -p err φιλτράρεις χρόνο και επίπεδο σοβαρότητας."
+    },
+    {
+      question: "Το app έπεσε χωρίς προφανή λόγο — τι ελέγχεις πρώτα;",
+      answer: "df -h (γέμισε ο δίσκος; συχνά από logs χωρίς rotation), free -h (out of memory / OOM killer), τα logs (journalctl/-f), και το systemctl status για exit code & χρόνο. Disk-full και OOM είναι οι δύο πιο συχνές 'αόρατες' αιτίες."
+    },
+    {
+      question: "Πώς βρίσκεις ποιος κρατά ένα κατειλημμένο port;",
+      answer: "ss -tlnp | grep :<port> ή lsof -i :<port> — δείχνουν το PID που ακούει. Μετά kill <PID> για να το ελευθερώσεις. Τυπικό σε EADDRINUSE από orphaned παλιά instance."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Κάνε ένα app production-grade service"
+  scenario="Έχεις ένα Node app που τρέχεις με 'node server.js' σε ένα terminal. Πέφτει όταν κλείνει το SSH και κανείς δεν το ξανανοίγει. Πρέπει να το κάνεις αξιόπιστο."
+  outcomes={[
+    "Να τρέχεις το app ως managed service που auto-restartάρει.",
+    "Να διαβάζεις logs και να εντοπίζεις την αιτία ενός crash.",
+    "Να κλείνεις/επανεκκινείς processes με σωστά signals."
+  ]}
+  steps={[
+    "Γράψε systemd unit με Restart=always, σωστό User και Environment.",
+    "enable + start το service και επιβεβαίωσε με systemctl status.",
+    "Πρόσθεσε graceful SIGTERM handler στο Node app.",
+    "Δες live τα logs με journalctl -u myapp -f ενώ το χτυπάς με requests."
+  ]}
+  checkpoints={[
+    "Μετά από reboot ή crash το app ξανασηκώνεται μόνο του.",
+    "Το systemctl restart δεν κόβει ενεργά requests.",
+    "Μπορείς να βρεις την τελευταία γραμμή error μέσα σε δευτερόλεπτα."
+  ]}
+  mistakes={[
+    "Να αφήνεις το app σε nohup & και να το λες 'production'.",
+    "Να κάνεις kill -9 ως πρώτη επιλογή και να χάνεις cleanup.",
+    "Να αγνοείς το disk/memory μέχρι να γεμίσει και να πέσει το μηχάνημα."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν το app σου επιβιώνει reboot και crash χωρίς εσένα, και μπορείς να απαντήσεις 'τι έγινε' μόνο από τα logs."
+/>

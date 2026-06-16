@@ -1,0 +1,253 @@
+# Linux Server & SSH
+
+Το app σου δεν τρέχει στο laptop των χρηστών — τρέχει σε ένα Linux μηχάνημα σε κάποιο data center, χωρίς οθόνη. Όλη η επικοινωνία μαζί του γίνεται μέσω **SSH**. Αυτό το μάθημα είναι η γέφυρα ανάμεσα στο «γράφω κώδικα» και στο «το app μου ζει σε production».
+
+## Τι θα μάθεις
+
+- τι είναι ένας Linux server / VPS και πώς συνδέεσαι με **SSH**,
+- γιατί τα **SSH keys** είναι ασφαλέστερα από passwords και πώς στήνονται,
+- να μεταφέρεις αρχεία με **scp/rsync**,
+- **users, sudo και permissions** (`chmod`/`chown`) — το πιο συχνό μπέρδεμα σε deploys,
+- βασικό hardening: firewall, ports, και τι σημαίνει «reverse proxy».
+
+## Τι είναι ένας server
+
+Ένας server είναι απλώς ένας υπολογιστής που τρέχει συνέχεια, συνήθως χωρίς GUI (**headless**), με ένα Linux distro — τυπικά **Ubuntu Server**, Debian ή Amazon Linux. Όταν νοικιάζεις «VPS» (Virtual Private Server) από DigitalOcean/Hetzner/AWS EC2, παίρνεις ένα τέτοιο μηχάνημα και ένα IP.
+
+Το μόνο που έχεις στην αρχή: ένα IP, ένα username, και έναν τρόπο authentication.
+
+## SSH — η ασφαλής πόρτα εισόδου
+
+**SSH** (Secure Shell) σου δίνει κρυπτογραφημένο terminal πάνω στο απομακρυσμένο μηχάνημα:
+
+```bash
+ssh john@203.0.113.10
+# john     = ο user στον server
+# 203...   = το IP (ή domain) του server
+```
+
+Με το που συνδεθείς, το terminal σου ελέγχει τον **remote** server — κάθε εντολή τρέχει εκεί, όχι τοπικά.
+
+## Password vs SSH keys
+
+Δύο τρόποι να αποδείξεις ποιος είσαι:
+
+- **Password**: ευάλωτο σε brute-force, φαίνεται σε κάθε bot που σαρώνει το internet.
+- **SSH key pair**: ασύμμετρη κρυπτογραφία — ένα **private key** που μένει ΜΟΝΟ στο μηχάνημά σου και ένα **public key** που βάζεις στον server. Ασφαλέστερο και χωρίς να πληκτρολογείς password κάθε φορά.
+
+Φτιάχνεις ζευγάρι κλειδιών:
+
+```bash
+ssh-keygen -t ed25519 -C "john@laptop"
+# φτιάχνει:
+#   ~/.ssh/id_ed25519       → PRIVATE key (ΠΟΤΕ δεν το μοιράζεσαι/ανεβάζεις)
+#   ~/.ssh/id_ed25519.pub   → PUBLIC key (αυτό πάει στον server)
+```
+
+Στέλνεις το public key στον server:
+
+```bash
+ssh-copy-id john@203.0.113.10
+# προσθέτει το .pub σου στο ~/.ssh/authorized_keys του server
+```
+
+Από εκεί και πέρα το `ssh john@203.0.113.10` σε μπάζει χωρίς password.
+
+> Ο κανόνας που δεν παραβιάζεις ποτέ: **το private key δεν φεύγει από το μηχάνημά σου**. Αν διαρρεύσει, όποιος το έχει είναι «εσύ» για κάθε server που το εμπιστεύεται.
+
+## ~/.ssh/config — σταμάτα να πληκτρολογείς IPs
+
+Αντί να θυμάσαι IPs και users, φτιάχνεις aliases:
+
+```bash
+# ~/.ssh/config
+Host prod
+    HostName 203.0.113.10
+    User john
+    IdentityFile ~/.ssh/id_ed25519
+```
+
+Τώρα: `ssh prod`. Καθαρό, και αλλάζεις IP σε ένα σημείο.
+
+## Μεταφορά αρχείων
+
+```bash
+scp build.zip john@prod:/var/www/app/        # local → server
+scp john@prod:/var/log/app.log ./            # server → local
+rsync -avz ./dist/ john@prod:/var/www/app/   # συγχρονισμός φακέλου (μόνο διαφορές)
+```
+
+Το **rsync** προτιμάται για deploys: στέλνει μόνο ό,τι άλλαξε, αντέχει διακοπές, και είναι πολύ ταχύτερο για μεγάλους φακέλους.
+
+## Users, root & sudo
+
+Σε Linux ο **root** είναι ο παντοδύναμος χρήστης. Δεν δουλεύεις ως root στην καθημερινότητα — κάνεις login ως κανονικός user και ανεβάζεις δικαιώματα μόνο όταν χρειάζεται:
+
+```bash
+whoami                        # ποιος είμαι
+sudo apt update               # τρέξε ΑΥΤΗ την εντολή ως root
+sudo systemctl restart nginx  # χρειάζεται root για services
+```
+
+**Κανόνας ασφαλείας:** φτιάχνεις non-root user με sudo δικαιώματα και απενεργοποιείς το direct root login. Αν κάτι κάνει compromise έναν app process που τρέχει ως root, ελέγχει όλο το μηχάνημα.
+
+## Permissions — rwx, το #1 μπέρδεμα
+
+Κάθε αρχείο έχει δικαιώματα για τρεις ομάδες: **owner**, **group**, **others**. Κάθε ομάδα έχει **r**ead, **w**rite, e**x**ecute:
+
+```bash
+ls -l app.sh
+# -rwxr-xr--  1 john  www-data  ...
+#  │└┬┘└┬┘└┬┘
+#  │ │  │  └── others: r--  (μόνο διάβασμα)
+#  │ │  └───── group:   r-x  (διάβασμα + εκτέλεση)
+#  │ └──────── owner:   rwx  (όλα)
+#  └────────── τύπος: - αρχείο, d φάκελος
+```
+
+Τα δικαιώματα ως αριθμοί (octal): **r=4, w=2, x=1**, τα προσθέτεις ανά ομάδα:
+
+```bash
+chmod 755 deploy.sh    # owner=rwx(7) group=r-x(5) others=r-x(5)
+chmod 644 config.json  # owner=rw-(6) group=r--(4) others=r--(4)
+chmod 600 ~/.ssh/id_ed25519   # owner=rw- μόνο — υποχρεωτικό για private keys
+chmod +x script.sh     # symbolic: πρόσθεσε execute
+```
+
+Και ο **owner**:
+
+```bash
+chown john:www-data app.log          # owner=john, group=www-data
+chown -R www-data:www-data /var/www  # -R αναδρομικά για όλο τον φάκελο
+```
+
+> Το πιο συχνό production μυστήριο: «το app δεν μπορεί να γράψει στο /var/www». Σχεδόν πάντα είναι λάθος **owner** ή permissions στον φάκελο, όχι bug στον κώδικα.
+
+<PredictOutput
+  title="Τι δικαιώματα δίνει το chmod 640 secret.env;"
+  code={`chmod 640 secret.env
+ls -l secret.env`}
+  answer="-rw-r----- (owner: read+write, group: read, others: τίποτα)"
+  explanation="6 = 4+2 = rw- για owner. 4 = r-- για group. 0 = --- για others. Άρα μόνο ο owner γράφει, η group διαβάζει, και κανείς άλλος δεν αγγίζει το αρχείο — σωστό για ένα αρχείο με secrets."
+/>
+
+## Package managers
+
+Σε Ubuntu/Debian εγκαθιστάς λογισμικό με `apt`:
+
+```bash
+sudo apt update                 # ανανέωσε τη λίστα πακέτων
+sudo apt upgrade                # αναβάθμισε ό,τι είναι εγκατεστημένο
+sudo apt install nginx          # εγκατάστησε πακέτο
+```
+
+Το `apt update` φέρνει τον κατάλογο, το `apt install` εγκαθιστά. Αρχάριοι ξεχνούν το πρώτο και απορούν γιατί «δεν βρίσκει» ένα πακέτο.
+
+## Firewall, ports & reverse proxy
+
+Ένας server ακούει σε **ports**: 22 (SSH), 80 (HTTP), 443 (HTTPS). Με firewall αφήνεις ανοιχτά μόνο όσα χρειάζονται:
+
+```bash
+sudo ufw allow 22       # SSH
+sudo ufw allow 80       # HTTP
+sudo ufw allow 443      # HTTPS
+sudo ufw enable
+```
+
+Το Node app σου τρέχει συνήθως σε port 3000 — **δεν** το εκθέτεις απευθείας. Μπροστά βάζεις έναν **reverse proxy** (συνήθως nginx) που:
+
+- ακούει στο 80/443 και προωθεί στο 3000,
+- κάνει terminate το HTTPS (TLS certificates),
+- σερβίρει static αρχεία και κάνει load balancing.
+
+Έτσι ο κόσμος μιλά με το nginx, και το nginx με το app σου εσωτερικά.
+
+<Exercise
+  question="Γιατί προτιμάμε SSH keys αντί για password authentication;"
+  options={[
+    "Ασύμμετρη κρυπτογραφία: το private key δεν ταξιδεύει ποτέ και δεν είναι ευάλωτο σε brute-force όπως ένα password.",
+    "Γιατί τα keys είναι πιο σύντομα από passwords.",
+    "Γιατί δεν χρειάζεται καθόλου authentication."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Με key pair ο server αποθηκεύει μόνο το public key· το private μένει στο μηχάνημά σου και αποδεικνύει την ταυτότητά σου χωρίς να μεταδίδεται. Δεν 'μαντεύεται' με brute-force όπως ένα password."
+/>
+
+<Exercise
+  question="Το Node app σου τρέχει στο port 3000. Πώς το βγάζεις σωστά στο internet στο https://;"
+  options={[
+    "Βάζεις μπροστά reverse proxy (nginx) στο 443 που προωθεί στο 3000.",
+    "Ανοίγεις το port 3000 στο firewall και δίνεις στους χρήστες :3000.",
+    "Τρέχεις το app ως root στο port 443 απευθείας."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Ο reverse proxy ακούει στο 80/443, κάνει TLS termination και προωθεί εσωτερικά στο 3000. Το app δεν χρειάζεται root ούτε να εκτεθεί απευθείας — καθαρότερο, ασφαλέστερο, και παίρνεις HTTPS/load balancing."
+/>
+
+<Exercise
+  question="Το app δεν μπορεί να γράψει αρχεία στο /var/www/uploads. Πού κοιτάς πρώτα;"
+  options={[
+    "Στον owner και τα permissions του φακέλου (ls -l, chown/chmod).",
+    "Στον κώδικα του app για bug στο file write.",
+    "Στο internet connection του server."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. 'Permission denied' σε γράψιμο είναι σχεδόν πάντα θέμα owner/permissions. Έλεγξε με ls -l ποιος είναι owner και αν ο user του app έχει write — διορθώνεται με chown/chmod, όχι με αλλαγή κώδικα."
+/>
+
+<Flashcards
+  title="Linux server & SSH — interview drills"
+  cards={[
+    {
+      question: "Τι είναι το SSH key pair και ποιο μέρος πάει πού;",
+      answer: "Ζεύγος ασύμμετρων κλειδιών. Το private (~/.ssh/id_ed25519) μένει ΜΟΝΟ στο μηχάνημά σου. Το public (.pub) μπαίνει στο ~/.ssh/authorized_keys του server. Ο server επαληθεύει ότι κατέχεις το private χωρίς αυτό να μεταδοθεί ποτέ."
+    },
+    {
+      question: "Γιατί δεν τρέχουμε ως root / δεν επιτρέπουμε root login;",
+      answer: "Least privilege: αν ένας process που τρέχει ως root γίνει compromise, ο επιτιθέμενος ελέγχει όλο το μηχάνημα. Δουλεύεις ως non-root user και ανεβάζεις δικαιώματα μόνο όπου χρειάζεται με sudo. Καλό hardening: disable PermitRootLogin και password auth στο sshd."
+    },
+    {
+      question: "Τι σημαίνει chmod 755;",
+      answer: "Owner=7(rwx), group=5(r-x), others=5(r-x). r=4, w=2, x=1. Τυπικό για εκτελέσιμα/φακέλους που όλοι διαβάζουν αλλά μόνο ο owner γράφει. Για secrets: 600 (μόνο owner rw). Τα SSH private keys ΠΡΕΠΕΙ 600 αλλιώς το ssh τα απορρίπτει."
+    },
+    {
+      question: "scp vs rsync;",
+      answer: "Και τα δύο μεταφέρουν πάνω από SSH. Το scp αντιγράφει τα πάντα κάθε φορά. Το rsync στέλνει μόνο τις διαφορές (delta), αντέχει διακοπές και υποστηρίζει --delete για ακριβή συγχρονισμό — γι' αυτό προτιμάται σε deploys."
+    },
+    {
+      question: "Τι είναι reverse proxy και γιατί το χρειάζεσαι;",
+      answer: "Server (π.χ. nginx) μπροστά από το app σου: ακούει στο 80/443, κάνει TLS termination, σερβίρει static, κάνει load balancing και προωθεί requests στο app (π.χ. localhost:3000). Το app μένει εσωτερικό, δεν τρέχει ως root, και αποκτάς HTTPS κεντρικά."
+    },
+    {
+      question: "Ποια ports αφήνεις ανοιχτά σε έναν web server και γιατί;",
+      answer: "22 (SSH διαχείριση), 80 (HTTP, συνήθως redirect σε https) και 443 (HTTPS). Όλα τα υπόλοιπα, μαζί με το app port (π.χ. 3000), μένουν κλειστά στο firewall — μειώνεις την επιφάνεια επίθεσης."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Στήσε key-based πρόσβαση σε φρέσκο VPS"
+  scenario="Πήρες ένα καινούριο Ubuntu VPS με IP και έναν αρχικό user. Πρέπει να το κάνεις ασφαλές και έτοιμο για deploy."
+  outcomes={[
+    "Να συνδέεσαι με SSH keys χωρίς password.",
+    "Να καταλαβαίνεις και να διορθώνεις permissions/ownership.",
+    "Να ανοίγεις μόνο τα απαραίτητα ports."
+  ]}
+  steps={[
+    "Φτιάξε key pair με ssh-keygen -t ed25519 και στείλε το public με ssh-copy-id.",
+    "Φτιάξε ~/.ssh/config alias ώστε να μπαίνεις με ssh prod.",
+    "Φτιάξε φάκελο /var/www/app και δώσε σωστό owner/permissions στον app user.",
+    "Ενεργοποίησε ufw αφήνοντας μόνο 22, 80, 443."
+  ]}
+  checkpoints={[
+    "Μπαίνεις με ssh prod χωρίς να πληκτρολογείς password.",
+    "Το private key είναι chmod 600 και δεν έχει φύγει ποτέ από το laptop.",
+    "Ο app user μπορεί να γράψει στον φάκελο της εφαρμογής."
+  ]}
+  mistakes={[
+    "Να ανεβάσεις/μοιραστείς το private key.",
+    "Να τρέχεις τα πάντα ως root 'για να μην ασχολείσαι με permissions'.",
+    "Να αφήσεις password authentication και root login ανοιχτά."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μπορείς να πάρεις ένα γυμνό VPS και μέσα σε 10 λεπτά να έχεις key-based login, σωστά permissions και κλειστά τα περιττά ports."
+/>
