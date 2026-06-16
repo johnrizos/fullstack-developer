@@ -14,6 +14,11 @@ try {
   const stored = localStorage.getItem("theme");
   const dark = stored ? stored === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
   document.documentElement.classList.toggle("dark", dark);
+
+  const scale = Number(localStorage.getItem("fontScale"));
+  if (scale && scale !== 1) {
+    document.documentElement.style.fontSize = Math.round(scale * 100) + "%";
+  }
 } catch {}
 `;
 

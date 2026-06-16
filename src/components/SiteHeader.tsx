@@ -6,6 +6,7 @@ import { allLessons, formatDuration, totalEstimatedMinutes } from "@/lib/curricu
 import { useProgress } from "@/hooks/useProgress";
 import { useAuth } from "@/components/AuthProvider";
 import { ThemeToggle } from "./ThemeToggle";
+import { FontSizeControl } from "./FontSizeControl";
 import { SearchModal } from "./SearchModal";
 
 export function SiteHeader() {
@@ -121,6 +122,7 @@ export function SiteHeader() {
                     {completedCount}/{allLessons.length} μαθήματα · {formatDuration(studiedMinutes)} διαβασμένα
                   </p>
                 </div>
+                <FontSizeControl />
                 {configured && (
                   <div className="border-b border-gray-100 p-3 dark:border-gray-800">
                     <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">
