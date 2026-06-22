@@ -33,6 +33,26 @@ function addStep(text) {
 function runDemo() {
   timeline.innerHTML = "";
 
+  // TODO: κάλεσε addStep με τη σωστή σειρά ΑΡΙΘΜΗΣΗΣ ώστε να φανεί η πραγματική σειρά εκτέλεσης:
+  //   - addStep("1. Synchronous start")
+  //   - setTimeout(..., 0) που κάνει addStep("4. setTimeout callback")  // macrotask
+  //   - Promise.resolve().then(...) που κάνει addStep("3. Promise microtask")  // microtask
+  //   - addStep("2. Synchronous end")
+}
+
+document.querySelector("#run").addEventListener("click", runDemo);`;
+
+export const asyncSolutionJs = `const timeline = document.querySelector("#timeline");
+
+function addStep(text) {
+  const item = document.createElement("li");
+  item.textContent = text;
+  timeline.appendChild(item);
+}
+
+function runDemo() {
+  timeline.innerHTML = "";
+
   addStep("1. Synchronous start");
 
   setTimeout(function () {
@@ -206,6 +226,7 @@ const [a2, b2] = await Promise.all([fetchA(), fetchB()]);
   initialHtml={asyncHtml}
   initialCss={asyncCss}
   initialJs={asyncJs}
+  solutionJs={asyncSolutionJs}
   checks={[
     {
       id: "has-run-demo",

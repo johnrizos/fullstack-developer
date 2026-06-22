@@ -22,6 +22,27 @@ export const testTs = `type CartItem = {
   quantity: number;
 };
 
+// TODO: υλοποίησε το calculateTotal — άθροισε price * quantity με reduce.
+export function calculateTotal(items: CartItem[]): number {
+  return 0;
+}
+
+// TODO: υλοποίησε το applyDiscount:
+//   - αν discountPercent < 0 ή > 100, κάνε throw new Error(...)
+//   - αλλιώς επίστρεψε το total μειωμένο κατά το ποσοστό.
+export function applyDiscount(total: number, discountPercent: number): number {
+  return total;
+}
+
+// TODO: γράψε tests με describe / it / expect:
+//   - ότι το calculateTotal επιστρέφει το σωστό σύνολο (toBe)
+//   - ότι το applyDiscount κάνει throw για invalid discount (toThrow)`;
+
+export const testSolutionTs = `type CartItem = {
+  price: number;
+  quantity: number;
+};
+
 export function calculateTotal(items: CartItem[]): number {
   return items.reduce((total, item) => {
     return total + item.price * item.quantity;
@@ -184,6 +205,7 @@ expect(applyDiscount(200, 50)).toBe(100);`}
   initialHtml={testHtml}
   initialCss={testCss}
   initialTs={testTs}
+  solutionTs={testSolutionTs}
   checks={[
     {
       id: "has-calculate",

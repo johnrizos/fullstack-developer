@@ -28,6 +28,20 @@ button {
 }`;
 
 export const modelJs = `class User {
+  // TODO: φτιάξε constructor(name, role) που θέτει this.name και this.role.
+  // TODO: φτιάξε method greet() που επιστρέφει greeting με this.name και this.role.
+}
+
+const user = new User("Ada", "Fullstack Developer");
+const output = document.querySelector("#output");
+
+document.querySelector("#greet").addEventListener("click", function () {
+  output.textContent = user.greet();
+});
+
+console.log(User.prototype);`;
+
+export const modelSolutionJs = `class User {
   constructor(name, role) {
     this.name = name;
     this.role = role;
@@ -302,6 +316,7 @@ console.log(Object.getPrototypeOf(b) === B.prototype);`}
   initialHtml={modelHtml}
   initialCss={modelCss}
   initialJs={modelJs}
+  solutionJs={modelSolutionJs}
   checks={[
     {
       id: "has-class",

@@ -26,6 +26,23 @@ main {
 }`;
 
 export const closureJs = `function createCounter(start) {
+  // TODO: κράτα ένα private "let count = start" και επίστρεψε ένα object
+  //       με methods increase() και decrease() που αλλάζουν και επιστρέφουν το count.
+  //       Χάρη στο closure, το count μένει ιδιωτικό ανάμεσα στις κλήσεις.
+}
+
+const counter = createCounter(0);
+const value = document.querySelector("#value");
+
+document.querySelector("#increase").addEventListener("click", function () {
+  value.textContent = counter.increase();
+});
+
+document.querySelector("#decrease").addEventListener("click", function () {
+  value.textContent = counter.decrease();
+});`;
+
+export const closureSolutionJs = `function createCounter(start) {
   let count = start;
 
   return {
@@ -309,6 +326,7 @@ console.log(add5(add10(0)));`}
   initialHtml={closureHtml}
   initialCss={closureCss}
   initialJs={closureJs}
+  solutionJs={closureSolutionJs}
   checks={[
     {
       id: "has-create-counter",

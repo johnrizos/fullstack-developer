@@ -11,6 +11,27 @@ export const cardCss = `body {
 }
 
 .card {
+  border-radius: 12px;
+  background: white;
+  /* TODO: δώσε στην κάρτα:
+     width: 320px;
+     padding: 24px;
+     margin: 0 auto;
+     border: 2px solid #2563eb; */
+}
+
+button {
+  margin-top: 12px;
+  padding: 10px 16px;
+}`;
+
+export const cardSolutionCss = `body {
+  font-family: Arial, sans-serif;
+  background: #f3f4f6;
+  padding: 40px;
+}
+
+.card {
   width: 320px;
   margin: 0 auto;
   padding: 24px;
@@ -88,6 +109,7 @@ button {
   description="Φτιάξε card με width, padding, margin και border."
   initialHtml={cardHtml}
   initialCss={cardCss}
+  solutionCss={cardSolutionCss}
   checks={[
     { id: "card-width", label: "Η card έχει width: 320px.", type: "cssProperty", selector: ".card", property: "width", value: "320px" },
     { id: "card-padding", label: "Η card έχει padding: 24px.", type: "cssProperty", selector: ".card", property: "padding", value: "24px" },

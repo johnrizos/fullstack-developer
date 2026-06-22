@@ -1,4 +1,20 @@
-export const articleHtml = `<header>
+export const articleHtml = `<!-- TODO: τύλιξε το περιεχόμενο σε semantic elements.
+     Χρειάζεσαι: header (με nav), main > article > section, και footer. -->
+<div>
+  <h1>Οδηγός για καθαρό HTML</h1>
+  <a href="#intro">Εισαγωγή</a>
+</div>
+
+<div>
+  <h2>Γιατί έχει σημασία η δομή;</h2>
+  <p>Η σωστή HTML βοηθά browsers, search engines και screen readers.</p>
+</div>
+
+<div>
+  <p>Τέλος άρθρου</p>
+</div>`;
+
+export const articleSolutionHtml = `<header>
   <h1>Οδηγός για καθαρό HTML</h1>
   <nav>
     <a href="#intro">Εισαγωγή</a>
@@ -108,6 +124,7 @@ Elements όπως `header`, `nav`, `main` και `footer` δημιουργούν
   description="Φτιάξε μια σελίδα άρθρου με header, main, article, section και footer."
   initialHtml={articleHtml}
   initialCss={articleCss}
+  solutionHtml={articleSolutionHtml}
   checks={[
     { id: "has-header", label: "Υπάρχει header.", type: "htmlTag", tag: "header" },
     { id: "has-main", label: "Υπάρχει main.", type: "htmlTag", tag: "main" },

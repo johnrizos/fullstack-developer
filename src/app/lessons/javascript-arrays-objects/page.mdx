@@ -30,6 +30,21 @@ export const tasksJs = `const tasks = [
 function renderTasks() {
   const list = document.querySelector("#tasks");
 
+  // TODO: με .map μετέτρεψε κάθε task σε <li> (✅ αν done, αλλιώς ⬜ + το title)
+  //       και βάλε το αποτέλεσμα (join("")) στο list.innerHTML.
+}
+
+renderTasks();`;
+
+export const tasksSolutionJs = `const tasks = [
+  { title: "Μάθε HTML", done: true },
+  { title: "Μάθε CSS", done: true },
+  { title: "Μάθε JavaScript", done: false }
+];
+
+function renderTasks() {
+  const list = document.querySelector("#tasks");
+
   list.innerHTML = tasks
     .map((task) => \`<li>\${task.done ? "✅" : "⬜"} \${task.title}</li>\`)
     .join("");
@@ -195,6 +210,7 @@ function renderTasks() {
   initialHtml={tasksHtml}
   initialCss={tasksCss}
   initialJs={tasksJs}
+  solutionJs={tasksSolutionJs}
   checks={[
     { id: "has-array", label: "Υπάρχει array tasks.", type: "jsIncludes", value: "const tasks = [" },
     { id: "has-title", label: "Τα objects έχουν title.", type: "jsIncludes", value: "title" },

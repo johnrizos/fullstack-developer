@@ -11,6 +11,30 @@ export const navCss = `body {
 }
 
 .nav {
+  padding: 16px;
+  background: #eff6ff;
+  border-radius: 12px;
+  /* TODO: κάνε τη nav flex container:
+     display: flex;
+     gap: 12px;
+     flex-wrap: wrap;
+     justify-content: center; */
+}
+
+.nav a {
+  padding: 10px 14px;
+  background: white;
+  border-radius: 8px;
+  color: #1d4ed8;
+  text-decoration: none;
+}`;
+
+export const navSolutionCss = `body {
+  font-family: Arial, sans-serif;
+  padding: 40px;
+}
+
+.nav {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
@@ -98,6 +122,7 @@ Responsive layout σημαίνει ότι το UI αντέχει σε διαφο
   description="Φτιάξε responsive nav με flex, gap και wrap."
   initialHtml={navHtml}
   initialCss={navCss}
+  solutionCss={navSolutionCss}
   checks={[
     { id: "has-nav", label: "Υπάρχει nav.", type: "htmlTag", tag: "nav" },
     { id: "display-flex", label: "Η nav έχει display: flex.", type: "cssProperty", selector: ".nav", property: "display", value: "flex" },

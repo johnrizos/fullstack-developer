@@ -38,6 +38,34 @@ button {
   cursor: pointer;
 }`;
 
+export const profileSolutionCss = `body {
+  font-family: Arial, sans-serif;
+  background: #f3f4f6;
+  padding: 40px;
+}
+
+.card {
+  max-width: 360px;
+  margin: 0 auto;
+  padding: 24px;
+  background: white;
+  border-radius: 12px;
+  text-align: center;
+}
+
+h1 {
+  color: red;
+}
+
+button {
+  background-color: blue;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}`;
+
 # HTML & CSS: χτίζοντας την πρώτη σελίδα
 
 Στο προηγούμενο μάθημα είδες πώς ταξιδεύει μια ιστοσελίδα από τον server στον browser. Τώρα θα δούμε από τι αποτελείται η σελίδα που τελικά εμφανίζεται.
@@ -91,6 +119,7 @@ h1 {
   description="Πέρασε όλα τα κριτήρια για να θεωρηθεί ολοκληρωμένη η πρώτη σου HTML/CSS αποστολή."
   initialHtml={profileHtml}
   initialCss={profileCss}
+  solutionCss={profileSolutionCss}
   checks={[
     {
       id: "has-heading",

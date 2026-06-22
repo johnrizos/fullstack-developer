@@ -40,6 +40,37 @@ function LoginForm({ onSubmit }: LoginFormProps) {
 }
 
 test("submits email", async () => {
+  // TODO: γράψε το test σαν πραγματικός χρήστης:
+  //  1. Στήσε ένα user-event session και ένα mock (vi.fn) για το onSubmit prop.
+  //  2. Ζωγράφισε το LoginForm component με αυτό το mock.
+  //  3. Πληκτρολόγησε ένα email στο πεδίο (εντόπισέ το από το label του).
+  //  4. Κάνε κλικ στο κουμπί Login (εντόπισέ το από τον ρόλο του).
+  //  5. Έλεγξε ότι το mock κλήθηκε με το σωστό email.
+});`;
+
+export const frontendTestSolutionTs = `import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+
+type LoginFormProps = {
+  onSubmit: (email: string) => void;
+};
+
+function LoginForm({ onSubmit }: LoginFormProps) {
+  return (
+    <form onSubmit={(event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const email = new FormData(form).get("email") as string;
+      onSubmit(email);
+    }}>
+      <label htmlFor="email">Email</label>
+      <input id="email" name="email" type="email" />
+      <button type="submit">Login</button>
+    </form>
+  );
+}
+
+test("submits email", async () => {
   const user = userEvent.setup();
   const onSubmit = vi.fn();
 
@@ -143,6 +174,7 @@ test("user can add a todo", async ({ page }) => {
   initialHtml={frontendTestHtml}
   initialCss={frontendTestCss}
   initialTs={frontendTestTs}
+  solutionTs={frontendTestSolutionTs}
   checks={[
     {
       id: "render",

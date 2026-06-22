@@ -31,6 +31,16 @@ export const notesJs = `const form = document.querySelector("#note-form");
 const input = document.querySelector("#note");
 const savedNote = document.querySelector("#saved-note");
 
+// TODO: στο load, αν υπάρχει αποθηκευμένη σημείωση στο localStorage ("note"),
+//       δείξε την στο savedNote.textContent.
+
+// TODO: άκουσε το submit της φόρμας. Μέσα: κάνε event.preventDefault(),
+//       αποθήκευσε το input.value στο localStorage και ενημέρωσε το savedNote.textContent.`;
+
+export const notesSolutionJs = `const form = document.querySelector("#note-form");
+const input = document.querySelector("#note");
+const savedNote = document.querySelector("#saved-note");
+
 const existingNote = localStorage.getItem("note");
 if (existingNote) {
   savedNote.textContent = existingNote;
@@ -143,6 +153,7 @@ list.addEventListener("click", (event) => {
   initialHtml={notesHtml}
   initialCss={notesCss}
   initialJs={notesJs}
+  solutionJs={notesSolutionJs}
   checks={[
     { id: "has-form", label: "Υπάρχει form.", type: "htmlTag", tag: "form" },
     { id: "has-submit", label: "Υπάρχει submit event listener.", type: "jsIncludes", value: "addEventListener(\"submit\"" },

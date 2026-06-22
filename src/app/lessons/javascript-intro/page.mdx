@@ -37,6 +37,13 @@ button {
 
 export const counterJs = `let count = 0;
 
+// TODO: φτιάξε function increaseCount που αυξάνει το count κατά 1
+//       και ενημερώνει το textContent του #count.
+
+// TODO: σύνδεσε click event listener στο #increase ώστε να καλεί την increaseCount.`;
+
+export const counterSolutionJs = `let count = 0;
+
 function increaseCount() {
   count = count + 1;
   document.querySelector("#count").textContent = count;
@@ -104,6 +111,7 @@ document.querySelector("#increase").addEventListener("click", increaseCount);
   initialHtml={counterHtml}
   initialCss={counterCss}
   initialJs={counterJs}
+  solutionJs={counterSolutionJs}
   checks={[
     {
       id: "has-count-target",

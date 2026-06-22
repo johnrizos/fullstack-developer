@@ -48,6 +48,11 @@ interface CodeChallengeProps {
   initialCss: string;
   initialJs?: string;
   initialTs?: string;
+  /** Πλήρης λύση που αποκαλύπτεται μόνο όταν ο χρήστης πατήσει "Δείξε λύση". */
+  solutionHtml?: string;
+  solutionCss?: string;
+  solutionJs?: string;
+  solutionTs?: string;
   checks: ChallengeCheck[];
 }
 
@@ -111,6 +116,10 @@ export function CodeChallenge({
   initialCss,
   initialJs = "",
   initialTs = "",
+  solutionHtml,
+  solutionCss,
+  solutionJs,
+  solutionTs,
   checks,
 }: CodeChallengeProps) {
   const [html, setHtml] = useState(initialHtml);
@@ -118,6 +127,22 @@ export function CodeChallenge({
   const [js, setJs] = useState(initialJs);
   const [ts, setTs] = useState(initialTs);
   const codeForChecks = initialTs === "" ? js : ts;
+
+  const hasSolution = Boolean(solutionHtml || solutionCss || solutionJs || solutionTs);
+
+  const showSolution = () => {
+    if (solutionHtml !== undefined) setHtml(solutionHtml);
+    if (solutionCss !== undefined) setCss(solutionCss);
+    if (solutionJs !== undefined) setJs(solutionJs);
+    if (solutionTs !== undefined) setTs(solutionTs);
+  };
+
+  const resetCode = () => {
+    setHtml(initialHtml);
+    setCss(initialCss);
+    setJs(initialJs);
+    setTs(initialTs);
+  };
 
   const results = useMemo(
     () => checks.map((check) => ({ ...check, passed: runCheck(html, css, codeForChecks, check) })),
@@ -153,6 +178,25 @@ export function CodeChallenge({
           >
             {passedCount}/{checks.length} κριτήρια
           </span>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {hasSolution && (
+            <button
+              type="button"
+              onClick={showSolution}
+              className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-800"
+            >
+              Δείξε λύση
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={resetCode}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-800"
+          >
+            Επαναφορά
+          </button>
         </div>
       </div>
 

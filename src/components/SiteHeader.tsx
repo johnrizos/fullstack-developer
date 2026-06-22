@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { allLessons, formatDuration, totalEstimatedMinutes } from "@/lib/curriculum";
 import { useProgress } from "@/hooks/useProgress";
-import { useAuth } from "@/components/AuthProvider";
 import { ThemeToggle } from "./ThemeToggle";
 import { FontSizeControl } from "./FontSizeControl";
 import { SearchModal } from "./SearchModal";
@@ -13,26 +12,6 @@ export function SiteHeader() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { isCompleted, isLoaded, resetProgress, studiedMinutes } = useProgress();
-  const { user, authReady, configured, signInWithEmail, signOut } = useAuth();
-  const [email, setEmail] = useState("");
-  const [authStatus, setAuthStatus] = useState<{ kind: "idle" | "sending" | "sent" | "error"; message?: string }>({
-    kind: "idle",
-  });
-
-  const handleSendMagicLink = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!email.trim()) return;
-    setAuthStatus({ kind: "sending" });
-    const { error } = await signInWithEmail(email.trim());
-    setAuthStatus(
-      error ? { kind: "error", message: error } : { kind: "sent", message: "Έλεγξε το email σου για τον σύνδεσμο." },
-    );
-  };
-
-  const handleSignOut = async () => {
-    await signOut();
-    setSettingsOpen(false);
-  };
 
   const completedCount = isLoaded ? allLessons.filter((lesson) => isCompleted(lesson.id)).length : 0;
   const progressPercent = Math.round((completedCount / allLessons.length) * 100);
@@ -123,55 +102,6 @@ export function SiteHeader() {
                   </p>
                 </div>
                 <FontSizeControl />
-                {configured && (
-                  <div className="border-b border-gray-100 p-3 dark:border-gray-800">
-                    <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                      Συγχρονισμός
-                    </p>
-                    {!authReady ? (
-                      <p className="text-xs text-gray-500 dark:text-gray-400">Έλεγχος σύνδεσης…</p>
-                    ) : user ? (
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="min-w-0 truncate text-sm text-gray-700 dark:text-gray-300" title={user.email}>
-                          {user.email}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={handleSignOut}
-                          className="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-                        >
-                          Αποσύνδεση
-                        </button>
-                      </div>
-                    ) : authStatus.kind === "sent" ? (
-                      <p className="text-xs font-medium text-green-600 dark:text-green-400">{authStatus.message}</p>
-                    ) : (
-                      <form onSubmit={handleSendMagicLink} className="flex flex-col gap-2">
-                        <input
-                          type="email"
-                          required
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          placeholder="το email σου"
-                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
-                        />
-                        <button
-                          type="submit"
-                          disabled={authStatus.kind === "sending"}
-                          className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {authStatus.kind === "sending" ? "Αποστολή…" : "Στείλε magic link"}
-                        </button>
-                        {authStatus.kind === "error" && (
-                          <p className="text-xs font-medium text-red-600 dark:text-red-400">{authStatus.message}</p>
-                        )}
-                        <p className="text-xs text-gray-400 dark:text-gray-500">
-                          Login με email για sync σε όλες τις συσκευές.
-                        </p>
-                      </form>
-                    )}
-                  </div>
-                )}
                 <div className="p-2">
                   <button
                     type="button"

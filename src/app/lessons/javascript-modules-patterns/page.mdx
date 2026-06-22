@@ -24,6 +24,22 @@ export const cartJs = `const cartItems = [
   { name: "Monitor", price: 220, quantity: 1 }
 ];
 
+// TODO: φτιάξε 3 μικρές, reusable functions:
+//   calculateLineTotal(item)  -> item.price * item.quantity
+//   calculateCartTotal(items) -> άθροισμα των line totals με items.reduce(...)
+//   formatCurrency(amount)    -> "$" + amount.toFixed(2)
+
+document.querySelector("#calculate").addEventListener("click", function () {
+  const total = calculateCartTotal(cartItems);
+  document.querySelector("#total").textContent = "Total: " + formatCurrency(total);
+});`;
+
+export const cartSolutionJs = `const cartItems = [
+  { name: "Keyboard", price: 80, quantity: 1 },
+  { name: "Mouse", price: 35, quantity: 2 },
+  { name: "Monitor", price: 220, quantity: 1 }
+];
+
 function calculateLineTotal(item) {
   return item.price * item.quantity;
 }
@@ -187,6 +203,7 @@ src/
   initialHtml={cartHtml}
   initialCss={cartCss}
   initialJs={cartJs}
+  solutionJs={cartSolutionJs}
   checks={[
     {
       id: "has-items",

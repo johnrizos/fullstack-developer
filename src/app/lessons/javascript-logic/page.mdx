@@ -24,6 +24,18 @@ export const scoreJs = `const score = 72;
 function checkScore() {
   const result = document.querySelector("#result");
 
+  // TODO: με if/else έλεγξε αν score >= 60.
+  //       Αν ναι: result.textContent = "Πέρασες!"
+  //       αλλιώς: result.textContent = "Δοκίμασε ξανά."
+}
+
+document.querySelector("#check").addEventListener("click", checkScore);`;
+
+export const scoreSolutionJs = `const score = 72;
+
+function checkScore() {
+  const result = document.querySelector("#result");
+
   if (score >= 60) {
     result.textContent = "Πέρασες!";
   } else {
@@ -115,6 +127,7 @@ if (role === "admin" || role === "owner") {
   initialHtml={scoreHtml}
   initialCss={scoreCss}
   initialJs={scoreJs}
+  solutionJs={scoreSolutionJs}
   checks={[
     { id: "has-function", label: "Υπάρχει function checkScore.", type: "jsFunction", name: "checkScore" },
     { id: "has-if", label: "Υπάρχει if.", type: "jsIncludes", value: "if" },

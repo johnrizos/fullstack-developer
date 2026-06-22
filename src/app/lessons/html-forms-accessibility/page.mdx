@@ -1,6 +1,14 @@
 export const formHtml = `<main>
   <h1>Φόρμα επικοινωνίας</h1>
 
+  <!-- TODO: φτιάξε τη φόρμα.
+       Χρειάζεσαι: form, label + input για Όνομα, label + input type="email" για Email,
+       και ένα submit button. Κάθε label συνδέεται με το input μέσω for/id. -->
+</main>`;
+
+export const formSolutionHtml = `<main>
+  <h1>Φόρμα επικοινωνίας</h1>
+
   <form>
     <label for="name">Όνομα</label>
     <input id="name" name="name" type="text" />
@@ -101,6 +109,7 @@ button {
   description="Φτιάξε φόρμα επικοινωνίας με labels και σωστά inputs."
   initialHtml={formHtml}
   initialCss={formCss}
+  solutionHtml={formSolutionHtml}
   checks={[
     { id: "has-form", label: "Υπάρχει form.", type: "htmlTag", tag: "form" },
     { id: "has-label", label: "Υπάρχει label.", type: "htmlTag", tag: "label" },

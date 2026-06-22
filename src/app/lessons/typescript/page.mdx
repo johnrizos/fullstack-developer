@@ -17,7 +17,21 @@ main {
   border-radius: 12px;
 }`;
 
-export const taskTs = `type TaskStatus = "todo" | "doing" | "done";
+export const taskTs = `// Στόχος: δήλωσε τους τύπους και τις functions ώστε να περάσει το checklist.
+// Αν κολλήσεις, πάτα "Δείξε λύση".
+
+// 1. Ένα union (string literals) με όνομα TaskStatus: "todo" | "doing" | "done".
+
+// 2. Ένα interface με όνομα Task: id (string), title (string), status,
+//    και ένα optional πεδίο για τις ώρες εκτίμησης (με ?).
+
+// 3. Ένα generic interface ApiResponse που κρατά data: T και optional error.
+
+// 4. formatTask: παίρνει ένα Task και επιστρέφει string της μορφής "title [status]".
+
+// 5. getCompletedTasks: παίρνει πίνακα από Task και επιστρέφει μόνο όσα είναι "done".`;
+
+export const taskSolutionTs = `type TaskStatus = "todo" | "doing" | "done";
 
 interface Task {
   id: string;
@@ -267,6 +281,7 @@ console.log(user.name.toUpperCase());`}
   initialHtml={tsHtml}
   initialCss={tsCss}
   initialTs={taskTs}
+  solutionTs={taskSolutionTs}
   checks={[
     {
       id: "has-status-union",
