@@ -28,8 +28,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="el" suppressHydrationWarning>
-      <body className="flex min-h-screen flex-col bg-gray-50 font-sans text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100">
+      <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
+      <body className="flex min-h-screen flex-col bg-gray-50 font-sans text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100">
         <SiteHeader />
 
         <main className="w-full flex-1">{children}</main>

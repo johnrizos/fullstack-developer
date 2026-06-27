@@ -62,28 +62,127 @@ main {
 - οι μηχανές αναζήτησης καταλαβαίνουν καλύτερα τη σελίδα,
 - τα screen readers βοηθούν καλύτερα τους χρήστες.
 
-## Βασικά semantic elements
+## Όλα τα semantic elements & πώς τα χρησιμοποιείς
 
-- `header`: πάνω περιοχή μιας σελίδας ή ενότητας.
-- `nav`: πλοήγηση με links.
-- `main`: το κύριο περιεχόμενο της σελίδας.
-- `section`: θεματική ενότητα.
-- `article`: ανεξάρτητο περιεχόμενο, όπως άρθρο ή post.
-- `footer`: κάτω περιοχή με βοηθητικές πληροφορίες.
+### Δομή σελίδας (page layout)
+
+- `header`: η πάνω περιοχή μιας σελίδας ή ενότητας. Συνήθως κρατά logo, τίτλο και το κύριο `nav`. Μπορείς να έχεις πολλά `header` (ένα ανά `article`/`section`).
+- `nav`: ομάδα από links πλοήγησης (κύριο menu, breadcrumbs, table of contents). Δεν τυλίγεις *κάθε* link σε `nav` — μόνο σημαντικά block πλοήγησης.
+- `main`: το μοναδικό, κύριο περιεχόμενο της σελίδας. **Ένα `main` ανά σελίδα** και δεν μπαίνει μέσα σε `header`, `nav`, `article`, `aside` ή `footer`.
+- `section`: θεματική ενότητα του περιεχομένου, που (ιδανικά) έχει δικό της heading.
+- `article`: αυτόνομο περιεχόμενο που στέκεται μόνο του — blog post, news item, σχόλιο, product card. Δοκιμή: «βγάζει νόημα αν το βγάλεις από τη σελίδα;».
+- `aside`: περιεχόμενο δευτερεύον/πλάγιο σε σχέση με τα γύρω — sidebar, σχετικά links, διαφήμιση, callout box.
+- `footer`: η κάτω περιοχή σελίδας ή ενότητας — copyright, links, στοιχεία επικοινωνίας, συγγραφέας/ημερομηνία ενός `article`.
+
+### Κείμενο & περιεχόμενο (content semantics)
+
+- `h1`–`h6`: ιεραρχία τίτλων (δες παρακάτω).
+- `p`: παράγραφος κειμένου.
+- `figure` + `figcaption`: εικόνα/διάγραμμα/κώδικας μαζί με τη λεζάντα του.
+- `time`: ημερομηνία ή ώρα σε μηχαναγνώσιμη μορφή με το attribute `datetime`, π.χ. `<time datetime="2026-06-27">27 Ιουν 2026</time>`.
+- `mark`: τονισμένο/highlighted κομμάτι κειμένου (π.χ. αποτέλεσμα αναζήτησης).
+- `address`: στοιχεία επικοινωνίας για τον κοντινότερο `article` ή για όλη τη σελίδα.
+- `blockquote` / `cite`: παράθεση και αναφορά πηγής.
+- `details` + `summary`: αναδιπλούμενο (collapsible) περιεχόμενο — accordion χωρίς JavaScript.
+- `abbr`: συντομογραφία με επεξήγηση στο `title`, π.χ. `<abbr title="Cascading Style Sheets">CSS</abbr>`.
+- `strong` (σημασία/σοβαρότητα) και `em` (έμφαση) — **όχι** για απλό bold/italic· για εμφάνιση χρησιμοποίησε CSS.
+
+## Βασικός κανόνας
+
+Διάλεξε το tag με βάση το **νόημα** του περιεχομένου, όχι την εμφάνιση. Αν κανένα semantic element δεν ταιριάζει, τότε —και μόνο τότε— χρησιμοποιείς `div` (block) ή `span` (inline) σαν ουδέτερο «κουτί» για styling.
 
 ## Landmarks
 
-Elements όπως `header`, `nav`, `main` και `footer` δημιουργούν landmarks. Τα screen readers μπορούν να τα χρησιμοποιήσουν σαν “χάρτη” της σελίδας.
+Elements όπως `header`, `nav`, `main`, `aside` και `footer` δημιουργούν *landmarks*. Τα screen readers τα χρησιμοποιούν σαν “χάρτη” της σελίδας, ώστε ο χρήστης να πηδάει κατευθείαν στο κύριο περιεχόμενο ή στο menu.
 
 Συνήθως μια σελίδα πρέπει να έχει ένα κύριο `main`.
 
 ```html
 <body>
   <header>...</header>
+  <nav>...</nav>
   <main>...</main>
+  <aside>...</aside>
   <footer>...</footer>
 </body>
 ```
+
+## Πλήρες παράδειγμα: η δομή μιας σελίδας
+
+Έτσι μπαίνουν όλα μαζί σε μια πραγματική σελίδα blog. Πρόσεξε **πού** κάθεται κάθε semantic element και πώς το ένα φωλιάζει μέσα στο άλλο:
+
+```html
+<body>
+  <!-- Κορυφή: logo + κύρια πλοήγηση -->
+  <header>
+    <h1>Tech Blog</h1>
+    <nav aria-label="Κύριο menu">
+      <a href="/">Αρχική</a>
+      <a href="/articles">Άρθρα</a>
+      <a href="/about">Σχετικά</a>
+    </nav>
+  </header>
+
+  <!-- Το κύριο περιεχόμενο της σελίδας -->
+  <main>
+    <article>
+      <header>
+        <h2>Τι είναι το semantic HTML;</h2>
+        <p>
+          Δημοσιεύτηκε στις
+          <time datetime="2026-06-27">27 Ιουνίου 2026</time>
+        </p>
+      </header>
+
+      <section>
+        <h3>Εισαγωγή</h3>
+        <p>Το semantic HTML περιγράφει τον ρόλο κάθε περιοχής...</p>
+
+        <figure>
+          <img src="/diagram.png" alt="Δομή μιας semantic σελίδας" />
+          <figcaption>Η ανατομία μιας σελίδας με landmarks.</figcaption>
+        </figure>
+      </section>
+
+      <section>
+        <h3>Συχνές ερωτήσεις</h3>
+        <details>
+          <summary>Χρειάζομαι πάντα section;</summary>
+          <p>Όχι. Χρησιμοποίησέ το όταν έχεις ξεχωριστή θεματική ενότητα.</p>
+        </details>
+      </section>
+
+      <!-- footer ΜΕΣΑ στο article: αφορά μόνο το άρθρο -->
+      <footer>
+        <address>Γράφτηκε από τον Γιάννη</address>
+      </footer>
+    </article>
+
+    <!-- Πλάγιο περιεχόμενο, δευτερεύον σε σχέση με το article -->
+    <aside aria-label="Σχετικά άρθρα">
+      <h2>Διάβασε επίσης</h2>
+      <nav>
+        <a href="/css-grid">CSS Grid</a>
+        <a href="/accessibility">Accessibility 101</a>
+      </nav>
+    </aside>
+  </main>
+
+  <!-- footer ΟΛΗΣ της σελίδας -->
+  <footer>
+    <p>© 2026 Tech Blog</p>
+    <nav aria-label="Footer">
+      <a href="/privacy">Privacy</a>
+      <a href="/contact">Επικοινωνία</a>
+    </nav>
+  </footer>
+</body>
+```
+
+Δύο πράγματα που ξεχωρίζουν σε αυτό το παράδειγμα:
+
+- Το ίδιο element (π.χ. `header`, `footer`, `nav`) μπορεί να εμφανίζεται **σε διαφορετικά επίπεδα**: ένα για όλη τη σελίδα και ένα μέσα στο `article`. Ο ρόλος του εξαρτάται από το πού φωλιάζει.
+- Το `aside` και τα δύο `footer` δεν είναι «λιγότερο σημαντικά» — απλώς έχουν **διαφορετικό ρόλο**. Αυτό ακριβώς βοηθάει browsers και screen readers.
 
 ## Section vs article
 
