@@ -1,0 +1,213 @@
+# Build Tools: Vite & Webpack
+
+Γράφεις κώδικα σε δεκάδες αρχεία, με `import`/`export`, JSX, TypeScript και CSS. Ο browser όμως δεν καταλαβαίνει τίποτα από αυτά κατευθείαν. Κάπου ανάμεσα μπαίνει ένα **build tool** που τα μετατρέπει σε κάτι που τρέχει γρήγορα στον browser.
+
+Σε συνέντευξη junior δεν θα σου ζητήσουν να γράψεις webpack config από το μηδέν. Θα θέλουν όμως να ξέρεις **τι κάνει ένας bundler, γιατί υπάρχει, και ποια η διαφορά Vite με Webpack**.
+
+## Τι πρόβλημα λύνει ένας bundler
+
+Παλιά έβαζες πολλά `<script>` tags στη σειρά και έλπιζες να φορτώσουν με τη σωστή σειρά. Σήμερα ένα app έχει εκατοντάδες modules. Ένα build tool αναλαμβάνει:
+
+- **Module resolution**: ακολουθεί τα `import`/`export` και χτίζει το γράφο εξαρτήσεων (dependency graph) ξεκινώντας από ένα entry point.
+- **Transpilation**: μετατρέπει TypeScript, JSX και μοντέρνη JavaScript σε κώδικα που καταλαβαίνουν οι browsers (συνήθως μέσω Babel, esbuild ή SWC).
+- **Bundling**: ενώνει πολλά αρχεία σε λίγα, ώστε ο browser να μην κάνει εκατοντάδες requests.
+- **Optimization**: minification, tree shaking (πετάει κώδικα που δεν χρησιμοποιείται), code splitting, hashing για caching.
+- **Assets**: χειρίζεται CSS, εικόνες, fonts σαν μέρος του graph.
+
+Το αποτέλεσμα είναι ένας φάκελος (συνήθως `dist/`) με μερικά optimized αρχεία έτοιμα για production.
+
+## Το mental model
+
+```txt
+src/main.tsx ──import──▶ App.tsx ──import──▶ Button.tsx
+        │                   │
+        └── styles.css      └── utils.ts
+
+                    ▼  (build tool)
+
+dist/
+  index.html
+  assets/index-a8f3.js     ← bundled + minified
+  assets/index-a8f3.css
+```
+
+Δύο εντελώς διαφορετικές δουλειές που κάνει το ίδιο εργαλείο:
+
+- **Dev server** (όσο γράφεις): γρήγορο feedback, hot reload, source maps.
+- **Production build** (πριν το deploy): το πιο μικρό και γρήγορο δυνατό output.
+
+## Dev server & HMR
+
+Όταν τρέχεις `npm run dev`, δεν φτιάχνεται production bundle. Σηκώνεται ένας **dev server** που σερβίρει την εφαρμογή τοπικά και την ανανεώνει καθώς αλλάζεις κώδικα.
+
+Το κλειδί εδώ είναι το **HMR (Hot Module Replacement)**: όταν αλλάζεις ένα αρχείο, αντικαθίσταται **μόνο αυτό το module** στη σελίδα, χωρίς full page reload — οπότε κρατάς το state (π.χ. τι έχεις γράψει σε ένα form, σε ποιο tab είσαι).
+
+> Full reload = χάνεις το state και ξαναξεκινάς. HMR = βλέπεις την αλλαγή σου σε χιλιοστά του δευτερολέπτου με το state ζωντανό. Γι' αυτό η ταχύτητα του dev server μετράει τόσο.
+
+## Vite
+
+Το **Vite** είναι το μοντέρνο default για νέα frontend projects. Η ιδέα του είναι έξυπνη: στο **development** δεν κάνει bundle καθόλου.
+
+- **Dev**: εκμεταλλεύεται τα **native ES modules** του browser. Ο browser ζητάει τα modules που χρειάζεται και το Vite τα σερβίρει on-demand, αφού τα μετατρέψει με **esbuild** (γραμμένο σε Go, εξαιρετικά γρήγορο). Γι' αυτό ο dev server σηκώνεται σχεδόν ακαριαία, ακόμα και σε μεγάλο project.
+- **Production**: κάνει κανονικό optimized bundle με **Rollup** (tree shaking, code splitting, minification).
+
+Στήσιμο:
+
+```bash
+npm create vite@latest my-app
+cd my-app
+npm install
+npm run dev      # dev server με HMR
+npm run build    # production bundle στο dist/
+npm run preview  # τρέξε τοπικά το production build
+```
+
+Το config είναι μικρό και declarative:
+
+```js
+// vite.config.js
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+export default defineConfig({
+  plugins: [react()],
+});
+```
+
+## Webpack
+
+Το **Webpack** είναι ο πιο ώριμος και πιο διαδεδομένος bundler εδώ και χρόνια — θα το βρεις σχεδόν σε κάθε υπάρχον (legacy ή μεγάλο) project. Είναι πιο **config-heavy** αλλά και εξαιρετικά παραμετροποιήσιμο.
+
+Δύο έννοιες-κλειδιά:
+
+- **Loaders**: μετασχηματίζουν αρχεία καθώς μπαίνουν στο graph (π.χ. `babel-loader` για JS/JSX, `css-loader` για CSS). Ένας loader λέει «όταν δεις τέτοιο αρχείο, πέρασέ το από αυτό».
+- **Plugins**: επεμβαίνουν σε όλο το build (π.χ. φτιάχνουν το `index.html`, βγάζουν το CSS σε ξεχωριστό αρχείο, ορίζουν env variables).
+
+```js
+// webpack.config.js
+module.exports = {
+  entry: "./src/index.js",
+  output: { filename: "bundle.[contenthash].js", path: __dirname + "/dist" },
+  module: {
+    rules: [
+      { test: /\.jsx?$/, use: "babel-loader", exclude: /node_modules/ },
+      { test: /\.css$/, use: ["style-loader", "css-loader"] },
+    ],
+  },
+};
+```
+
+Το Webpack είναι ισχυρό, αλλά ο dev server του είναι πιο αργός γιατί χτίζει bundle ακόμα και στο development — εκεί ακριβώς το Vite κερδίζει χρόνο.
+
+## Vite vs Webpack
+
+| | **Vite** | **Webpack** |
+| --- | --- | --- |
+| Dev server | Πολύ γρήγορος (native ESM + esbuild) | Πιο αργός (κάνει bundle στο dev) |
+| Config | Λίγο, declarative | Περισσότερο, πιο verbose |
+| Production bundler | Rollup | Webpack |
+| Ωριμότητα / ecosystem | Νεότερο, ραγδαία ανάπτυξη | Πανίσχυρο, τεράστιο ecosystem |
+| Πότε το διαλέγεις | Νέα projects, ταχύτητα DX | Υπάρχοντα/legacy, πολύ ειδικά custom builds |
+
+Πρακτικός κανόνας: **νέο frontend project → Vite**. **Υπάρχον project που ήδη τρέχει Webpack → μένεις σε Webpack** εκτός αν υπάρχει σοβαρός λόγος migration.
+
+## Πού κολλάει το Next.js;
+
+Σημαντικό για να μην μπερδευτείς: αν δουλεύεις σε **Next.js, δεν στήνεις εσύ Vite ή Webpack**. Το Next.js έχει **δικό του ενσωματωμένο bundler** — παλιά Webpack, τώρα **Turbopack** (νέος, γρήγορος bundler γραμμένος σε Rust). Το `next dev` / `next build` κάνουν όλη τη δουλειά bundling από κάτω.
+
+Δηλαδή τα standalone Vite/Webpack τα συναντάς κυρίως σε **React apps χωρίς framework** (SPA με `npm create vite`), σε libraries, ή σε υπάρχοντα projects. Η αξία αυτού του μαθήματος είναι να ξέρεις **τι κάνει το tool κάτω από κάθε framework**, ώστε να μην είναι μαγικό κουτί.
+
+## Έννοιες που πρέπει να αναγνωρίζεις
+
+- **Entry point**: το αρχείο από όπου ξεκινάει το dependency graph (π.χ. `src/main.tsx`).
+- **Output / bundle**: τα τελικά αρχεία στο `dist/`.
+- **Tree shaking**: αφαίρεση κώδικα που δεν χρησιμοποιείται από πουθενά — δουλεύει χάρη στα static ES modules.
+- **Code splitting**: σπάσιμο του bundle σε κομμάτια που φορτώνουν όταν χρειάζονται (π.χ. ανά route), αντί για ένα τεράστιο αρχείο.
+- **Minification**: αφαίρεση κενών, σχολίων και μεγάλων ονομάτων για μικρότερο μέγεθος.
+- **Source maps**: χάρτης που συνδέει τον minified κώδικα με τον αρχικό, ώστε στο debugging να βλέπεις το original.
+- **Content hashing**: το `index-a8f3.js` στο όνομα είναι hash του περιεχομένου — αλλάζει μόνο όταν αλλάζει ο κώδικας, ώστε ο browser να κάνει σωστό cache.
+
+## Πώς απαντάς στη συνέντευξη
+
+«What does a bundler do, and Vite vs Webpack?»
+
+> A bundler follows the import graph from an entry point, transpiles TypeScript/JSX into browser-friendly JavaScript, and produces a few optimized files instead of hundreds of separate modules — with tree shaking, code splitting and minification for production. Webpack is the mature, highly configurable standard that bundles even in development. Vite is faster for development because it serves native ES modules on demand via esbuild and only bundles for production with Rollup. For new projects I reach for Vite; for an existing Webpack setup I stay on it unless there's a strong reason to migrate. In Next.js I don't configure either — the framework handles bundling with Turbopack.
+
+<Flashcards
+  title="Build tools — interview drills"
+  cards={[
+    {
+      question: "Τι κάνει ένας bundler με μία πρόταση;",
+      answer: "Ακολουθεί το import graph από ένα entry point, μετατρέπει (transpile) TS/JSX/modern JS σε κώδικα που τρέχει στον browser, και παράγει λίγα optimized αρχεία αντί για εκατοντάδες — με tree shaking, code splitting και minification."
+    },
+    {
+      question: "Γιατί ο dev server του Vite είναι τόσο γρήγορος;",
+      answer: "Στο development ΔΕΝ κάνει bundle. Σερβίρει native ES modules on-demand και τα μετατρέπει με esbuild (Go, πανγρήγορο). Ο browser ζητάει μόνο ό,τι χρειάζεται. Στο production όμως κάνει κανονικό bundle με Rollup."
+    },
+    {
+      question: "Loaders vs plugins στο Webpack;",
+      answer: "Loaders: μετασχηματίζουν συγκεκριμένους τύπους αρχείων καθώς μπαίνουν στο graph (babel-loader, css-loader). Plugins: επεμβαίνουν σε όλο το build (φτιάχνουν index.html, βγάζουν CSS, ορίζουν env vars)."
+    },
+    {
+      question: "Τι είναι το HMR και γιατί μετράει;",
+      answer: "Hot Module Replacement: όταν αλλάζεις ένα αρχείο, αντικαθίσταται μόνο αυτό το module στη σελίδα χωρίς full reload — οπότε κρατάς το state (forms, tabs). Γρήγορο feedback loop ενώ γράφεις."
+    },
+    {
+      question: "Tree shaking vs code splitting;",
+      answer: "Tree shaking: πετάει κώδικα που δεν χρησιμοποιείται από πουθενά (δουλεύει χάρη στα static ES modules). Code splitting: σπάει το bundle σε κομμάτια που φορτώνουν όταν χρειάζονται (π.χ. ανά route), αντί για ένα τεράστιο αρχείο."
+    },
+    {
+      question: "Στήνω Vite ή Webpack σε Next.js project;",
+      answer: "Κανένα. Το Next.js έχει δικό του ενσωματωμένο bundler (πλέον Turbopack, γραμμένο σε Rust). Standalone Vite/Webpack τα βλέπεις σε React SPAs χωρίς framework, libraries ή υπάρχοντα projects."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Γιατί ο dev server του Vite ξεκινάει σχεδόν ακαριαία ακόμα και σε μεγάλο project;"
+  options={[
+    "Επειδή στο development δεν κάνει bundle — σερβίρει native ES modules on-demand μέσω esbuild.",
+    "Επειδή κάνει precompile όλο το app σε ένα τεράστιο bundle πριν ξεκινήσει.",
+    "Επειδή δεν υποστηρίζει TypeScript ή JSX."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Το Vite αποφεύγει το bundling στο dev και βασίζεται σε native ESM + esbuild· το bundling (με Rollup) γίνεται μόνο για production."
+/>
+
+<Exercise
+  question="Σε ένα Next.js project, τι χρησιμοποιείς για bundling;"
+  options={[
+    "Τον ενσωματωμένο bundler του Next.js (Turbopack) — δεν στήνεις Vite/Webpack μόνος σου.",
+    "Πρέπει πάντα να προσθέσεις χειροκίνητα webpack.config.js.",
+    "Δεν χρειάζεται bundling καθόλου, ο browser τρέχει το JSX απευθείας."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Το Next.js κάνει το bundling από κάτω μέσω Turbopack· εσύ απλώς τρέχεις next dev / next build."
+/>
+
+<TrainingLab
+  title="Στήσε ένα Vite project και διάβασε το build output"
+  scenario="Φτιάξε ένα φρέσκο React app με Vite, τρέξε το σε dev mode, μετά κάνε production build και κατάλαβε τι παράγεται."
+  outcomes={[
+    "Να ξεχωρίζεις τι κάνει ο dev server από το production build.",
+    "Να διαβάζεις τα περιεχόμενα του dist/ και να αναγνωρίζεις bundling, minification, hashing.",
+    "Να εξηγείς πότε διαλέγεις Vite έναντι Webpack."
+  ]}
+  steps={[
+    "Τρέξε npm create vite@latest και διάλεξε React + TypeScript.",
+    "npm install και npm run dev — άλλαξε κάτι σε ένα component και παρατήρησε το HMR (το state παραμένει).",
+    "npm run build και άνοιξε τον φάκελο dist/ — δες τα hashed assets.",
+    "npm run preview για να τρέξεις τοπικά το production build."
+  ]}
+  checkpoints={[
+    "Καταλαβαίνεις γιατί στο dev δεν υπάρχει dist/ αλλά στο build υπάρχει.",
+    "Αναγνωρίζεις το content hash στα ονόματα των αρχείων και γιατί βοηθά το caching.",
+    "Μπορείς να πεις σε μία πρόταση τι κάνει το vite.config.js."
+  ]}
+  mistakes={[
+    "Να μπερδεύεις το dev server (γρήγορο feedback) με το production build (optimized output).",
+    "Να νομίζεις ότι χρειάζεσαι Vite/Webpack μέσα σε Next.js.",
+    "Να θεωρείς το bundling 'μαγικό' αντί να το βλέπεις ως import graph → optimized αρχεία."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να εξηγήσεις σε junior interview τι κάνει ένας bundler, γιατί ο dev server του Vite είναι γρήγορος, και πότε διαλέγεις Vite ή Webpack."
+/>

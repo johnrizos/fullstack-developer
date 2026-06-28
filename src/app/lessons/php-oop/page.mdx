@@ -1,0 +1,219 @@
+# OOP in PHP
+
+Η μοντέρνα PHP είναι κατά βάση object-oriented. Frameworks όπως το Laravel βασίζονται 100% σε classes, interfaces και dependency injection. Εδώ χτίζεις αυτή τη βάση.
+
+## Classes & properties
+
+```php
+<?php
+declare(strict_types=1);
+
+class User {
+    public function __construct(
+        public string $name,
+        public int $age,
+        private string $email,
+    ) {}
+
+    public function describe(): string {
+        return "{$this->name} ({$this->age})";
+    }
+}
+
+$u = new User("Άννα", 30, "anna@example.com");
+echo $u->describe();   // Άννα (30)
+echo $u->name;         // public → ok
+// echo $u->email;     // private → error
+```
+
+Το **constructor property promotion** (PHP 8) δηλώνει και ορίζει τα properties μέσα στον constructor — λιγότερο boilerplate. Το `$this` δείχνει το τρέχον αντικείμενο, τα properties με `->`.
+
+## Visibility
+
+- `public`: προσβάσιμο από παντού.
+- `protected`: μόνο μέσα στην class και στα παιδιά της.
+- `private`: μόνο μέσα στην ίδια class.
+
+Κανόνας: ξεκίνα `private` και άνοιξε μόνο ό,τι χρειάζεται. Λιγότερη επιφάνεια = λιγότερα bugs.
+
+## readonly & static
+
+```php
+<?php
+class Money {
+    public function __construct(
+        public readonly int $cents,   // δεν αλλάζει μετά το construct
+    ) {}
+
+    public static function fromEuros(float $euros): self {
+        return new self((int) round($euros * 100));
+    }
+}
+
+$price = Money::fromEuros(9.99); // static factory, χωρίς instance
+echo $price->cents;              // 999
+// $price->cents = 0;            // error: readonly
+```
+
+Το `readonly` κάνει ένα property immutable μετά την αρχικοποίηση. Το `static` ανήκει στην class, όχι σε instance — το καλείς με `::`.
+
+## Interfaces
+
+Ένα interface ορίζει **τι** πρέπει να κάνει μια class, χωρίς το **πώς**.
+
+```php
+<?php
+interface PaymentGateway {
+    public function charge(int $cents): bool;
+}
+
+class StripeGateway implements PaymentGateway {
+    public function charge(int $cents): bool {
+        // ... κλήση στο Stripe
+        return true;
+    }
+}
+
+// Ο κώδικας εξαρτάται από το interface, όχι από συγκεκριμένη υλοποίηση
+function checkout(PaymentGateway $gateway, int $cents): void {
+    $gateway->charge($cents);
+}
+```
+
+Αυτό είναι το θεμέλιο του **dependency injection**: γράφεις κώδικα που δέχεται ένα interface, και του δίνεις όποια υλοποίηση θες (Stripe, PayPal, fake για tests).
+
+## Abstract classes
+
+```php
+<?php
+abstract class Shape {
+    abstract public function area(): float;       // πρέπει να υλοποιηθεί
+
+    public function describe(): string {          // κοινή λογική
+        return "Εμβαδόν: " . $this->area();
+    }
+}
+
+class Circle extends Shape {
+    public function __construct(private float $r) {}
+    public function area(): float {
+        return 3.14159 * $this->r ** 2;
+    }
+}
+```
+
+Interface vs abstract class: το interface είναι σκέτο «συμβόλαιο»· η abstract class μπορεί να έχει και **κοινή υλοποίηση** που κληρονομούν τα παιδιά.
+
+## Traits — επαναχρησιμοποίηση χωρίς κληρονομικότητα
+
+```php
+<?php
+trait HasTimestamps {
+    public ?string $createdAt = null;
+    public function touch(): void {
+        $this->createdAt = date("c");
+    }
+}
+
+class Post {
+    use HasTimestamps;
+}
+
+$p = new Post();
+$p->touch();
+```
+
+Η PHP δεν έχει πολλαπλή κληρονομικότητα. Τα **traits** λύνουν το «θέλω να μοιραστώ μέθοδο σε πολλές άσχετες classes» χωρίς να φτιάχνεις παράξενη ιεραρχία.
+
+## Enums (PHP 8.1)
+
+```php
+<?php
+enum Status: string {
+    case Draft = "draft";
+    case Published = "published";
+
+    public function label(): string {
+        return match ($this) {
+            Status::Draft => "Πρόχειρο",
+            Status::Published => "Δημοσιευμένο",
+        };
+    }
+}
+
+$s = Status::Published;
+echo $s->value;     // "published"
+echo $s->label();   // "Δημοσιευμένο"
+```
+
+Τα enums αντικαθιστούν τα «μαγικά strings» με τυπασφαλείς, περιορισμένες τιμές.
+
+## Πώς απαντάς στη συνέντευξη
+
+«Interface vs abstract class?»
+
+> An interface is a pure contract — it lists method signatures with no implementation, and a class can implement many. An abstract class can mix abstract methods with shared concrete logic, but a class extends only one. I program to interfaces so my code depends on behaviour, not a specific implementation — that's what makes dependency injection and testing with fakes possible. For sharing behaviour across unrelated classes I use traits, and for fixed sets of values I use enums instead of magic strings.
+
+<Flashcards
+  title="PHP OOP — interview drills"
+  cards={[
+    {
+      question: "public vs protected vs private;",
+      answer: "public: από παντού. protected: μέσα στην class ΚΑΙ στα παιδιά της. private: μόνο μέσα στην ίδια class. Best practice: ξεκίνα private και άνοιξε μόνο ό,τι χρειάζεται (μικρή επιφάνεια)."
+    },
+    {
+      question: "Interface vs abstract class;",
+      answer: "Interface: μόνο signatures, καμία υλοποίηση, μια class υλοποιεί ΠΟΛΛΑ. Abstract class: μπορεί να έχει και κοινή υλοποίηση, αλλά μια class κάνει extend ΕΝΑ. Interface = συμβόλαιο· abstract = συμβόλαιο + κοινός κώδικας."
+    },
+    {
+      question: "Τι λύνουν τα traits;",
+      answer: "Η PHP δεν έχει πολλαπλή κληρονομικότητα. Τα traits επιτρέπουν να μοιραστείς μεθόδους/properties σε πολλές ΑΣΧΕΤΕΣ classes (use TraitName;) χωρίς να φτιάξεις τεχνητή ιεραρχία κληρονομικότητας."
+    },
+    {
+      question: "Γιατί enums αντί για string constants;",
+      answer: "Τα backed enums (enum X: string) δίνουν περιορισμένο, τυπασφαλές σύνολο τιμών. Αντί για 'draft'/'published' σκορπισμένα σαν magic strings, έχεις Status::Draft με ->value και μπορείς να βάλεις μεθόδους (π.χ. label())."
+    },
+    {
+      question: "Τι κάνει το readonly property;",
+      answer: "Επιτρέπει να οριστεί η τιμή ΜΟΝΟ μία φορά (στον constructor) και μετά είναι immutable — οποιαδήποτε ανάθεση πετάει error. Ιδανικό για value objects (Money, Coordinates) που δεν πρέπει να αλλάζουν."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Γιατί γράφουμε κώδικα που εξαρτάται από interface αντί από συγκεκριμένη class;"
+  options={[
+    "Για να τρέχει πιο γρήγορα.",
+    "Για να μπορούμε να δώσουμε διαφορετική υλοποίηση (π.χ. fake στα tests) χωρίς να αλλάξουμε τον κώδικα.",
+    "Επειδή τα interfaces είναι υποχρεωτικά στην PHP."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Όταν εξαρτάσαι από interface, μπορείς να εναλλάσσεις υλοποιήσεις (Stripe/PayPal/fake) — αυτή είναι η βάση του dependency injection και του testing."
+/>
+
+<TrainingLab
+  title="Μοντελοποίησε ένα μικρό domain με OOP"
+  scenario="Φτιάξε ένα payment domain: ένα PaymentGateway interface, δύο υλοποιήσεις, ένα Money value object με readonly, και ένα Status enum."
+  outcomes={[
+    "Να σχεδιάζεις με interfaces ώστε ο κώδικας να εξαρτάται από συμπεριφορά.",
+    "Να χρησιμοποιείς readonly value objects και enums.",
+    "Να μοιράζεσαι κώδικα με traits αντί για παράξενη κληρονομικότητα."
+  ]}
+  steps={[
+    "Όρισε interface PaymentGateway με charge().",
+    "Φτιάξε StripeGateway και FakeGateway που το υλοποιούν.",
+    "Φτιάξε Money value object με readonly cents και static factory.",
+    "Πρόσθεσε Status enum με μέθοδο label()."
+  ]}
+  checkpoints={[
+    "Ο κώδικας checkout δέχεται το interface, όχι συγκεκριμένη class.",
+    "Το Money δεν αλλάζει μετά το construct.",
+    "Το enum καλύπτει όλες τις περιπτώσεις στο match."
+  ]}
+  mistakes={[
+    "Να κάνεις τα πάντα public από συνήθεια.",
+    "Να αντιγράφεις την ίδια μέθοδο σε πολλές classes αντί για trait.",
+    "Να χρησιμοποιείς magic strings αντί για enum."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν σχεδιάζεις με interfaces και value objects, έτοιμος για το dependency injection του Laravel."
+/>

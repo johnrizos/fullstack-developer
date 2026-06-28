@@ -1,0 +1,186 @@
+# Laravel Foundations & MVC
+
+Το **Laravel** είναι το πιο δημοφιλές PHP framework. Παίρνει όλα όσα έκανες χειροκίνητα σε καθαρή PHP (routing, validation, DB, auth, security) και τα δίνει έτοιμα, οργανωμένα και ασφαλή.
+
+## Setup
+
+```bash
+composer create-project laravel/laravel my-app
+cd my-app
+php artisan serve   # dev server στο http://localhost:8000
+```
+
+Το `artisan` είναι το CLI εργαλείο του Laravel — το χρησιμοποιείς συνέχεια (`make:`, `migrate`, `serve`, `tinker`).
+
+## MVC — το νοητικό μοντέλο
+
+Το Laravel ακολουθεί **Model–View–Controller**:
+
+- **Model**: τα δεδομένα και η λογική τους (π.χ. `Post` → πίνακας `posts`).
+- **View**: το HTML που βλέπει ο χρήστης (Blade templates).
+- **Controller**: ο «διαιτητής» — δέχεται το request, μιλάει με models, επιστρέφει view/JSON.
+
+```txt
+Request → Route → Controller → Model (DB) → View → Response
+```
+
+## Δομή project
+
+```txt
+app/
+  Http/Controllers/   ← controllers
+  Models/             ← Eloquent models
+routes/
+  web.php             ← routes για σελίδες (sessions, CSRF)
+  api.php             ← routes για API (stateless)
+resources/views/      ← Blade templates
+database/migrations/  ← schema της βάσης
+config/               ← ρυθμίσεις
+.env                  ← secrets & περιβάλλον (στο .gitignore)
+public/               ← το web root (index.php)
+```
+
+## Η πρώτη ροή: route → controller → view
+
+```php
+<?php
+// routes/web.php
+use App\Http\Controllers\PostController;
+
+Route::get("/posts", [PostController::class, "index"]);
+```
+
+```bash
+php artisan make:controller PostController
+```
+
+```php
+<?php
+// app/Http/Controllers/PostController.php
+namespace App\Http\Controllers;
+
+class PostController extends Controller {
+    public function index() {
+        $posts = ["Πρώτο post", "Δεύτερο post"];
+        return view("posts.index", ["posts" => $posts]);
+    }
+}
+```
+
+```blade
+{{-- resources/views/posts/index.blade.php --}}
+<ul>
+    @foreach ($posts as $post)
+        <li>{{ $post }}</li>
+    @endforeach
+</ul>
+```
+
+Πάτα `/posts` → το route καλεί τον controller → ο controller δίνει δεδομένα στο view → ο χρήστης βλέπει HTML.
+
+## Το service container & dependency injection
+
+Το «μαγικό» του Laravel: ζητάς ό,τι χρειάζεσαι στον constructor/method και το framework στο **δίνει αυτόματα** (autowiring).
+
+```php
+<?php
+use Illuminate\Http\Request;
+
+class PostController extends Controller {
+    // Το Request "εμφανίζεται" — δεν το φτιάχνεις εσύ
+    public function store(Request $request) {
+        $title = $request->input("title");
+        // ...
+    }
+}
+```
+
+Αυτό βασίζεται ακριβώς σε ό,τι έμαθες στο PHP OOP: type hints + interfaces. Το container «βλέπει» τον τύπο και κατασκευάζει/περνά το σωστό αντικείμενο.
+
+## .env & config
+
+```txt
+APP_NAME=MyApp
+APP_ENV=local
+APP_DEBUG=true
+DB_CONNECTION=mysql
+DB_DATABASE=my_app
+```
+
+```php
+<?php
+config("app.name");   // διάβασε config (cache-friendly)
+env("APP_DEBUG");     // μόνο μέσα σε config files
+```
+
+Κανόνας: στον κώδικα διάβασε με `config()`, όχι `env()` — το `env()` σταματά να δουλεύει όταν κάνεις `php artisan config:cache` στο production.
+
+## Πώς απαντάς στη συνέντευξη
+
+«How is a Laravel app structured?»
+
+> Laravel follows MVC. A request hits a route in `routes/web.php` or `api.php`, which dispatches to a controller method. The controller talks to Eloquent models for data and returns a Blade view or JSON. Cross-cutting setup lives in `config/`, secrets in `.env`. The service container autowires dependencies: I type-hint what I need — like `Request` — and Laravel constructs and injects it. In code I read settings with `config()` rather than `env()`, because `env()` stops working once config is cached in production.
+
+<Flashcards
+  title="Laravel foundations — interview drills"
+  cards={[
+    {
+      question: "Τι είναι το artisan;",
+      answer: "Το command-line εργαλείο του Laravel. php artisan make:controller/model/migration, migrate, serve, tinker, route:list. Αυτοματοποιεί scaffolding και διαχειριστικές εργασίες — το χρησιμοποιείς συνέχεια."
+    },
+    {
+      question: "Εξήγησε το MVC στο Laravel.",
+      answer: "Model: δεδομένα + λογική (Eloquent → πίνακας). View: το HTML (Blade). Controller: δέχεται request, μιλάει με models, επιστρέφει view/JSON. Ροή: Request → Route → Controller → Model → View → Response."
+    },
+    {
+      question: "web.php vs api.php;",
+      answer: "routes/web.php: routes για σελίδες — έχουν sessions, cookies, CSRF protection. routes/api.php: stateless routes για API — χωρίς sessions, με token auth, prefix /api. Διαφορετικό middleware group το καθένα."
+    },
+    {
+      question: "Τι κάνει το service container;",
+      answer: "Autowiring/dependency injection: type-hint-άρεις ό,τι χρειάζεσαι (Request, ένα service, ένα interface) και το Laravel το κατασκευάζει και το περνά αυτόματα. Βασίζεται σε type hints — γι' αυτό μετράει το OOP θεμέλιο."
+    },
+    {
+      question: "config() vs env();",
+      answer: "Στον κώδικα χρησιμοποίησε config('app.name'). Το env() δουλεύει ΜΟΝΟ μέσα σε config files, γιατί με php artisan config:cache (production) το .env δεν ξαναδιαβάζεται και τα env() εκτός config επιστρέφουν null."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Στο Laravel, ποιος είναι ο ρόλος του controller;"
+  options={[
+    "Να αποθηκεύει το HTML που βλέπει ο χρήστης.",
+    "Να δέχεται το request, να μιλάει με τα models και να επιστρέφει view ή JSON.",
+    "Να ορίζει το schema της βάσης."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Ο controller είναι ο διαιτητής: συντονίζει request → models → response. Τα δεδομένα είναι στο model, το HTML στο view."
+/>
+
+<TrainingLab
+  title="Στήσε Laravel και την πρώτη MVC ροή"
+  scenario="Δημιούργησε ένα Laravel project και υλοποίησε μια πλήρη ροή route → controller → Blade view για μια λίστα posts."
+  outcomes={[
+    "Να στήνεις project και να τρέχεις τον dev server με artisan.",
+    "Να συνδέεις route, controller και view.",
+    "Να καταλαβαίνεις πού ζει το κάθε κομμάτι του MVC."
+  ]}
+  steps={[
+    "composer create-project laravel/laravel και php artisan serve.",
+    "Όρισε route GET /posts στο web.php.",
+    "php artisan make:controller PostController και γράψε index().",
+    "Φτιάξε resources/views/posts/index.blade.php και πέρασέ της δεδομένα."
+  ]}
+  checkpoints={[
+    "Το /posts εμφανίζει τη λίστα από τον controller.",
+    "Τα δεδομένα περνούν από controller σε view με array.",
+    "Καταλαβαίνεις γιατί τα secrets είναι στο .env."
+  ]}
+  mistakes={[
+    "Να βάζεις λογική δεδομένων μέσα στο view αντί στον controller/model.",
+    "Να διαβάζεις env() κατευθείαν στον κώδικα αντί για config().",
+    "Να μπερδεύεις web.php με api.php."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να εξηγήσεις τη διαδρομή ενός request μέσα στο Laravel και να στήσεις μια καθαρή MVC ροή."
+/>

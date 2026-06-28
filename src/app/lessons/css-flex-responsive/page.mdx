@@ -95,6 +95,106 @@ export const navSolutionCss = `body {
 
 Είναι πιο καθαρό από το να βάζεις margin σε κάθε link και να διορθώνεις το πρώτο/τελευταίο.
 
+## Container properties vs item properties
+
+Το πιο σημαντικό mental model στο Flexbox: οι ιδιότητες χωρίζονται σε **δύο ομάδες**.
+
+- **Στον container** (αυτόν που έχει `display: flex`): `flex-direction`, `flex-wrap`, `justify-content`, `align-items`, `align-content`, `gap`. Ελέγχουν *πώς στοιχίζονται όλα τα παιδιά μαζί*.
+- **Στα items** (τα παιδιά): `flex-grow`, `flex-shrink`, `flex-basis` (και το shorthand `flex`), `align-self`, `order`. Ελέγχουν *πώς συμπεριφέρεται το κάθε παιδί ξεχωριστά*.
+
+Αν μια ιδιότητα δεν δουλεύει, το πρώτο που ρωτάς: «την έβαλα στον container ή στο item;».
+
+## flex-direction & flex-flow
+
+Το `flex-direction` ορίζει τον **main axis** — δηλαδή προς τα πού «τρέχουν» τα items.
+
+```css
+.row    { display: flex; flex-direction: row; }            /* default: αριστερά → δεξιά */
+.column { display: flex; flex-direction: column; }         /* πάνω → κάτω */
+.reverse{ display: flex; flex-direction: row-reverse; }    /* δεξιά → αριστερά */
+```
+
+**Κρίσιμο:** όταν αλλάζεις σε `column`, ο main axis γίνεται κάθετος και ο cross axis οριζόντιος — οπότε `justify-content` και `align-items` **αντιστρέφονται**. Αυτό μπερδεύει τους περισσότερους junior.
+
+Το `flex-flow` είναι shorthand για `flex-direction` + `flex-wrap`:
+
+```css
+.nav { display: flex; flex-flow: row wrap; }
+```
+
+## justify-content — όλες οι τιμές
+
+Στοιχίζει τα items κατά μήκος του **main axis**:
+
+- `flex-start` (default): μαζεμένα στην αρχή.
+- `flex-end`: μαζεμένα στο τέλος.
+- `center`: στο κέντρο.
+- `space-between`: πρώτο/τελευταίο κολλάνε στις άκρες, ίσος χώρος ανάμεσά τους.
+- `space-around`: ίσος χώρος γύρω από κάθε item (οι άκρες παίρνουν μισό κενό).
+- `space-evenly`: εντελώς ίσα κενά παντού, και στις άκρες.
+
+## align-items & align-content
+
+Το `align-items` στοιχίζει τα items στον **cross axis** (μία γραμμή):
+
+- `stretch` (default): τεντώνονται να γεμίσουν το ύψος.
+- `flex-start` / `flex-end`: πάνω / κάτω.
+- `center`: στο κέντρο κάθετα.
+- `baseline`: στοίχιση στη γραμμή βάσης του κειμένου.
+
+Το `align-content` δουλεύει **μόνο όταν υπάρχουν πολλές γραμμές** (με `flex-wrap: wrap`) και ελέγχει πώς μοιράζονται οι *γραμμές* στον cross axis (`flex-start`, `center`, `space-between`, `space-evenly`, κ.λπ.). Με μία μόνο γραμμή δεν κάνει τίποτα.
+
+```css
+/* Τέλειο κεντράρισμα σε όλους τους άξονες */
+.center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+```
+
+## flex: το shorthand των items (grow / shrink / basis)
+
+Καθορίζει πώς ένα item μοιράζεται τον χώρο:
+
+- `flex-grow`: πόσο μερίδιο του **έξτρα** χώρου παίρνει (`0` = δεν μεγαλώνει).
+- `flex-shrink`: πόσο **συρρικνώνεται** όταν δεν χωράει (`0` = ποτέ).
+- `flex-basis`: το **αρχικό** μέγεθος πριν τη μοιρασιά (π.χ. `200px`, `auto`).
+
+```css
+.item   { flex: 1; }            /* = 1 1 0  → όλα ίσα μερίδια */
+.fixed  { flex: 0 0 200px; }    /* σταθερά 200px, δεν μεγαλώνει ούτε μικραίνει */
+.sidebar{ flex: 0 0 240px; }
+.main   { flex: 1; }            /* παίρνει όλον τον υπόλοιπο χώρο */
+```
+
+Το `flex: 1` σε όλα τα παιδιά = ίσες στήλες που γεμίζουν τον container. Το πιο χρήσιμο pattern.
+
+## align-self & order
+
+Αυτά μπαίνουν σε **μεμονωμένο item** και σπάνε τον γενικό κανόνα του container:
+
+```css
+.special { align-self: flex-end; }  /* αυτό το ένα item στοιχίζεται διαφορετικά */
+.badge   { order: -1; }             /* εμφανίζεται πρώτο, ανεξάρτητα από το HTML */
+```
+
+Το `order` αλλάζει **οπτική** σειρά χωρίς να αλλάζεις το HTML — χρήσιμο για responsive (π.χ. σε mobile να ανέβει το CTA), αλλά πρόσεξε: δεν αλλάζει τη σειρά για screen readers/keyboard.
+
+## Γρήγορος πίνακας αναφοράς
+
+| Ιδιότητα | Πού μπαίνει | Τι κάνει |
+| --- | --- | --- |
+| `flex-direction` | container | άξονας: row / column |
+| `flex-wrap` | container | επιτρέπει νέες γραμμές |
+| `justify-content` | container | στοίχιση στον main axis |
+| `align-items` | container | στοίχιση στον cross axis (1 γραμμή) |
+| `align-content` | container | στοίχιση γραμμών (πολλές γραμμές) |
+| `gap` | container | απόσταση μεταξύ items |
+| `flex` (grow/shrink/basis) | item | πώς μοιράζεται τον χώρο |
+| `align-self` | item | override του align-items |
+| `order` | item | οπτική σειρά |
+
 ## Responsive thinking
 
 Responsive layout σημαίνει ότι το UI αντέχει σε διαφορετικά πλάτη. Για navbars, το `flex-wrap: wrap` αποτρέπει overlap.

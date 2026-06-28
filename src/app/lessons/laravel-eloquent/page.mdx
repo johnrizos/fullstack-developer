@@ -1,0 +1,210 @@
+# Eloquent ORM & Migrations
+
+Το **Eloquent** είναι ο ORM του Laravel: κάθε πίνακας της βάσης γίνεται μια PHP class (model), και κάθε γραμμή ένα αντικείμενο. Γράφεις PHP αντί για SQL — αλλά πρέπει να ξέρεις τι συμβαίνει από κάτω.
+
+## Migrations — version control για το schema
+
+```bash
+php artisan make:migration create_posts_table
+```
+
+```php
+<?php
+// database/migrations/...create_posts_table.php
+public function up(): void {
+    Schema::create("posts", function (Blueprint $table) {
+        $table->id();
+        $table->string("title");
+        $table->text("body");
+        $table->foreignId("user_id")->constrained()->cascadeOnDelete();
+        $table->timestamps();   // created_at, updated_at
+    });
+}
+
+public function down(): void {
+    Schema::dropIfExists("posts");
+}
+```
+
+```bash
+php artisan migrate          # εφάρμοσε
+php artisan migrate:rollback  # ανέβα πίσω
+```
+
+Οι migrations είναι **version control για τη βάση**: όλη η ομάδα τρέχει τα ίδια migrations και έχει πανομοιότυπο schema.
+
+## Models
+
+```bash
+php artisan make:model Post
+```
+
+```php
+<?php
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Post extends Model {
+    // mass-assignment protection: ποια πεδία επιτρέπεται να γεμίσουν μαζικά
+    protected $fillable = ["title", "body", "user_id"];
+
+    // casts: μετατροπές τύπων
+    protected $casts = ["published_at" => "datetime"];
+}
+```
+
+## CRUD με Eloquent
+
+```php
+<?php
+// create
+$post = Post::create(["title" => "Γεια", "body" => "...", "user_id" => 1]);
+
+// read
+$all = Post::all();
+$one = Post::find(1);
+$one = Post::findOrFail(1);          // 404 αν δεν υπάρχει
+$recent = Post::where("user_id", 1)
+    ->orderBy("created_at", "desc")
+    ->limit(10)
+    ->get();
+
+// update
+$post->update(["title" => "Νέος τίτλος"]);
+
+// delete
+$post->delete();
+```
+
+Το `$fillable` είναι **σημαντικό για ασφάλεια**: χωρίς αυτό, ένας χρήστης θα μπορούσε με `create($request->all())` να γεμίσει πεδία που δεν έπρεπε (π.χ. `is_admin`). Αυτό λέγεται mass-assignment vulnerability.
+
+## Relationships
+
+```php
+<?php
+class User extends Model {
+    public function posts() {
+        return $this->hasMany(Post::class);     // ένας user → πολλά posts
+    }
+}
+
+class Post extends Model {
+    public function user() {
+        return $this->belongsTo(User::class);   // ένα post → ένας user
+    }
+
+    public function tags() {
+        return $this->belongsToMany(Tag::class); // many-to-many
+    }
+}
+```
+
+```php
+<?php
+$user = User::find(1);
+foreach ($user->posts as $post) {   // χρήση σαν property
+    echo $post->title;
+}
+echo $post->user->name;             // αντίστροφα
+```
+
+## Το N+1 problem — η #1 παγίδα performance
+
+```php
+<?php
+// ❌ N+1: 1 query για posts + 1 query ΑΝΑ post για τον user = 101 queries
+$posts = Post::all();
+foreach ($posts as $post) {
+    echo $post->user->name;   // κρυφό query σε κάθε επανάληψη!
+}
+
+// ✅ eager loading: 2 queries συνολικά
+$posts = Post::with("user")->get();
+foreach ($posts as $post) {
+    echo $post->user->name;   // ήδη φορτωμένο
+}
+```
+
+Το `with()` (**eager loading**) φορτώνει τις σχέσεις με 1 επιπλέον query αντί για ένα ανά γραμμή. Αυτό ρωτιέται σχεδόν σε κάθε Laravel συνέντευξη.
+
+## Query Builder & aggregates
+
+```php
+<?php
+$count = Post::where("published", true)->count();
+$avg = Post::avg("views");
+$grouped = Post::selectRaw("user_id, count(*) as total")
+    ->groupBy("user_id")
+    ->get();
+```
+
+## Πώς απαντάς στη συνέντευξη
+
+«What is the N+1 problem and how do you fix it?»
+
+> N+1 happens when you load a list, then access a relationship inside a loop — Eloquent fires one extra query per row, so 100 posts become 101 queries. The fix is eager loading with `with('user')`, which fetches all the related records in a single extra query. I define relationships as `hasMany`/`belongsTo`/`belongsToMany` methods, protect mass assignment with `$fillable`, and use migrations as version control for the schema so the whole team shares an identical database structure.
+
+<Flashcards
+  title="Eloquent — interview drills"
+  cards={[
+    {
+      question: "Τι είναι το N+1 problem και πώς το λύνεις;",
+      answer: "Φορτώνεις λίστα (1 query) και μέσα σε loop ακουμπάς σχέση → 1 κρυφό query ΑΝΑ γραμμή (101 για 100 posts). Λύση: eager loading με Post::with('user')->get() — 2 queries συνολικά. Η #1 Laravel performance ερώτηση."
+    },
+    {
+      question: "Τι κάνουν τα migrations;",
+      answer: "Version control για το schema της βάσης. up() δημιουργεί/αλλάζει πίνακες, down() αναιρεί. php artisan migrate τα εφαρμόζει. Όλη η ομάδα τρέχει τα ίδια migrations → πανομοιότυπο schema, χωρίς χειροκίνητες SQL αλλαγές."
+    },
+    {
+      question: "Γιατί υπάρχει το $fillable;",
+      answer: "Mass-assignment protection. Ορίζει ποια πεδία επιτρέπεται να γεμίσουν μαζικά (create/update με array). Χωρίς αυτό, create($request->all()) θα μπορούσε να γεμίσει επικίνδυνα πεδία όπως is_admin. Είναι θέμα ασφάλειας, όχι μόνο σύμβαση."
+    },
+    {
+      question: "hasMany vs belongsTo vs belongsToMany;",
+      answer: "hasMany: 'ένας προς πολλά' από τη μεριά του parent (User hasMany Post). belongsTo: η αντίστροφη, 'ανήκει σε' (Post belongsTo User, κρατά το foreign key). belongsToMany: many-to-many μέσω pivot table (Post ↔ Tag)."
+    },
+    {
+      question: "find() vs findOrFail();",
+      answer: "find(id): επιστρέφει το model ή null. findOrFail(id): επιστρέφει το model ή πετάει ModelNotFoundException → αυτόματο 404. Σε controllers προτίμησε findOrFail (ή route model binding) για καθαρό 404 handling."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Πώς λύνεις το N+1 query problem στο Eloquent;"
+  options={[
+    "Με περισσότερα loops.",
+    "Με eager loading: Post::with('user')->get() ώστε οι σχέσεις να φορτώνονται μαζικά.",
+    "Διαγράφοντας τις σχέσεις από τα models."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Το with() φέρνει τις σχέσεις με ένα επιπλέον query αντί για ένα ανά γραμμή, μειώνοντας 101 queries σε 2."
+/>
+
+<TrainingLab
+  title="Χτίσε data layer χωρίς N+1"
+  scenario="Μοντελοποίησε users, posts και tags με migrations και Eloquent relationships, και γράψε queries που αποφεύγουν το N+1."
+  outcomes={[
+    "Να ορίζεις schema με migrations.",
+    "Να συνδέεις models με hasMany/belongsTo/belongsToMany.",
+    "Να εντοπίζεις και να λύνεις N+1 με eager loading."
+  ]}
+  steps={[
+    "Φτιάξε migrations για users, posts (foreignId user_id) και tags + pivot.",
+    "Όρισε relationships στα models και $fillable.",
+    "Γράψε λίστα posts που δείχνει τον συγγραφέα — πρώτα με N+1, μετά με with().",
+    "Μέτρα τα queries (Laravel Debugbar ή DB::getQueryLog) πριν/μετά."
+  ]}
+  checkpoints={[
+    "Τα migrations τρέχουν και κάνουν rollback καθαρά.",
+    "Η λίστα με with() κάνει σταθερό αριθμό queries.",
+    "Το $fillable προστατεύει από mass assignment."
+  ]}
+  mistakes={[
+    "Να ακουμπάς σχέσεις σε loop χωρίς eager loading.",
+    "Να αφήνεις το $fillable κενό και να κάνεις create($request->all()).",
+    "Να αλλάζεις schema με το χέρι αντί για migration."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν σχεδιάζεις relationships και γράφεις queries που δεν εκρήγνυνται σε N+1 καθώς μεγαλώνουν τα δεδομένα."
+/>

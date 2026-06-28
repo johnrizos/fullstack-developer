@@ -1,0 +1,165 @@
+# JSON APIs & Production
+
+Το Flask είναι εξαιρετικό για JSON APIs και microservices. Κλείνουμε το track χτίζοντας ένα καθαρό REST API με σωστό error handling, config management, και production deployment.
+
+## JSON responses
+
+```python
+from flask import jsonify, request
+
+@app.route("/api/posts")
+def list_posts():
+    posts = Post.query.all()
+    return jsonify([{"id": p.id, "title": p.title} for p in posts])
+
+@app.route("/api/posts", methods=["POST"])
+def create_post():
+    data = request.get_json()
+    if not data or "title" not in data:
+        return jsonify({"error": "title required"}), 422
+    post = Post(title=data["title"])
+    db.session.add(post)
+    db.session.commit()
+    return jsonify({"id": post.id, "title": post.title}), 201
+```
+
+Το `jsonify` βάζει σωστά headers (`Content-Type: application/json`). Επέστρεψε **σωστά status codes**: 200, 201 (created), 204, 404, 422 (validation).
+
+## Καθαρό serialization
+
+Μην επιστρέφεις ωμά models. Φτιάξε μια `to_dict()` ή χρησιμοποίησε **Marshmallow** για schemas:
+
+```python
+class Post(db.Model):
+    # ...
+    def to_dict(self):
+        return {"id": self.id, "title": self.title, "created_at": self.created_at.isoformat()}
+        # ΔΕΝ εκθέτουμε internal πεδία
+```
+
+Έτσι ελέγχεις ακριβώς τι βγαίνει στο JSON — το αντίστοιχο των API Resources/serializers των άλλων frameworks.
+
+## Centralized error handlers
+
+```python
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({"error": "not found"}), 404
+
+@app.errorhandler(422)
+def unprocessable(e):
+    return jsonify({"error": "validation failed"}), 422
+
+@app.errorhandler(Exception)
+def server_error(e):
+    app.logger.exception(e)             # κατέγραψε το πραγματικό σφάλμα
+    return jsonify({"error": "internal error"}), 500
+```
+
+Με error handlers, το API επιστρέφει **σταθερό σχήμα JSON** για σφάλματα αντί για HTML error pages — ο client βασίζεται σε αυτό.
+
+## Config classes & environment
+
+```python
+# config.py
+import os
+
+class Config:
+    SECRET_KEY = os.environ["SECRET_KEY"]
+    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL", "sqlite:///app.db")
+
+class ProductionConfig(Config):
+    DEBUG = False
+
+class DevelopmentConfig(Config):
+    DEBUG = True
+```
+
+```python
+app.config.from_object("config.ProductionConfig")
+```
+
+Secrets από **environment variables**, ποτέ στον κώδικα/git. Διαφορετικές config classes ανά περιβάλλον.
+
+## Production deployment
+
+Το built-in `flask run` / `app.run()` είναι **μόνο για development**. Σε production:
+
+```bash
+pip install gunicorn
+gunicorn "app:create_app()" --workers 4 --bind 0.0.0.0:8000
+```
+
+- **WSGI server** (gunicorn/uwsgi) με πολλούς workers, πίσω από **nginx** (reverse proxy, static, TLS).
+- `DEBUG = False` (αλλιώς εκτελεί κώδικα από τον browser — κρίσιμο κενό).
+- Secrets από environment, HTTPS, logging & monitoring.
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you build and deploy a Flask API?»
+
+> I return JSON with `jsonify` and correct status codes — 201 on create, 422 on validation, 404 for missing. I never serialize raw models; I use a `to_dict()` or Marshmallow schema so I control the output and don't leak fields. Errors go through `@app.errorhandler` so the API returns a consistent JSON error shape and logs the real exception. Config lives in classes per environment with secrets read from environment variables. For deployment I never use the dev server — I run gunicorn with multiple workers behind nginx, with `DEBUG=False`, HTTPS and monitoring.
+
+<Flashcards
+  title="Flask APIs & production — interview drills"
+  cards={[
+    {
+      question: "Πώς επιστρέφεις JSON με σωστά status codes;",
+      answer: "jsonify(data) για σωστά headers, και tuple (jsonify(...), status): 200 ok, 201 created, 204 no content, 404 not found, 422 validation. Σωστά codes = ο client ξέρει τι έγινε χωρίς να διαβάζει το body."
+    },
+    {
+      question: "Γιατί δεν επιστρέφεις ωμά models σε API;",
+      answer: "Για να μη διαρρέεις internal πεδία και να κρατάς σταθερό contract. Χρησιμοποίησε to_dict() ή Marshmallow schema ώστε να ελέγχεις ακριβώς τι βγαίνει — το αντίστοιχο των serializers/API Resources."
+    },
+    {
+      question: "Τι κάνουν τα @app.errorhandler;",
+      answer: "Κεντρικός χειρισμός σφαλμάτων ανά status/exception: επιστρέφουν σταθερό JSON σχήμα ({error: ...}) αντί για HTML error page, και καταγράφουν το πραγματικό σφάλμα (logger). Ο client βασίζεται στο σταθερό σχήμα."
+    },
+    {
+      question: "Πώς κάνεις deploy Flask σε production;",
+      answer: "ΟΧΙ flask run/app.run() (dev only). WSGI server (gunicorn/uwsgi) με workers πίσω από nginx. DEBUG=False, secrets από environment, HTTPS, logging/monitoring. gunicorn 'app:create_app()' --workers 4."
+    },
+    {
+      question: "Γιατί DEBUG=False σε production;",
+      answer: "Με debug=True, το Flask εμφανίζει διαδραστικό debugger που ΕΚΤΕΛΕΙ κώδικα από τον browser + δείχνει stack traces/μυστικά. Σε production είναι κρίσιμο κενό ασφαλείας — πάντα False."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Πώς κάνεις deploy μια Flask εφαρμογή σε production;"
+  options={[
+    "Με flask run στον server.",
+    "Με WSGI server (gunicorn) και πολλούς workers πίσω από nginx, με DEBUG=False.",
+    "Ανεβάζοντας μόνο το app.py χωρίς ρυθμίσεις."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Ο built-in dev server είναι μόνο για ανάπτυξη· σε production τρέχεις gunicorn/uwsgi πίσω από nginx με DEBUG=False και secrets από environment."
+/>
+
+<TrainingLab
+  title="REST API με σωστό config & error handling"
+  scenario="Φτιάξε ένα JSON API για posts με σωστά status codes, καθαρό serialization, centralized error handlers, config classes και production-ready deployment setup."
+  outcomes={[
+    "Να επιστρέφεις JSON με σωστά status codes και σχήμα.",
+    "Να χειρίζεσαι σφάλματα κεντρικά με σταθερό format.",
+    "Να ρυθμίζεις config ανά περιβάλλον και να ετοιμάζεις deploy."
+  ]}
+  steps={[
+    "Φτιάξε endpoints list/create/get/delete με jsonify και σωστά codes.",
+    "Πρόσθεσε to_dict() στο model για καθαρό output.",
+    "Όρισε @app.errorhandler για 404/422/500 με JSON σχήμα.",
+    "Φτιάξε config classes (secrets από env) και τεκμηρίωσε gunicorn deploy."
+  ]}
+  checkpoints={[
+    "Όλα τα error responses έχουν ίδιο JSON σχήμα.",
+    "Το API δεν εκθέτει internal πεδία.",
+    "Το config διαβάζει secrets από environment, DEBUG=False σε prod."
+  ]}
+  mistakes={[
+    "Να επιστρέφεις 200 για τα πάντα.",
+    "Να διαρρέεις πεδία επιστρέφοντας ωμά models.",
+    "Να κάνεις deploy με flask run και DEBUG=True."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν χτίζεις ένα καθαρό, production-ready Flask API με σταθερό error shape και σωστό deployment — το τέλος του Flask track."
+/>

@@ -1,0 +1,178 @@
+# Testing, Queues & Production
+
+Το τελευταίο κομμάτι για να γίνει μια Laravel εφαρμογή production-ready: αυτοματοποιημένα tests, background jobs για αργές εργασίες, caching, και σωστό deployment.
+
+## Testing με Pest/PHPUnit
+
+Το Laravel έρχεται με testing setup. Το **Pest** δίνει καθαρότερη σύνταξη πάνω από το PHPUnit:
+
+```php
+<?php
+// tests/Feature/PostTest.php
+use App\Models\User;
+
+it("creates a post", function () {
+    $user = User::factory()->create();
+
+    $response = $this->actingAs($user)->post("/posts", [
+        "title" => "Γεια",
+        "body" => "Περιεχόμενο",
+    ]);
+
+    $response->assertRedirect();
+    $this->assertDatabaseHas("posts", ["title" => "Γεια"]);
+});
+```
+
+```bash
+php artisan test
+```
+
+- **Feature tests**: χτυπούν πραγματικά routes (request → response → DB) — η μεγαλύτερη αξία.
+- **Unit tests**: μεμονωμένες classes/methods.
+
+## Factories & RefreshDatabase
+
+```php
+<?php
+// δημιουργία test δεδομένων
+User::factory()->count(3)->create();
+Post::factory()->for($user)->create();
+```
+
+Το trait `RefreshDatabase` καθαρίζει τη βάση πριν από κάθε test, ώστε τα tests να είναι ανεξάρτητα μεταξύ τους.
+
+## Queues & Jobs — βγάλε την αργή δουλειά απ' το request
+
+Αργές εργασίες (email, εικόνες, εξωτερικά APIs) δεν πρέπει να κρατάνε τον χρήστη να περιμένει. Τις βάζεις σε **queue**:
+
+```bash
+php artisan make:job SendWelcomeEmail
+```
+
+```php
+<?php
+class SendWelcomeEmail implements ShouldQueue {
+    use Queueable;
+
+    public function __construct(public User $user) {}
+
+    public function handle(): void {
+        // αργή δουλειά — τρέχει στο παρασκήνιο
+        Mail::to($this->user)->send(new WelcomeMail());
+    }
+}
+```
+
+```php
+<?php
+// dispatch: επιστρέφει ΑΜΕΣΩΣ, η δουλειά γίνεται μετά
+SendWelcomeEmail::dispatch($user);
+```
+
+```bash
+php artisan queue:work   # ο worker που εκτελεί τα jobs
+```
+
+Ο χρήστης παίρνει απάντηση αμέσως· το email στέλνεται από έναν worker στο παρασκήνιο. Τα jobs έχουν αυτόματα **retries** σε αποτυχία.
+
+## Caching
+
+```php
+<?php
+use Illuminate\Support\Facades\Cache;
+
+// "remember": αν υπάρχει στην cache δώσ' το, αλλιώς υπολόγισέ το & αποθήκευσέ το
+$stats = Cache::remember("homepage-stats", 600, function () {
+    return Post::expensiveAggregate();   // τρέχει μόνο αν λείπει από cache
+});
+```
+
+Το `Cache::remember` είναι το πιο χρήσιμο pattern: ακριβά queries υπολογίζονται μία φορά και σερβίρονται από cache (Redis/file) για 10 λεπτά.
+
+## Production checklist
+
+```bash
+composer install --no-dev --optimize-autoloader
+php artisan config:cache      # cache config (γι' αυτό config() όχι env())
+php artisan route:cache
+php artisan view:cache
+php artisan migrate --force
+```
+
+Επιπλέον:
+
+- `APP_ENV=production`, `APP_DEBUG=false` (αλλιώς διαρρέεις stack traces).
+- HTTPS παντού, secrets στο `.env` του server (όχι στο git).
+- Queue worker + scheduler ως **supervised** processes (systemd/Supervisor).
+- Logs & monitoring (π.χ. Sentry).
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you make a Laravel app production-ready?»
+
+> I write feature tests that hit real routes and assert on the database with `assertDatabaseHas`, using factories and `RefreshDatabase` for isolation. Slow work — emails, images, third-party calls — goes into queued jobs dispatched with `dispatch()` and run by `queue:work`, so the user gets an immediate response and failures retry automatically. I cache expensive reads with `Cache::remember`. For deployment I set `APP_DEBUG=false`, run `config:cache`, `route:cache`, `view:cache` and `migrate --force`, serve over HTTPS, keep secrets in the server's `.env`, and run the queue worker and scheduler as supervised processes with logging and monitoring.
+
+<Flashcards
+  title="Testing & production — interview drills"
+  cards={[
+    {
+      question: "Feature test vs unit test στο Laravel;",
+      answer: "Feature: χτυπά πραγματικό route (request → response → DB) και κάνει assertions όπως assertDatabaseHas/assertRedirect — η μεγαλύτερη αξία. Unit: δοκιμάζει μεμονωμένη class/method απομονωμένα. RefreshDatabase κρατά τα tests ανεξάρτητα."
+    },
+    {
+      question: "Πότε βάζεις δουλειά σε queue;",
+      answer: "Όταν είναι αργή και δεν χρειάζεται να περιμένει ο χρήστης: emails, image processing, εξωτερικά API calls, reports. dispatch() επιστρέφει αμέσως, queue:work την εκτελεί στο παρασκήνιο, με αυτόματα retries σε αποτυχία."
+    },
+    {
+      question: "Τι κάνει το Cache::remember;",
+      answer: "Αν το key υπάρχει στην cache, το επιστρέφει· αλλιώς τρέχει το closure, αποθηκεύει το αποτέλεσμα για X δευτερόλεπτα, και το επιστρέφει. Ιδανικό για ακριβά queries που σερβίρονται από Redis/file αντί να ξανατρέχουν."
+    },
+    {
+      question: "Τι αλλάζεις για production deploy;",
+      answer: "APP_DEBUG=false, composer install --no-dev, config:cache + route:cache + view:cache, migrate --force, HTTPS, secrets στο server .env, και queue worker + scheduler ως supervised processes (Supervisor/systemd) με monitoring."
+    },
+    {
+      question: "Γιατί APP_DEBUG=false σε production;",
+      answer: "Με debug=true, τα σφάλματα δείχνουν πλήρη stack traces, paths, queries και env values στον χρήστη/επιτιθέμενο. Σε production τα κρύβεις (γενικό error page) και τα καταγράφεις σε logs/monitoring."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Γιατί βάζουμε το στείλιμο email σε queue αντί να το κάνουμε μέσα στο request;"
+  options={[
+    "Για να μη χρειάζεται βάση δεδομένων.",
+    "Για να επιστρέφει η εφαρμογή αμέσως στον χρήστη, ενώ η αργή δουλειά γίνεται στο παρασκήνιο με retries.",
+    "Επειδή τα emails δεν δουλεύουν συγχρονισμένα στην PHP."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Το queue βγάζει την αργή εργασία εκτός του request/response cycle — ο χρήστης δεν περιμένει, και τα jobs ξαναδοκιμάζονται αυτόματα σε αποτυχία."
+/>
+
+<TrainingLab
+  title="Κάνε ένα feature production-ready"
+  scenario="Πάρε ένα post-creation feature και πρόσθεσε feature tests, ένα queued job για email ειδοποίησης, caching σε ένα ακριβό query, και production deploy checklist."
+  outcomes={[
+    "Να γράφεις feature tests με factories και DB assertions.",
+    "Να μετακινείς αργή δουλειά σε queued jobs.",
+    "Να εφαρμόζεις caching και production ρυθμίσεις."
+  ]}
+  steps={[
+    "Γράψε feature test: create post → assertRedirect + assertDatabaseHas.",
+    "Φτιάξε SendWelcomeEmail job (ShouldQueue) και κάνε dispatch.",
+    "Τύλιξε ένα ακριβό aggregate σε Cache::remember.",
+    "Πέρασε το production checklist (config/route/view cache, APP_DEBUG=false)."
+  ]}
+  checkpoints={[
+    "Τα tests τρέχουν απομονωμένα με RefreshDatabase.",
+    "Το request επιστρέφει χωρίς να περιμένει το email.",
+    "Το ακριβό query δεν ξανατρέχει σε κάθε επίσκεψη."
+  ]}
+  mistakes={[
+    "Να στέλνεις email συγχρονισμένα και να αργεί το request.",
+    "Να αφήνεις APP_DEBUG=true σε production.",
+    "Να ξεχνάς να τρέχει supervised ο queue worker (τα jobs δεν εκτελούνται)."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να πάρεις ένα feature και να το παραδώσεις tested, γρήγορο και production-ready — το τέλος του Laravel track."
+/>

@@ -1,0 +1,174 @@
+# Composer, Autoloading & Errors
+
+Το **Composer** είναι ο package manager της PHP — ό,τι το npm για το JavaScript. Διαχειρίζεται dependencies και, κυρίως, κάνει **autoloading** ώστε να μη γράφεις ποτέ ξανά χειροκίνητα `require`.
+
+## Ξεκίνημα project
+
+```bash
+composer init        # φτιάχνει composer.json διαδραστικά
+composer require guzzlehttp/guzzle   # εγκατάσταση πακέτου
+composer install     # εγκαθιστά ό,τι λέει το composer.json/lock
+```
+
+Δομή που προκύπτει:
+
+```txt
+composer.json      ← τα dependencies σου (τι θες)
+composer.lock      ← ακριβείς εκδόσεις (τι ακριβώς εγκαταστάθηκε)
+vendor/            ← ο κώδικας των πακέτων (μπαίνει σε .gitignore)
+vendor/autoload.php
+```
+
+Το `composer.lock` το **κάνεις commit** ώστε όλη η ομάδα να έχει ακριβώς τις ίδιες εκδόσεις — όπως το `package-lock.json`.
+
+## PSR-4 Autoloading
+
+Στο `composer.json` δηλώνεις πώς το namespace αντιστοιχεί σε φακέλους:
+
+```json
+{
+  "autoload": {
+    "psr-4": {
+      "App\\": "src/"
+    }
+  }
+}
+```
+
+Αυτό λέει: «ό,τι ξεκινά με `App\` βρίσκεται στον φάκελο `src/`». Έτσι το `App\Support\Str` → `src/Support/Str.php`.
+
+Μετά από αλλαγή στο autoload τρέχεις:
+
+```bash
+composer dump-autoload
+```
+
+Και πλέον στο entry point σου:
+
+```php
+<?php
+require __DIR__ . "/vendor/autoload.php";  // η ΜΟΝΗ χειροκίνητη require
+
+use App\Support\Str;
+echo Str::slug("Hello World");  // φορτώνεται αυτόματα
+```
+
+Ένα μόνο `require` για τον autoloader — όλες οι classes φορτώνονται **on demand** όταν χρησιμοποιηθούν.
+
+## Τι είναι τα PSR standards
+
+Τα **PSR** (PHP Standard Recommendations) είναι κοινές συμβάσεις ώστε ο κώδικας όλων να ταιριάζει:
+
+- **PSR-1 / PSR-12**: coding style (indentation, ονόματα, braces).
+- **PSR-4**: autoloading (namespace ↔ φάκελοι).
+- **PSR-3**: interface για loggers.
+- **PSR-7**: HTTP messages (requests/responses).
+
+Δεν χρειάζεται να τα αποστηθίσεις — αρκεί να ξέρεις ότι υπάρχουν και ότι τα frameworks τα ακολουθούν.
+
+## Exceptions — διαχείριση σφαλμάτων
+
+Η μοντέρνα PHP χειρίζεται σφάλματα με exceptions, όχι με return codes:
+
+```php
+<?php
+function findUser(int $id): array {
+    $user = /* ... lookup ... */ null;
+    if ($user === null) {
+        throw new RuntimeException("User $id not found");
+    }
+    return $user;
+}
+
+try {
+    $user = findUser(42);
+} catch (RuntimeException $e) {
+    echo "Σφάλμα: " . $e->getMessage();
+} finally {
+    // τρέχει πάντα (cleanup), είτε έσκασε είτε όχι
+}
+```
+
+## Custom & typed exceptions
+
+```php
+<?php
+class NotFoundException extends RuntimeException {}
+class ValidationException extends RuntimeException {}
+
+try {
+    throw new NotFoundException("Δεν βρέθηκε");
+} catch (NotFoundException $e) {
+    http_response_code(404);
+} catch (ValidationException $e) {
+    http_response_code(422);
+}
+```
+
+Φτιάχνεις **δικές σου exception classes** ώστε να πιάνεις διαφορετικά είδη σφαλμάτων ξεχωριστά και να αντιδράς ανάλογα (404 vs 422). Πιάνε **συγκεκριμένες** exceptions πριν τις γενικές.
+
+## Πώς απαντάς στη συνέντευξη
+
+«What does Composer do and how does autoloading work?»
+
+> Composer is PHP's dependency manager. It reads `composer.json` for what I need, locks exact versions in `composer.lock`, and installs packages into `vendor/`. Its killer feature is PSR-4 autoloading: I map a namespace prefix like `App\` to a folder like `src/`, and then a single `require vendor/autoload.php` is enough — classes load on demand by mapping their fully-qualified name to a file path. For errors I use exceptions, create typed exception classes so I can catch and translate different failures into the right HTTP status, and always catch specific exceptions before generic ones.
+
+<Flashcards
+  title="Composer & errors — interview drills"
+  cards={[
+    {
+      question: "Τι κάνει το Composer;",
+      answer: "Package manager της PHP (σαν npm). Διαβάζει το composer.json για dependencies, κλειδώνει ακριβείς εκδόσεις στο composer.lock, κατεβάζει κώδικα στο vendor/, και παρέχει autoloader. Το composer.lock το κάνεις commit για ίδιες εκδόσεις σε όλη την ομάδα."
+    },
+    {
+      question: "Πώς δουλεύει το PSR-4 autoloading;",
+      answer: "Αντιστοιχίζεις namespace prefix → φάκελο (π.χ. App\\ → src/). Όταν χρησιμοποιείς App\\Support\\Str, ο autoloader φορτώνει src/Support/Str.php on demand. Έτσι ένα μόνο require vendor/autoload.php αντικαθιστά όλα τα χειροκίνητα require."
+    },
+    {
+      question: "composer.json vs composer.lock;",
+      answer: "composer.json: ΤΙ θες (ranges εκδόσεων, π.χ. ^9.0). composer.lock: ΤΙ ΑΚΡΙΒΩΣ εγκαταστάθηκε (κλειδωμένες εκδόσεις + hashes). Κάνεις commit ΚΑΙ τα δύο ώστε η ομάδα/production να έχει πανομοιότυπες εκδόσεις."
+    },
+    {
+      question: "Γιατί φτιάχνεις custom exception classes;",
+      answer: "Για να ξεχωρίζεις είδη σφαλμάτων (NotFoundException vs ValidationException) και να τα πιάνεις χωριστά — π.χ. μετάφραση σε 404 vs 422. Πιάνε ΣΥΓΚΕΚΡΙΜΕΝΕΣ exceptions πριν τις γενικές, αλλιώς η γενική τις 'καταπίνει' όλες."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Τι κερδίζεις από το PSR-4 autoloading του Composer;"
+  options={[
+    "Δεν χρειάζεται πια να γράφεις χειροκίνητα require για κάθε class — φορτώνονται αυτόματα από το όνομά τους.",
+    "Τρέχει η PHP χωρίς server.",
+    "Δεν χρειάζεται composer.json."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Με PSR-4 ένα require του vendor/autoload.php αρκεί· οι classes φορτώνονται on demand βάσει namespace → διαδρομή αρχείου."
+/>
+
+<TrainingLab
+  title="Στήσε project με Composer & error handling"
+  scenario="Φτιάξε ένα μικρό project με Composer autoloading, ένα εξωτερικό πακέτο, και centralized exception handling με typed exceptions."
+  outcomes={[
+    "Να στήνεις PSR-4 autoloading με composer.json.",
+    "Να εγκαθιστάς και να χρησιμοποιείς πακέτα.",
+    "Να σχεδιάζεις typed exceptions και να τις χειρίζεσαι σωστά."
+  ]}
+  steps={[
+    "composer init και όρισε autoload psr-4 App\\ → src/.",
+    "composer require ένα πακέτο (π.χ. guzzle) και χρησιμοποίησέ το.",
+    "Φτιάξε NotFoundException/ValidationException που κάνουν extend RuntimeException.",
+    "Σε ένα try/catch μετάφρασε κάθε exception στο σωστό HTTP status."
+  ]}
+  checkpoints={[
+    "Μόνο ένα require (του autoload.php) υπάρχει στον κώδικα.",
+    "Το composer.lock είναι committed.",
+    "Οι specific exceptions πιάνονται πριν τις generic."
+  ]}
+  mistakes={[
+    "Να κάνεις commit τον φάκελο vendor/.",
+    "Να πιάνεις \\Throwable πρώτο και να κρύβεις πραγματικά bugs.",
+    "Να γράφεις χειροκίνητα require αντί να αφήνεις τον autoloader."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν στήνεις project με autoloading και καθαρό error handling — ακριβώς το περιβάλλον πάνω στο οποίο χτίζεται το Laravel."
+/>

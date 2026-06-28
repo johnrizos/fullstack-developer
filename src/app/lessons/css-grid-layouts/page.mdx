@@ -202,6 +202,154 @@ export const gridSolutionCss = `body {
 
 Το `minmax(220px, 1fr)` λέει: κάθε card να έχει τουλάχιστον 220px, αλλά να μπορεί να μεγαλώσει.
 
+## Rows: grid-template-rows
+
+Όπως ορίζεις στήλες, ορίζεις και γραμμές με `grid-template-rows`:
+
+```css
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 80px 1fr 60px;  /* header, content, footer */
+  gap: 16px;
+}
+```
+
+Συχνά δεν χρειάζεται να ορίσεις rows ρητά — δημιουργούνται αυτόματα όσο μπαίνουν items (δες παρακάτω).
+
+## Explicit vs implicit grid
+
+- **Explicit grid**: οι γραμμές/στήλες που δήλωσες εσύ με `grid-template-columns`/`grid-template-rows`.
+- **Implicit grid**: όταν μπουν περισσότερα items απ' όσα χωράνε, το Grid φτιάχνει **μόνο του** νέες γραμμές.
+
+Με `grid-auto-rows` ελέγχεις το ύψος αυτών των αυτόματων γραμμών, και με `grid-auto-flow` τη φορά γεμίσματος:
+
+```css
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: 200px;        /* κάθε νέα γραμμή 200px ύψος */
+  grid-auto-flow: row;          /* default: γεμίζει γραμμή-γραμμή (column = στήλη-στήλη) */
+  gap: 12px;
+}
+```
+
+## Τοποθέτηση items: grid-column, grid-row & span
+
+Μπορείς να βάλεις ένα item να **απλωθεί** σε πολλές στήλες/γραμμές. Προσοχή: οι αριθμοί αναφέρονται σε **γραμμές-όρια (lines)**, όχι σε στήλες — 3 στήλες έχουν 4 lines.
+
+```css
+.featured {
+  grid-column: 1 / 3;   /* από line 1 έως line 3 = 2 στήλες */
+  grid-row: 1 / 3;      /* καταλαμβάνει 2 γραμμές */
+}
+
+.wide {
+  grid-column: span 2;  /* πιο βολικό: «πιάσε 2 στήλες» όπου κι αν είσαι */
+}
+```
+
+## grid-template-areas: ζωγράφισε το layout
+
+Ο πιο ευανάγνωστος τρόπος για layout σελίδας: δίνεις **ονόματα** στις περιοχές και τα «ζωγραφίζεις».
+
+```css
+.page {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    "sidebar header"
+    "sidebar main"
+    "sidebar footer";
+  min-height: 100vh;
+}
+
+.page > header  { grid-area: header; }
+.page > aside   { grid-area: sidebar; }
+.page > main    { grid-area: main; }
+.page > footer  { grid-area: footer; }
+```
+
+Το responsive γίνεται πανεύκολο: αλλάζεις απλώς το «σχέδιο» μέσα σε media query.
+
+```css
+@media (max-width: 700px) {
+  .page {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "header"
+      "main"
+      "sidebar"
+      "footer";
+  }
+}
+```
+
+## auto-fit vs auto-fill
+
+Και τα δύο φτιάχνουν responsive grids χωρίς media queries, αλλά διαφέρουν όταν **περισσεύει χώρος**:
+
+- `auto-fit`: «μάζεψε» τις άδειες στήλες — τα υπάρχοντα items **τεντώνονται** να γεμίσουν.
+- `auto-fill`: κράτα τις άδειες στήλες (αόρατα κενά) — τα items **δεν** τεντώνονται.
+
+```css
+.cards { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }  /* συνηθέστερο */
+```
+
+Πρακτικά: για κάρτες που θες να γεμίζουν τη γραμμή → `auto-fit`. Όταν θες σταθερό «πλέγμα» που δεν τεντώνεται → `auto-fill`.
+
+## Alignment μέσα στο grid
+
+Όπως στο Flexbox, υπάρχουν container και item ιδιότητες:
+
+```css
+.grid {
+  display: grid;
+  justify-items: center;   /* στοίχιση items οριζόντια ΜΕΣΑ στο κελί τους */
+  align-items: center;     /* στοίχιση items κάθετα μέσα στο κελί */
+  /* place-items: center;  ← shorthand και για τα δύο */
+
+  justify-content: center; /* στοίχιση ΟΛΟΥ του grid οριζόντια αν περισσεύει χώρος */
+  align-content: center;   /* στοίχιση όλου του grid κάθετα */
+}
+
+.special {
+  justify-self: end;       /* override για ΕΝΑ item */
+  align-self: start;
+}
+```
+
+Ξεχώρισέ τα: τα `*-items` στοιχίζουν το περιεχόμενο **μέσα σε κάθε κελί**· τα `*-content` στοιχίζουν **ολόκληρο το grid** μέσα στον container.
+
+## Sizing: fr, minmax, min-content & max-content
+
+- `fr`: μερίδιο του διαθέσιμου χώρου (αφού αφαιρεθούν fixed μεγέθη και gaps).
+- `minmax(min, max)`: εύρος — π.χ. `minmax(200px, 1fr)` = ποτέ κάτω από 200px, αλλά τεντώνεται.
+- `min-content`: όσο χρειάζεται για να μη σπάσει το περιεχόμενο (π.χ. η πιο μακριά λέξη).
+- `max-content`: όσο χρειάζεται για να χωρέσει όλο σε μία γραμμή.
+- `auto`: προσαρμόζεται στο περιεχόμενο.
+
+```css
+.layout {
+  grid-template-columns: min-content 1fr;  /* στήλη όσο το περιεχόμενο, μετά ο υπόλοιπος χώρος */
+}
+```
+
+## Γρήγορος πίνακας αναφοράς
+
+| Ιδιότητα | Πού μπαίνει | Τι κάνει |
+| --- | --- | --- |
+| `grid-template-columns` / `-rows` | container | ορίζει στήλες / γραμμές |
+| `grid-template-areas` | container | named layout «σχέδιο» |
+| `gap` | container | απόσταση μεταξύ κελιών |
+| `grid-auto-rows` / `grid-auto-flow` | container | implicit grid (αυτόματες γραμμές) |
+| `justify-items` / `align-items` | container | στοίχιση items μέσα στο κελί |
+| `justify-content` / `align-content` | container | στοίχιση όλου του grid |
+| `grid-column` / `grid-row` / `span` | item | σε ποιες γραμμές/στήλες απλώνεται |
+| `grid-area` | item | σε ποια named area κάθεται |
+| `justify-self` / `align-self` | item | override στοίχισης ενός item |
+
 ## Grid vs Flexbox
 
 Χρησιμοποίησε Flexbox όταν:

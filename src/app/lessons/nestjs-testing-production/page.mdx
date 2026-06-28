@@ -1,0 +1,192 @@
+# Testing & Production
+
+Το Nest είναι φτιαγμένο για testing — το DI container σού επιτρέπει να swap-άρεις providers με mocks χωρίς πόνο. Στη συνέντευξη: «πώς τεστάρεις ένα service;», «unit vs e2e;», «πώς γίνεται deploy ένα Nest app;».
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να γράφεις unit test με `Test.createTestingModule` και mocked providers,
+- να γράφεις e2e test με Supertest πάνω στο πραγματικό app,
+- να ξέρεις τη testing pyramid,
+- να στήνεις config validation, health checks και graceful shutdown για production.
+
+## Unit test — mock τα dependencies
+
+Το `Test.createTestingModule` φτιάχνει ένα DI container όπου overrideάρεις providers:
+
+```ts
+describe("TaskService", () => {
+  let service: TaskService;
+  const prismaMock = { task: { findUnique: jest.fn() } };
+
+  beforeEach(async () => {
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        TaskService,
+        { provide: PrismaService, useValue: prismaMock },   // swap το πραγματικό client
+      ],
+    }).compile();
+    service = moduleRef.get(TaskService);
+  });
+
+  it("ρίχνει NotFound όταν δεν υπάρχει task", async () => {
+    prismaMock.task.findUnique.mockResolvedValue(null);
+    await expect(service.findOne("x")).rejects.toThrow(NotFoundException);
+  });
+});
+```
+
+Επειδή το service παίρνει το Prisma μέσω DI, το αντικαθιστάς με ένα plain object mock — **κανένα** πραγματικό DB call. Γρήγορο, deterministic, τεστάρει τη logic.
+
+## E2E test — το πραγματικό app
+
+Το e2e σηκώνει ολόκληρο το Nest app και χτυπά HTTP με Supertest:
+
+```ts
+describe("Tasks (e2e)", () => {
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = moduleRef.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true }));   // ίδιο setup με production
+    await app.init();
+  });
+  afterAll(async () => await app.close());
+
+  it("POST /tasks → 400 σε invalid body", () => {
+    return request(app.getHttpServer()).post("/tasks").send({ title: "" }).expect(400);
+  });
+  it("POST /tasks → 201 με valid body", () => {
+    return request(app.getHttpServer()).post("/tasks").send({ title: "Buy milk" }).expect(201);
+  });
+});
+```
+
+Το e2e περνά μέσα από όλο το pipeline (pipes, guards, interceptors) — επαληθεύει ότι τα κομμάτια δουλεύουν **μαζί**, όχι μόνο απομονωμένα.
+
+<PredictOutput
+  title="Γιατί override provider αντί για πραγματικό;"
+  code={`// Unit test χωρίς override:
+Test.createTestingModule({
+  providers: [TaskService, PrismaService],   // πραγματικό Prisma
+}).compile();
+// Τρέχεις 500 unit tests σε CI χωρίς βάση. Τι γίνεται;`}
+  options={['Δουλεύουν κανονικά', 'Αποτυγχάνουν/κρεμάνε — προσπαθούν να συνδεθούν σε ανύπαρκτη βάση', 'Είναι πιο γρήγορα', 'Skip-άρονται αυτόματα']}
+  correctOptionIndex={1}
+  answer="Αποτυγχάνουν — δεν υπάρχει βάση να συνδεθούν"
+  explanation="Με το πραγματικό PrismaService, τα unit tests προσπαθούν να ανοίξουν connection. Σε CI χωρίς βάση κρεμάνε ή σκάνε, γίνονται αργά και flaky. Γι' αυτό override-άρεις με mock (useValue) — unit tests = μηδέν I/O, deterministic."
+/>
+
+## Testing pyramid
+
+```txt
+        ╱╲   λίγα E2E       (αργά, ολόκληρο app + HTTP)
+       ╱──╲
+      ╱ Int ╲ μερικά        (service + πραγματική/test βάση)
+     ╱──────╲
+    ╱  Unit  ╲ πολλά        (γρήγορα, mocked deps, business logic)
+   ╱──────────╲
+```
+
+Βάση από γρήγορα unit tests (logic, mocked deps), λίγα integration, ελάχιστα e2e για τα critical paths. Αντίστροφη πυραμίδα (όλα e2e) = αργό, flaky CI.
+
+## Production essentials
+
+```ts
+// main.ts
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.enableShutdownHooks();        // τρέχει onModuleDestroy → $disconnect, κλείσιμο pools
+  app.enableCors({ origin: process.env.CLIENT_URL });
+  await app.listen(process.env.PORT ?? 3000);
+}
+```
+
+- **Config validation**: `ConfigModule.forRoot({ validationSchema })` — fail fast αν λείπει env var.
+- **Graceful shutdown**: `enableShutdownHooks()` ώστε σε SIGTERM να κλείνουν connections καθαρά (αλλιώς leaked connections/in-flight requests).
+- **Health checks**: `@nestjs/terminus` → `/health` που ελέγχει DB/dependencies (για k8s/load balancer).
+- **Logging**: structured logger (Pino) αντί για `console.log`· interceptor για request logging.
+
+<Exercise
+  question="Πόσα e2e tests σε σχέση με unit tests, και γιατί;"
+  options={[
+    "Λίγα e2e, πολλά unit — τα unit είναι γρήγορα/deterministic (mocked deps) και καλύπτουν logic· τα e2e είναι αργά και επιβεβαιώνουν μόνο ότι τα critical paths δουλεύουν end-to-end.",
+    "Μόνο e2e — αφού τεστάρουν τα πάντα μαζί, δεν χρειάζονται unit.",
+    "Ίσος αριθμός από κάθε είδος, πάντα."
+  ]}
+  correctOptionIndex={0}
+  explanation="Testing pyramid: βάση από πολλά γρήγορα unit tests, λίγα e2e στην κορυφή για critical flows. Αντίστροφη πυραμίδα (μόνο e2e) κάνει το CI αργό και flaky."
+/>
+
+<Exercise
+  question="Γιατί enableShutdownHooks() σε production;"
+  options={[
+    "Σε SIGTERM (deploy/scale-down) τρέχουν τα onModuleDestroy ώστε να κλείσουν καθαρά τα connections (π.χ. Prisma $disconnect) και να μην αφήσεις leaked connections ή μισοτελειωμένα requests.",
+    "Κάνει το app να ξεκινά πιο γρήγορα.",
+    "Είναι μόνο για development debugging."
+  ]}
+  correctOptionIndex={0}
+  explanation="Χωρίς shutdown hooks, ένα SIGTERM σκοτώνει το process αφήνοντας ανοιχτά connections και in-flight requests. Με enableShutdownHooks το Nest τρέχει τα lifecycle destroy hooks για καθαρό κλείσιμο."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you test and ship a NestJS app?»
+
+> The DI container makes testing straightforward. For unit tests I build a `Test.createTestingModule` and override real dependencies with mocks via `useValue`, so a service test exercises pure logic with zero I/O — fast and deterministic. For e2e I import the real `AppModule`, apply the same global pipes as production, and hit it with Supertest so the whole pipeline — pipes, guards, interceptors — is exercised together. I follow the testing pyramid: many unit tests, a few integration, a handful of e2e on critical paths, because an all-e2e suite is slow and flaky. For production I validate env with a config schema so it fails fast, enable shutdown hooks so SIGTERM closes connections cleanly via `$disconnect`, add a `/health` endpoint with terminus, configure CORS, and use a structured logger instead of console.
+
+<Flashcards
+  title="Testing & production — interview drills"
+  cards={[
+    {
+      question: "Unit test στο Nest;",
+      answer: "Test.createTestingModule με providers, override τα dependencies με useValue mocks. Service τεστάρεται χωρίς I/O — γρήγορα, deterministic. moduleRef.get(Service)."
+    },
+    {
+      question: "E2E test;",
+      answer: "imports:[AppModule], createNestApplication, ίδια global pipes με prod, Supertest σε app.getHttpServer(). Περνά όλο το pipeline — επαληθεύει ότι τα κομμάτια δουλεύουν μαζί."
+    },
+    {
+      question: "Testing pyramid;",
+      answer: "Πολλά unit (logic, mocked), λίγα integration, ελάχιστα e2e (critical paths). Αντίστροφη πυραμίδα = αργό/flaky CI."
+    },
+    {
+      question: "Graceful shutdown;",
+      answer: "enableShutdownHooks() → σε SIGTERM τρέχουν onModuleDestroy ($disconnect, κλείσιμο pools). Αλλιώς leaked connections/in-flight requests στο deploy/scale-down."
+    },
+    {
+      question: "Production checklist;",
+      answer: "Config validation (fail fast), shutdown hooks, /health (terminus), CORS, structured logging (Pino), global ValidationPipe. Secrets από env, ποτέ hardcoded."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Test suite + production setup"
+  scenario="Γράψε unit + e2e tests και ετοίμασε το app για production."
+  outcomes={[
+    "Να γράφεις unit test με mocked providers.",
+    "Να γράφεις e2e με Supertest.",
+    "Να στήνεις config validation και graceful shutdown."
+  ]}
+  steps={[
+    "Unit test TaskService με PrismaService mock (useValue) — cover NotFound path.",
+    "E2E test: import AppModule, ίδιες global pipes, Supertest για 201/400.",
+    "ConfigModule.forRoot με validationSchema (fail fast).",
+    "enableShutdownHooks() + CORS + PORT από env στο main.ts.",
+    "Πρόσθεσε /health με @nestjs/terminus."
+  ]}
+  checkpoints={[
+    "Unit tests τρέχουν χωρίς βάση/δίκτυο.",
+    "E2E πιάνει το validation (400) και το happy path (201).",
+    "App αρνείται boot με missing env· κλείνει καθαρά σε SIGTERM."
+  ]}
+  mistakes={[
+    "Unit tests με πραγματικό PrismaService (αργά/flaky/χωρίς βάση σκάνε).",
+    "Μόνο e2e tests — αντίστροφη πυραμίδα.",
+    "Χωρίς shutdown hooks → leaked connections στο deploy.",
+    "console.log αντί για structured logger σε production."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν έχεις γρήγορα unit tests με mocks, e2e που καλύπτει critical paths, και app με config validation + graceful shutdown έτοιμο για production."
+/>

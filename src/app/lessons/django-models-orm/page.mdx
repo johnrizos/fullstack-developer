@@ -1,0 +1,154 @@
+# Models, ORM & Migrations
+
+Το Django ORM είναι από τα καλύτερα στον κόσμο: ορίζεις models σε Python και το Django φτιάχνει το schema, τα queries και τις σχέσεις. Αλλά πρέπει να ξέρεις τι τρέχει από κάτω — ειδικά το N+1.
+
+## Ορισμός model
+
+```python
+# blog/models.py
+from django.db import models
+
+class Post(models.Model):
+    title = models.CharField(max_length=200)
+    body = models.TextField()
+    author = models.ForeignKey("auth.User", on_delete=models.CASCADE, related_name="posts")
+    published = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.title
+```
+
+Κάθε model class → πίνακας. Κάθε field → στήλη. Το Django προσθέτει αυτόματα ένα `id` primary key.
+
+## Migrations — version control του schema
+
+```bash
+python manage.py makemigrations   # φτιάχνει migration files από τα model changes
+python manage.py migrate          # τα εφαρμόζει στη βάση
+```
+
+Δύο βήματα: το `makemigrations` **παράγει** τα migrations από τις αλλαγές στα models· το `migrate` τα **εφαρμόζει**. Τα migration files μπαίνουν στο git, ώστε η ομάδα να έχει ίδιο schema.
+
+## QuerySets — το ORM API
+
+```python
+Post.objects.all()
+Post.objects.filter(published=True)
+Post.objects.filter(title__icontains="django")     # field lookups με __
+Post.objects.exclude(published=False)
+Post.objects.get(pk=1)                              # ένα (ή σφάλμα)
+Post.objects.filter(author=user).order_by("-created_at")[:10]
+Post.objects.count()
+```
+
+Τα **field lookups** με διπλό underscore (`title__icontains`, `created_at__gte`) είναι το κλειδί: εκφράζουν WHERE conditions χωρίς SQL.
+
+## Lazy evaluation — σημαντικό
+
+Τα QuerySets είναι **lazy**: δεν χτυπούν τη βάση μέχρι να τα χρειαστείς (iteration, list, len). Έτσι μπορείς να τα «χτίζεις» σταδιακά:
+
+```python
+qs = Post.objects.filter(published=True)   # κανένα query ακόμα
+qs = qs.order_by("-created_at")            # ακόμα τίποτα
+for post in qs:                            # ΕΔΩ τρέχει το query
+    ...
+```
+
+## Relationships
+
+```python
+post.author              # ForeignKey → το User object
+user.posts.all()         # reverse (μέσω related_name)
+
+# ManyToMany
+class Post(models.Model):
+    tags = models.ManyToManyField("Tag", related_name="posts")
+
+post.tags.add(tag)
+post.tags.all()
+```
+
+## Το N+1 problem — η #1 παγίδα
+
+```python
+# ❌ N+1: 1 query για posts + 1 ΑΝΑ post για author
+for post in Post.objects.all():
+    print(post.author.username)   # κρυφό query κάθε φορά!
+
+# ✅ select_related: JOIN, για ForeignKey/OneToOne (1 query)
+for post in Post.objects.select_related("author"):
+    print(post.author.username)
+
+# ✅ prefetch_related: ξεχωριστό query, για ManyToMany/reverse
+for post in Post.objects.prefetch_related("tags"):
+    print([t.name for t in post.tags.all()])
+```
+
+Κανόνας μνήμης: **`select_related`** για «προς τα έξω» single relations (ForeignKey) μέσω JOIN· **`prefetch_related`** για «προς τα μέσα» πολλαπλά (ManyToMany, reverse) με δεύτερο query. Ρωτιέται σχεδόν σε κάθε Django συνέντευξη.
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you avoid N+1 queries in Django?»
+
+> N+1 happens when I loop a queryset and access a related object inside — Django fires one extra query per row. I fix it with `select_related` for ForeignKey/OneToOne, which adds a SQL JOIN and resolves in one query, and `prefetch_related` for ManyToMany and reverse relations, which runs a second query and joins in Python. I also rely on querysets being lazy, so I can compose filters without hitting the database until I iterate. Migrations are my schema version control: `makemigrations` generates them from model changes, `migrate` applies them, and they're committed so the whole team shares one schema.
+
+<Flashcards
+  title="Django ORM — interview drills"
+  cards={[
+    {
+      question: "select_related vs prefetch_related;",
+      answer: "select_related: για ForeignKey/OneToOne — κάνει SQL JOIN, ΕΝΑ query. prefetch_related: για ManyToMany/reverse — δεύτερο query και ένωση στην Python. Και τα δύο λύνουν N+1, για διαφορετικούς τύπους σχέσεων."
+    },
+    {
+      question: "makemigrations vs migrate;",
+      answer: "makemigrations: ΠΑΡΑΓΕΙ migration files διαβάζοντας τις αλλαγές στα models. migrate: ΕΦΑΡΜΟΖΕΙ τα migration files στη βάση. Δύο βήματα. Τα migration files μπαίνουν στο git για κοινό schema."
+    },
+    {
+      question: "Τι σημαίνει ότι τα QuerySets είναι lazy;",
+      answer: "Δεν χτυπούν τη βάση μέχρι να τα 'υλοποιήσεις' (iteration, list(), len(), slicing με βήμα). Έτσι μπορείς να αλυσιδώνεις filter/order_by χωρίς ενδιάμεσα queries — το SQL τρέχει μία φορά στο τέλος."
+    },
+    {
+      question: "Τι είναι τα field lookups (__);",
+      answer: "Σύνταξη για WHERE conditions: title__icontains='x', created_at__gte=date, author__username='y' (μέσω σχέσης). Το διπλό underscore εκφράζει operators/joins χωρίς να γράφεις SQL."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Έχεις λίστα posts και θες να δείξεις το username του author καθενός χωρίς N+1. Τι χρησιμοποιείς;"
+  options={[
+    "Post.objects.all() και ένα loop.",
+    "Post.objects.select_related('author') — κάνει JOIN και φέρνει τα authors σε ένα query.",
+    "Περισσότερα migrations."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Το select_related είναι για ForeignKey σχέσεις και λύνει το N+1 με ένα SQL JOIN."
+/>
+
+<TrainingLab
+  title="Χτίσε data layer χωρίς N+1"
+  scenario="Μοντελοποίησε posts, authors και tags με models & migrations, και γράψε queries που αποφεύγουν το N+1 με select_related/prefetch_related."
+  outcomes={[
+    "Να ορίζεις models με σχέσεις και να τα μεταφράζεις σε migrations.",
+    "Να γράφεις QuerySets με field lookups.",
+    "Να εντοπίζεις και να λύνεις N+1."
+  ]}
+  steps={[
+    "Όρισε Post (ForeignKey author) και Tag (ManyToMany).",
+    "makemigrations + migrate.",
+    "Γράψε λίστα posts με author — πρώτα με N+1, μετά με select_related.",
+    "Χρησιμοποίησε prefetch_related για τα tags και μέτρα τα queries (django-debug-toolbar)."
+  ]}
+  checkpoints={[
+    "Τα migrations εφαρμόζονται καθαρά.",
+    "Η λίστα με author κάνει σταθερό αριθμό queries.",
+    "Τα tags φορτώνονται με prefetch_related."
+  ]}
+  mistakes={[
+    "Να ακουμπάς σχέσεις σε loop χωρίς select/prefetch.",
+    "Να χρησιμοποιείς select_related για ManyToMany (θέλει prefetch).",
+    "Να αλλάζεις schema με το χέρι αντί για migration."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν σχεδιάζεις models και γράφεις queries που δεν εκρήγνυνται σε N+1 καθώς μεγαλώνουν τα δεδομένα."
+/>

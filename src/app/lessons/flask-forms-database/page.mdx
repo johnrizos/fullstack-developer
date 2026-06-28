@@ -1,0 +1,172 @@
+# Forms & Database
+
+Το Flask δεν έχει built-in ORM ή forms — διαλέγεις extensions. Τα πιο κοινά είναι το **Flask-SQLAlchemy** (βάση) και χειρισμός φορμών με validation. Εδώ χτίζεις ένα πλήρες CRUD.
+
+## Flask-SQLAlchemy setup
+
+```bash
+pip install flask-sqlalchemy
+```
+
+```python
+# app.py
+from flask import Flask
+from flask_sqlalchemy import SQLAlchemy
+
+app = Flask(__name__)
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///app.db"
+db = SQLAlchemy(app)
+```
+
+## Models
+
+```python
+class Post(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<Post {self.title}>"
+```
+
+```python
+# δημιουργία πινάκων (μία φορά)
+with app.app_context():
+    db.create_all()
+```
+
+Κάθε model class → πίνακας, κάθε `db.Column` → στήλη. (Για σοβαρά projects προσθέτεις Flask-Migrate/Alembic για migrations αντί για `create_all`.)
+
+## CRUD με SQLAlchemy
+
+```python
+# create
+post = Post(title="Γεια", body="Περιεχόμενο")
+db.session.add(post)
+db.session.commit()
+
+# read
+posts = Post.query.all()
+post = Post.query.get_or_404(1)
+recent = Post.query.filter_by(published=True).order_by(Post.created_at.desc()).limit(10).all()
+
+# update
+post.title = "Νέος τίτλος"
+db.session.commit()
+
+# delete
+db.session.delete(post)
+db.session.commit()
+```
+
+Όλες οι αλλαγές περνούν από το `db.session` και «κλειδώνουν» με `commit()`. Το `get_or_404` δίνει αυτόματο 404.
+
+## Φόρμες & validation
+
+Χωρίς extension, χειρίζεσαι τη φόρμα μόνος σου:
+
+```python
+@app.route("/posts/new", methods=["GET", "POST"])
+def create_post():
+    if request.method == "POST":
+        title = request.form.get("title", "").strip()
+        errors = []
+        if not title:
+            errors.append("Ο τίτλος είναι υποχρεωτικός.")
+        if not errors:
+            db.session.add(Post(title=title, body=request.form.get("body", "")))
+            db.session.commit()
+            return redirect(url_for("post_list"))
+        return render_template("post_form.html", errors=errors)
+    return render_template("post_form.html", errors=[])
+```
+
+Για πιο σοβαρές φόρμες χρησιμοποιείς το **Flask-WTF** (WTForms), που δίνει form classes με validators και αυτόματο **CSRF**:
+
+```python
+from flask_wtf import FlaskForm
+from wtforms import StringField
+from wtforms.validators import DataRequired, Length
+
+class PostForm(FlaskForm):
+    title = StringField("Τίτλος", validators=[DataRequired(), Length(max=200)])
+```
+
+```python
+form = PostForm()
+if form.validate_on_submit():       # POST + έγκυρο + CSRF ok
+    db.session.add(Post(title=form.title.data))
+    db.session.commit()
+```
+
+## CSRF — δεν είναι αυτόματο
+
+Σε αντίθεση με το Django/Laravel, το **σκέτο Flask δεν έχει αυτόματη CSRF προστασία**. Την παίρνεις με Flask-WTF (`{{ form.csrf_token }}` στο template). Είναι δική σου ευθύνη — τυπικό για micro-framework.
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you handle data and forms in Flask?»
+
+> Flask has no built-in ORM or forms, so I add extensions. For data I use Flask-SQLAlchemy: models as classes, changes staged on `db.session` and persisted with `commit()`, and `get_or_404` for clean 404s. For forms I either validate manually from `request.form` or, preferably, use Flask-WTF (WTForms) for declarative validators and — importantly — automatic CSRF, since plain Flask doesn't protect against CSRF by default. That "bring your own pieces" tradeoff is exactly the micro-framework philosophy: more flexibility, more responsibility.
+
+<Flashcards
+  title="Flask forms & DB — interview drills"
+  cards={[
+    {
+      question: "Πώς γίνεται CRUD με Flask-SQLAlchemy;",
+      answer: "Models ως classes (db.Model, db.Column). create: db.session.add + commit. read: Post.query.all()/get_or_404/filter_by. update: άλλαξε attribute + commit. delete: db.session.delete + commit. Όλα περνούν από db.session."
+    },
+    {
+      question: "Έχει το Flask αυτόματη CSRF προστασία;",
+      answer: "ΟΧΙ — το σκέτο Flask δεν προστατεύει από CSRF by default (σε αντίθεση με Django/Laravel). Την παίρνεις με Flask-WTF ({{ form.csrf_token }}). Τυπικό micro-framework tradeoff: ευελιξία αλλά δική σου ευθύνη."
+    },
+    {
+      question: "Γιατί χρειάζεσαι extensions στο Flask;",
+      answer: "Επειδή το core δίνει μόνο routing/templating/request. ORM (Flask-SQLAlchemy), forms+CSRF (Flask-WTF), migrations (Flask-Migrate), auth (Flask-Login) έρχονται ως ξεχωριστά extensions που διαλέγεις εσύ."
+    },
+    {
+      question: "Τι κάνει το validate_on_submit() του Flask-WTF;",
+      answer: "Επιστρέφει True μόνο αν είναι POST ΚΑΙ τα δεδομένα περνούν τους validators ΚΑΙ το CSRF token είναι έγκυρο. Ένας έλεγχος που καλύπτει method + validation + CSRF μαζί."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Σε αντίθεση με Django/Laravel, τι ισχύει για το CSRF στο σκέτο Flask;"
+  options={[
+    "Είναι ενεργό αυτόματα σε κάθε φόρμα.",
+    "ΔΕΝ υπάρχει αυτόματη προστασία — την προσθέτεις με extension (Flask-WTF).",
+    "Το Flask δεν δέχεται φόρμες."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Ως micro-framework, το Flask αφήνει το CSRF σε εσένα — τυπικά μέσω Flask-WTF που δίνει form.csrf_token."
+/>
+
+<TrainingLab
+  title="CRUD app με Flask-SQLAlchemy"
+  scenario="Φτιάξε ένα posts CRUD με Flask-SQLAlchemy models, φόρμες με validation, και CSRF μέσω Flask-WTF."
+  outcomes={[
+    "Να ορίζεις models και να κάνεις CRUD με db.session.",
+    "Να validάρεις φόρμες (χειροκίνητα ή με Flask-WTF).",
+    "Να προσθέτεις CSRF προστασία ρητά."
+  ]}
+  steps={[
+    "Στήσε Flask-SQLAlchemy και όρισε Post model· db.create_all().",
+    "Φτιάξε list/detail με Post.query και get_or_404.",
+    "Φτιάξε create/edit με validation και redirect σε επιτυχία.",
+    "Πρόσθεσε Flask-WTF form με CSRF token στο template."
+  ]}
+  checkpoints={[
+    "Όλες οι αλλαγές γίνονται commit στο db.session.",
+    "Άκυρα δεδομένα δείχνουν errors χωρίς να σώζονται.",
+    "Οι φόρμες έχουν CSRF token."
+  ]}
+  mistakes={[
+    "Να ξεχνάς το db.session.commit() (οι αλλαγές χάνονται).",
+    "Να βασίζεσαι σε CSRF χωρίς να το έχεις ενεργοποιήσει.",
+    "Να μη validάρεις το input πριν το σώσεις."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν χτίζεις πλήρες CRUD με βάση και ασφαλείς φόρμες, διαλέγοντας συνειδητά τα extensions."
+/>

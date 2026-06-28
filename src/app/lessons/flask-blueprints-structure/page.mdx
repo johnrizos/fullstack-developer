@@ -1,0 +1,161 @@
+# Blueprints & App Factory
+
+Μια Flask app σε ένα `app.py` δεν κλιμακώνει. Δύο patterns την κάνουν συντηρήσιμη: τα **Blueprints** (σπάσιμο σε modules) και το **application factory** (καθαρή δημιουργία της app). Είναι το «πώς δομώ μεγάλο Flask project».
+
+## Το πρόβλημα με ένα αρχείο
+
+Όλα τα routes, models, config σε ένα `app.py` → χάος, circular imports, αδύνατο testing με διαφορετικές ρυθμίσεις. Χρειάζεσαι δομή.
+
+## Blueprints — modular routes
+
+Ένα blueprint είναι ένα «υπο-app»: ομαδοποιεί σχετιζόμενα routes, templates και static files.
+
+```python
+# app/blog/routes.py
+from flask import Blueprint, render_template
+
+blog = Blueprint("blog", __name__, url_prefix="/blog")
+
+@blog.route("/")
+def index():
+    return render_template("blog/index.html")
+
+@blog.route("/<int:post_id>")
+def detail(post_id):
+    return f"Post {post_id}"
+```
+
+Πρόσεξε: `@blog.route` (όχι `@app.route`). Το `url_prefix="/blog"` βάζει αυτόματα πρόθεμα σε όλα τα routes.
+
+## Application factory
+
+Αντί να φτιάχνεις την `app` σε global scope, τη φτιάχνεις σε **function** — έτσι μπορείς να δημιουργείς πολλαπλά instances (π.χ. με test config):
+
+```python
+# app/__init__.py
+from flask import Flask
+from flask_sqlalchemy import SQLAlchemy
+
+db = SQLAlchemy()   # ορίζεται έξω, αρχικοποιείται μέσα
+
+def create_app(config_object="config.Config"):
+    app = Flask(__name__)
+    app.config.from_object(config_object)
+
+    db.init_app(app)                        # σύνδεσε extensions στην app
+
+    from app.blog.routes import blog        # import ΜΕΣΑ (αποφυγή circular)
+    app.register_blueprint(blog)            # σύνδεσε το blueprint
+
+    return app
+```
+
+```python
+# run.py
+from app import create_app
+app = create_app()
+```
+
+Το factory pattern λύνει δύο πράγματα: **circular imports** (imports μέσα στη function) και **testing** (φτιάχνεις app με test config χωρίς να μολύνεις την production).
+
+## Extensions στο factory pattern
+
+Τα extensions (`db`, `migrate`, `login_manager`) ορίζονται **έξω** από το factory και αρχικοποιούνται **μέσα** με `init_app(app)`:
+
+```python
+db = SQLAlchemy()
+login_manager = LoginManager()
+
+def create_app():
+    app = Flask(__name__)
+    db.init_app(app)
+    login_manager.init_app(app)
+    return app
+```
+
+Έτσι το ίδιο `db` object είναι προσβάσιμο από παντού (models, blueprints) χωρίς circular import με την `app`.
+
+## Προτεινόμενη δομή
+
+```txt
+myapp/
+  app/
+    __init__.py        ← create_app() factory
+    extensions.py      ← db, login_manager (ορισμοί)
+    blog/
+      __init__.py
+      routes.py        ← Blueprint
+      models.py
+    auth/
+      routes.py        ← άλλο Blueprint
+  config.py            ← config classes
+  run.py
+```
+
+Κάθε feature είναι ένα blueprint package — παρόμοια φιλοσοφία με τα Django apps, αλλά χτισμένη χειροκίνητα (micro-framework).
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you structure a larger Flask app?»
+
+> Two patterns. Blueprints split the app into feature modules — each registers its own routes with `@blueprint.route` and can have a `url_prefix`, like mini-apps. The application factory creates the app inside a `create_app()` function instead of at import time, which solves circular imports and lets me build an app with test config without polluting production. Extensions like SQLAlchemy are defined at module level and wired in with `init_app(app)` inside the factory, so the same `db` is importable everywhere. The result is a package per feature — conceptually similar to Django apps, but assembled by hand.
+
+<Flashcards
+  title="Flask structure — interview drills"
+  cards={[
+    {
+      question: "Τι είναι ένα Blueprint;",
+      answer: "Ένα 'υπο-app' που ομαδοποιεί σχετιζόμενα routes/templates/static. Ορίζεις bp = Blueprint(...), routes με @bp.route, προαιρετικό url_prefix, και το συνδέεις με app.register_blueprint(bp). Σπάει το μονολιθικό app.py σε feature modules."
+    },
+    {
+      question: "Τι λύνει το application factory;",
+      answer: "Δημιουργία της app μέσα σε create_app() function αντί σε global scope. Λύνει: (1) circular imports (imports μέσα στη function), (2) testing — φτιάχνεις app με test config χωρίς να επηρεάζεις την production instance."
+    },
+    {
+      question: "Πώς συνδέεις extensions στο factory pattern;",
+      answer: "Ορίζεις το extension ΕΞΩ από το factory (db = SQLAlchemy()) και το αρχικοποιείς ΜΕΣΑ με db.init_app(app). Έτσι το ίδιο db object είναι importable από models/blueprints χωρίς circular import με την app."
+    },
+    {
+      question: "Blueprint του Flask vs app του Django — αναλογία;",
+      answer: "Και τα δύο είναι 'feature modules'. Στο Django τα apps έρχονται ως convention (startapp). Στο Flask τα blueprints τα στήνεις χειροκίνητα — micro-framework: εσύ ορίζεις τη δομή."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Ποιο είναι το κύριο όφελος του application factory pattern;"
+  options={[
+    "Κάνει την app πιο γρήγορη.",
+    "Επιτρέπει δημιουργία της app μέσα σε function — λύνει circular imports και επιτρέπει testing με διαφορετικό config.",
+    "Αντικαθιστά την ανάγκη για routes."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Το create_app() φτιάχνει την app on demand, ώστε να αποφεύγονται circular imports και να μπορείς να στήσεις test instances με δικό τους config."
+/>
+
+<TrainingLab
+  title="Refactor σε blueprints με app factory"
+  scenario="Πάρε μια μονολιθική Flask app και ξαναδόμησέ την με application factory, extensions σε ξεχωριστό module, και blueprints ανά feature."
+  outcomes={[
+    "Να σπας routes σε blueprints με url_prefix.",
+    "Να φτιάχνεις create_app() factory.",
+    "Να συνδέεις extensions με init_app χωρίς circular imports."
+  ]}
+  steps={[
+    "Φτιάξε app/extensions.py με db = SQLAlchemy().",
+    "Φτιάξε create_app() στο app/__init__.py που κάνει init_app + register_blueprint.",
+    "Μετάφερε τα routes σε app/blog/routes.py ως Blueprint.",
+    "Φτιάξε run.py που καλεί create_app()."
+  ]}
+  checkpoints={[
+    "Κανένα circular import.",
+    "Τα routes δουλεύουν με το url_prefix του blueprint.",
+    "Μπορείς να φτιάξεις app με test config."
+  ]}
+  mistakes={[
+    "Να φτιάχνεις την app σε global scope και να κολλάς σε circular imports.",
+    "Να αρχικοποιείς extensions έξω από το factory.",
+    "Να αφήνεις τα πάντα σε ένα app.py καθώς μεγαλώνει."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να δομήσεις ένα Flask project που κλιμακώνει, με blueprints και factory αντί για ένα τεράστιο αρχείο."
+/>

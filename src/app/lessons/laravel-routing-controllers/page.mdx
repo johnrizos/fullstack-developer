@@ -1,0 +1,182 @@
+# Routing, Controllers & Middleware
+
+Τα routes είναι η «πόρτα» κάθε Laravel εφαρμογής: αντιστοιχίζουν ένα URL + HTTP method σε κώδικα. Εδώ μαθαίνεις routes, controllers και το middleware pipeline.
+
+## Βασικά routes
+
+```php
+<?php
+// routes/web.php
+use App\Http\Controllers\PostController;
+
+Route::get("/posts", [PostController::class, "index"]);
+Route::get("/posts/{post}", [PostController::class, "show"]);
+Route::post("/posts", [PostController::class, "store"]);
+Route::put("/posts/{post}", [PostController::class, "update"]);
+Route::delete("/posts/{post}", [PostController::class, "destroy"]);
+```
+
+Κάθε HTTP method έχει το δικό του helper. Το `{post}` είναι **route parameter** — δυναμικό κομμάτι του URL.
+
+## Route parameters
+
+```php
+<?php
+Route::get("/posts/{id}", function (string $id) {
+    return "Post $id";
+});
+
+// optional με default
+Route::get("/users/{name?}", function (?string $name = "guest") {
+    return "Γεια $name";
+});
+
+// με περιορισμό (μόνο αριθμοί)
+Route::get("/posts/{id}", fn(int $id) => "...")->whereNumber("id");
+```
+
+## Named routes
+
+```php
+<?php
+Route::get("/posts/{post}", [PostController::class, "show"])->name("posts.show");
+
+// φτιάξε URL από το όνομα — αν αλλάξει το path, δεν σπάει τίποτα
+$url = route("posts.show", ["post" => 42]);   // /posts/42
+```
+
+Πάντα δίνε **όνομα** στα routes και αναφέρσου σε αυτά με `route()` αντί να γράφεις hardcoded URLs.
+
+## Resource controllers
+
+Αντί να γράφεις 7 routes με το χέρι:
+
+```php
+<?php
+Route::resource("posts", PostController::class);
+```
+
+```bash
+php artisan make:controller PostController --resource
+```
+
+Αυτό φτιάχνει αυτόματα τα standard CRUD routes/methods: `index`, `create`, `store`, `show`, `edit`, `update`, `destroy`. Δες τα με `php artisan route:list`.
+
+## Route model binding — το «κλικ»
+
+Αντί να ψάχνεις χειροκίνητα το model από το id:
+
+```php
+<?php
+// ΧΩΡΙΣ binding
+public function show(string $id) {
+    $post = Post::findOrFail($id);   // χειροκίνητο lookup
+    return view("posts.show", compact("post"));
+}
+
+// ΜΕ binding: το {post} γίνεται αυτόματα Post instance
+public function show(Post $post) {   // ίδιο όνομα με το {post}
+    return view("posts.show", compact("post"));
+}
+```
+
+Το Laravel βλέπει το type hint `Post` και το όνομα `{post}`, ψάχνει αυτόματα στη βάση, και αν δεν βρει επιστρέφει **404**. Λιγότερος κώδικας, λιγότερα bugs.
+
+## Middleware — το pipeline
+
+Το middleware είναι «φίλτρα» που τρέχουν **πριν/μετά** τον controller — auth, CSRF, logging, rate limiting.
+
+```php
+<?php
+// εφάρμοσε σε route
+Route::get("/dashboard", [DashboardController::class, "index"])
+    ->middleware("auth");
+
+// ή σε group
+Route::middleware(["auth", "verified"])->group(function () {
+    Route::get("/dashboard", ...);
+    Route::get("/settings", ...);
+});
+```
+
+```bash
+php artisan make:middleware EnsureUserIsAdmin
+```
+
+```php
+<?php
+public function handle(Request $request, Closure $next): Response {
+    if (! $request->user()?->is_admin) {
+        abort(403);
+    }
+    return $next($request);   // πέρνα στο επόμενο middleware/controller
+}
+```
+
+Σκέψου το σαν αλυσίδα: κάθε middleware ή σταματά το request (`abort`) ή το προωθεί με `$next($request)`.
+
+## Πώς απαντάς στη συνέντευξη
+
+«What is route model binding and middleware?»
+
+> Route model binding lets me type-hint a model in a controller method whose name matches the route parameter — Laravel automatically queries it by id and returns 404 if it's missing, so I skip the manual `findOrFail`. Middleware is the request pipeline: filters that run before or after the controller, like `auth`, CSRF and rate limiting. Each middleware either short-circuits the request with `abort` or calls `$next($request)` to pass it along. I group related routes under shared middleware and always name my routes so I generate URLs with `route()` instead of hardcoding paths.
+
+<Flashcards
+  title="Routing & middleware — interview drills"
+  cards={[
+    {
+      question: "Τι είναι το route model binding;",
+      answer: "Type-hint-άρεις ένα model (π.χ. Post $post) με όνομα ίδιο με το route param ({post}). Το Laravel το ψάχνει αυτόματα στη βάση από το id και επιστρέφει 404 αν δεν υπάρχει — αντικαθιστά το χειροκίνητο Post::findOrFail()."
+    },
+    {
+      question: "Τι κάνει το middleware;",
+      answer: "Φίλτρα στο request pipeline που τρέχουν πριν/μετά τον controller: auth, CSRF, logging, rate limiting. Κάθε middleware ή σταματά το request (abort) ή το προωθεί με $next($request). Εφαρμόζεται ανά route ή σε group."
+    },
+    {
+      question: "Τι κάνει το Route::resource;",
+      answer: "Δημιουργεί αυτόματα τα 7 standard CRUD routes (index/create/store/show/edit/update/destroy) που δείχνουν στις αντίστοιχες methods ενός resource controller. Αντί για 7 χειροκίνητα Route:: calls."
+    },
+    {
+      question: "Γιατί named routes;",
+      answer: "Δίνεις όνομα (->name('posts.show')) και φτιάχνεις URLs με route('posts.show', $id). Αν αλλάξει το path, ΔΕΝ σπάει κανένα link — αναφέρεσαι στο όνομα, όχι σε hardcoded string. route:list τα δείχνει όλα."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Τι κερδίζεις με το route model binding;"
+  options={[
+    "Το Laravel βρίσκει αυτόματα το model από το id και επιστρέφει 404 αν λείπει — γλιτώνεις το χειροκίνητο lookup.",
+    "Κάνει τα routes να τρέχουν χωρίς controller.",
+    "Κρυπτογραφεί το URL."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Type-hint-άρεις το model με όνομα ίδιο με το route param και το Laravel αναλαμβάνει το query + το 404."
+/>
+
+<TrainingLab
+  title="Χτίσε RESTful routes με middleware"
+  scenario="Φτιάξε CRUD routes για posts με resource controller, route model binding, named routes και ένα custom middleware για admin-only ενέργειες."
+  outcomes={[
+    "Να ορίζεις RESTful routes με resource controllers.",
+    "Να χρησιμοποιείς route model binding αντί για χειροκίνητα lookups.",
+    "Να προστατεύεις routes με middleware groups."
+  ]}
+  steps={[
+    "Route::resource('posts', PostController::class) και δες route:list.",
+    "Στις show/update/destroy type-hint-άρε Post $post (binding).",
+    "Φτιάξε EnsureUserIsAdmin middleware και βάλ' το σε group.",
+    "Χρησιμοποίησε named routes με route() στα redirects."
+  ]}
+  checkpoints={[
+    "Τα CRUD routes υπάρχουν χωρίς να γραφτούν ένα-ένα.",
+    "Το missing post επιστρέφει 404 αυτόματα.",
+    "Οι admin ενέργειες μπλοκάρονται για non-admins με 403."
+  ]}
+  mistakes={[
+    "Να κάνεις χειροκίνητο findOrFail ενώ μπορείς binding.",
+    "Να γράφεις hardcoded URLs αντί για route().",
+    "Να βάζεις auth λογική μέσα στον controller αντί σε middleware."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν στήνεις καθαρά RESTful routes με binding και προστατεύεις περιοχές με middleware χωρίς να επαναλαμβάνεις κώδικα."
+/>

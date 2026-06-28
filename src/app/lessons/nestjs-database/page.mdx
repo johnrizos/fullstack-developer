@@ -1,0 +1,193 @@
+# Database with Prisma
+
+Στο Nest, η σύνδεση με βάση δεν είναι «κάνε import το client και τρέξε queries» — την κάνεις **injectable** ώστε να τεστάρεται και να μοιράζεται καθαρά. Στη συνέντευξη: «πώς integrate-άρεις Prisma στο Nest;», «γιατί repository pattern;», «πού κάνεις connect/disconnect;».
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να φτιάχνεις injectable PrismaService με σωστό lifecycle,
+- να εκθέτεις το PrismaModule σε άλλα modules,
+- να γράφεις repository/service layer πάνω από το Prisma,
+- να καταλαβαίνεις γιατί δεν κάνεις queries μέσα στους controllers.
+
+> Αυτό το μάθημα δένει με το αυτόνομο **Prisma track** (schema, relations, migrations, performance). Εδώ εστιάζουμε στο *πώς ζει* το Prisma μέσα στο Nest.
+
+## PrismaService — injectable client με lifecycle
+
+```ts
+@Injectable()
+export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  async onModuleInit() {
+    await this.$connect();      // connect στο bootstrap
+  }
+  async onModuleDestroy() {
+    await this.$disconnect();   // καθαρό κλείσιμο στο shutdown
+  }
+}
+```
+
+Το `PrismaService` **επεκτείνει** το `PrismaClient`, οπότε έχει όλα τα `.task`, `.user` κ.λπ. Τα lifecycle hooks (`OnModuleInit`/`OnModuleDestroy`) εξασφαλίζουν ότι το connection ανοίγει/κλείνει με το app — όχι ένα νέο client ανά request (που θα εξαντλούσε το connection pool).
+
+## PrismaModule — μοιράζεται παντού
+
+```ts
+@Global()                          // διαθέσιμο σε όλα τα modules χωρίς re-import
+@Module({
+  providers: [PrismaService],
+  exports: [PrismaService],
+})
+export class PrismaModule {}
+```
+
+Το `@Global()` το κάνει διαθέσιμο σε όλο το app χωρίς να το κάνεις import σε κάθε feature module. (Χρησιμοποίησε `@Global` φειδωλά — εδώ ταιριάζει γιατί η βάση είναι cross-cutting.)
+
+## Service layer — όχι queries στον controller
+
+```ts
+@Injectable()
+export class TaskService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  findAll(userId: string) {
+    return this.prisma.task.findMany({ where: { userId } });
+  }
+
+  async findOne(id: string) {
+    const task = await this.prisma.task.findUnique({ where: { id } });
+    if (!task) throw new NotFoundException(`Task ${id} not found`);  // → 404
+    return task;
+  }
+
+  create(userId: string, dto: CreateTaskDto) {
+    return this.prisma.task.create({ data: { ...dto, userId } });
+  }
+}
+```
+
+```ts
+@Controller("tasks")
+export class TaskController {
+  constructor(private readonly tasks: TaskService) {}
+
+  @Get(":id")
+  findOne(@Param("id") id: string) {
+    return this.tasks.findOne(id);   // controller = μόνο HTTP, καμία query
+  }
+}
+```
+
+Ο controller κρατά μόνο HTTP concerns· το service κρατά business logic + data access. Έτσι το service τεστάρεται χωρίς HTTP και ξαναχρησιμοποιείται από jobs/CLI.
+
+<PredictOutput
+  title="Πόσα connections;"
+  code={`// ΛΑΘΟΣ: νέο client μέσα στο service method
+@Injectable()
+export class TaskService {
+  findAll() {
+    const prisma = new PrismaClient();   // <-- εδώ
+    return prisma.task.findMany();
+  }
+}
+// 200 requests φτάνουν. Τι πάει στραβά;`}
+  options={['Τίποτα, δουλεύει μια χαρά', 'Δημιουργεί ~200 connection pools → εξαντλεί τη βάση', 'Πετάει compile error', 'Είναι πιο γρήγορο']}
+  correctOptionIndex={1}
+  answer="~200 ξεχωριστά clients/pools → connection exhaustion"
+  explanation="Κάθε new PrismaClient() ανοίγει δικό του connection pool. Με ένα ανά request εξαντλείς γρήγορα τα connections της βάσης ('too many connections'). Γι' αυτό κάνεις ΕΝΑ injectable PrismaService singleton, που μοιράζεται παντού."
+/>
+
+## Repository pattern — πότε αξίζει
+
+Για μεγαλύτερες εφαρμογές βάζεις ένα repository ανάμεσα σε service και Prisma, ώστε η business logic να μην ξέρει το ORM:
+
+```ts
+@Injectable()
+export class TaskRepository {
+  constructor(private readonly prisma: PrismaService) {}
+  findByUser(userId: string) { return this.prisma.task.findMany({ where: { userId } }); }
+  save(data: Prisma.TaskCreateInput) { return this.prisma.task.create({ data }); }
+}
+```
+
+Trade-off: extra abstraction. Σε μικρό app, το service-καλεί-Prisma είναι αρκετό. Το repository αξίζει όταν θες να αλλάξεις data source ή να κρύψεις πολύπλοκα queries πίσω από καθαρό interface.
+
+<Exercise
+  question="Γιατί PrismaService που extends PrismaClient αντί για new PrismaClient() όπου χρειάζεται;"
+  options={[
+    "Ένα singleton μοιράζεται ένα connection pool σε όλο το app· πολλά new PrismaClient() ανοίγουν πολλά pools και εξαντλούν τα connections της βάσης. Επίσης γίνεται injectable/testable.",
+    "Είναι απλώς θέμα στυλ — λειτουργικά ίδια.",
+    "Επειδή το Prisma δεν επιτρέπει πάνω από ένα client."
+  ]}
+  correctOptionIndex={0}
+  explanation="Singleton client = ένα connection pool, σωστό lifecycle (connect/disconnect με το app), και injectable για DI/testing. Νέος client ανά κλήση = connection exhaustion και αδύνατο mocking."
+/>
+
+<Exercise
+  question="Πού κάνεις throw NotFoundException όταν δεν βρεθεί record;"
+  options={[
+    "Στο service, αφού το findUnique επιστρέψει null — το service ξέρει τη business σημασιολογία (δεν υπάρχει → 404). Ο exception filter του Nest το μετατρέπει σε 404.",
+    "Στον controller, με try/catch γύρω από κάθε κλήση.",
+    "Πουθενά — επιστρέφεις null και ο client αποφασίζει."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το service κρατά τη business logic, άρα και την απόφαση 'δεν υπάρχει → NotFoundException'. Το Nest το μετατρέπει αυτόματα σε 404. Ο controller μένει καθαρός, χωρίς error-handling boilerplate."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you integrate Prisma with NestJS?»
+
+> I wrap the client in an injectable `PrismaService` that extends `PrismaClient` and implements `OnModuleInit`/`OnModuleDestroy` to `$connect` and `$disconnect` with the app lifecycle — that keeps a single connection pool instead of spawning a client per request, which would exhaust the database. I expose it from a `@Global` PrismaModule so feature modules can inject it without re-importing. Queries live in services, never in controllers: the service holds business logic and data access, throws `NotFoundException` when a record is missing so Nest maps it to 404, and stays testable without HTTP. For larger apps I add a repository layer between the service and Prisma so business logic doesn't depend on the ORM directly, but in a small app a service calling Prisma is enough.
+
+<Flashcards
+  title="Nest + Prisma — interview drills"
+  cards={[
+    {
+      question: "Πώς γίνεται injectable το Prisma;",
+      answer: "PrismaService extends PrismaClient, implements OnModuleInit/OnModuleDestroy για $connect/$disconnect. Singleton → ένα connection pool. Inject-άρεται σε services μέσω DI."
+    },
+    {
+      question: "Γιατί ΟΧΙ new PrismaClient() ανά κλήση;",
+      answer: "Κάθε client ανοίγει δικό του pool → connection exhaustion ('too many connections'). Ένα injectable singleton μοιράζει ένα pool και είναι testable."
+    },
+    {
+      question: "Πού ζουν τα queries;",
+      answer: "Στο service (business logic + data access), ΟΧΙ στον controller (μόνο HTTP). Service: throw NotFoundException για missing, ξαναχρησιμοποιείται από jobs/CLI, τεστάρεται χωρίς HTTP."
+    },
+    {
+      question: "@Global PrismaModule — γιατί;",
+      answer: "Η βάση είναι cross-cutting· @Global την κάνει διαθέσιμη χωρίς re-import σε κάθε feature module. Χρήση φειδωλά, μόνο για πραγματικά cross-cutting providers."
+    },
+    {
+      question: "Repository pattern — πότε;",
+      answer: "Όταν θες να κρύψεις το ORM πίσω από καθαρό interface ή πολύπλοκα queries. Σε μικρό app, service→Prisma αρκεί· το repository προσθέτει abstraction που αξίζει σε scale."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Prisma data layer στο Nest"
+  scenario="Στήσε injectable PrismaService και ένα CRUD resource με καθαρά layers."
+  outcomes={[
+    "Να γράφεις PrismaService με lifecycle hooks.",
+    "Να εκθέτεις @Global PrismaModule.",
+    "Να κρατάς queries στο service, HTTP στον controller."
+  ]}
+  steps={[
+    "PrismaService extends PrismaClient με onModuleInit/onModuleDestroy.",
+    "@Global PrismaModule που exports το PrismaService.",
+    "TaskService με findAll/findOne/create — throw NotFoundException όπου χρειάζεται.",
+    "TaskController που καλεί μόνο το service (καμία query).",
+    "(Bonus) Πρόσθεσε TaskRepository ανάμεσα σε service και Prisma."
+  ]}
+  checkpoints={[
+    "Ένα μόνο PrismaService instance σε όλο το app.",
+    "Missing record → 404 μέσω NotFoundException.",
+    "Ο controller δεν περιέχει Prisma queries."
+  ]}
+  mistakes={[
+    "new PrismaClient() μέσα σε methods → connection exhaustion.",
+    "Queries μέσα στους controllers.",
+    "Ξεχνάς $disconnect στο shutdown.",
+    "@Global παντού αντί μόνο για cross-cutting providers."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν έχεις injectable Prisma με σωστό lifecycle και CRUD resource με queries στο service, HTTP στον controller."
+/>

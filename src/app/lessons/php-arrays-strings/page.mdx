@@ -1,0 +1,166 @@
+# Arrays & Strings
+
+Τα arrays είναι η καρδιά της PHP. Σε αντίθεση με άλλες γλώσσες, ένα PHP `array` είναι **και λίστα και dictionary** ταυτόχρονα.
+
+## Indexed vs associative arrays
+
+```php
+<?php
+// indexed (λίστα)
+$fruits = ["μήλο", "μπανάνα", "κεράσι"];
+echo $fruits[0]; // μήλο
+
+// associative (key → value)
+$user = [
+    "name" => "Άννα",
+    "age" => 30,
+];
+echo $user["name"]; // Άννα
+```
+
+Στην πραγματικότητα ακόμα και το indexed array έχει κλειδιά (`0, 1, 2`) — απλώς αυτόματα.
+
+## Βασικές array functions
+
+```php
+<?php
+$nums = [3, 1, 2];
+
+count($nums);                  // 3 — πλήθος
+in_array(2, $nums);            // true — υπάρχει;
+array_push($nums, 4);          // πρόσθεσε στο τέλος
+sort($nums);                   // ταξινόμηση επί τόπου → [1, 2, 3, 4]
+
+// transform (functional style)
+$doubled = array_map(fn($n) => $n * 2, $nums);     // [2, 4, 6, 8]
+$evens   = array_filter($nums, fn($n) => $n % 2 === 0); // [2, 4]
+$total   = array_reduce($nums, fn($carry, $n) => $carry + $n, 0); // 10
+```
+
+Το `array_map`/`array_filter`/`array_reduce` είναι το ίδιο μοτίβο με JavaScript — μάθε τα καλά, τα χρησιμοποιείς συνέχεια.
+
+## Keys & values
+
+```php
+<?php
+$user = ["name" => "Άννα", "age" => 30];
+
+array_keys($user);          // ["name", "age"]
+array_values($user);        // ["Άννα", 30]
+array_key_exists("name", $user); // true
+isset($user["email"]);      // false (και ελέγχει για null)
+```
+
+Προσοχή: το `isset()` επιστρέφει `false` και όταν το key υπάρχει αλλά η τιμή είναι `null`. Το `array_key_exists()` ελέγχει μόνο την ύπαρξη του key.
+
+## Spread & destructuring
+
+```php
+<?php
+$a = [1, 2];
+$b = [3, 4];
+$merged = [...$a, ...$b];   // [1, 2, 3, 4] — spread (PHP 7.4+)
+
+// destructuring
+["name" => $name, "age" => $age] = $user;
+echo $name; // Άννα
+
+[$first, $second] = [10, 20];
+echo $second; // 20
+```
+
+## String functions
+
+```php
+<?php
+$text = "  Modern PHP  ";
+
+strlen($text);              // μήκος
+trim($text);                // "Modern PHP" — κόβει κενά στις άκρες
+strtolower("ABC");          // "abc"
+str_contains($text, "PHP"); // true (PHP 8)
+str_replace("PHP", "Web", $text);
+substr("Hello", 0, 3);      // "Hel"
+explode(",", "a,b,c");      // ["a", "b", "c"] — string → array
+implode("-", ["a", "b"]);   // "a-b" — array → string
+```
+
+Τα `explode`/`implode` είναι το αντίστοιχο των `split`/`join` — τα χρειάζεσαι για CSV, slugs, tags κ.λπ.
+
+## sprintf για formatting
+
+```php
+<?php
+$price = 9.5;
+echo sprintf("Τιμή: %.2f €", $price); // "Τιμή: 9.50 €"
+$name = "Άννα";
+echo sprintf("Γεια σου %s, είσαι %d ετών", $name, 30);
+```
+
+Το `sprintf` είναι καθαρότερο από ατελείωτο concatenation όταν φτιάχνεις formatted output.
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do PHP arrays work?»
+
+> A PHP array is an ordered map — it works as both a list and a dictionary. Indexed arrays just have automatic integer keys. I transform data functionally with `array_map`, `array_filter` and `array_reduce`, convert between strings and arrays with `explode`/`implode`, and use `str_contains`/`str_replace` for string work. For lookups I'm careful: `isset` treats a `null` value as absent, while `array_key_exists` only checks the key.
+
+<Flashcards
+  title="Arrays & strings — interview drills"
+  cards={[
+    {
+      question: "Indexed vs associative array;",
+      answer: "Indexed: αυτόματα ακέραια κλειδιά (0,1,2) — λίστα. Associative: ρητά κλειδιά string/int → value — dictionary. Στην PHP είναι ο ΙΔΙΟΣ τύπος (array), που είναι ordered map. Ένα array μπορεί να έχει και τα δύο μαζί."
+    },
+    {
+      question: "isset() vs array_key_exists();",
+      answer: "array_key_exists: ελέγχει ΜΟΝΟ αν υπάρχει το key. isset: true μόνο αν υπάρχει ΚΑΙ δεν είναι null. Αν έχεις key με τιμή null, isset → false, array_key_exists → true."
+    },
+    {
+      question: "Πώς μετατρέπεις string ↔ array;",
+      answer: "explode(separator, string) → array (π.χ. CSV σε λίστα). implode(glue, array) → string. Είναι το split/join της PHP. Π.χ. explode(',', 'a,b') = ['a','b']; implode('-', ['a','b']) = 'a-b'."
+    },
+    {
+      question: "array_map vs array_filter vs array_reduce;",
+      answer: "map: μετασχηματίζει κάθε στοιχείο (ίδιο πλήθος). filter: κρατά όσα περνούν συνθήκη (λιγότερα). reduce: συμπτύσσει όλα σε μία τιμή (sum, max). Ίδιο μοτίβο με JavaScript."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Τι επιστρέφει το explode(',', 'php,web,dev');"
+  options={[
+    "Το string 'php-web-dev'.",
+    "Έναν πίνακα ['php', 'web', 'dev'].",
+    "Τον αριθμό 3."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Το explode σπάει το string στον separator και επιστρέφει array. Το αντίστροφο είναι το implode."
+/>
+
+<TrainingLab
+  title="Επεξεργάσου μια λίστα από records"
+  scenario="Έχεις array από users (name, age, city). Φίλτραρε, μετασχημάτισε και παρουσίασε τα δεδομένα μόνο με array & string functions."
+  outcomes={[
+    "Να διαλέγεις map/filter/reduce ανάλογα με τον στόχο.",
+    "Να μετατρέπεις ανάμεσα σε strings και arrays.",
+    "Να φτιάχνεις formatted output με sprintf."
+  ]}
+  steps={[
+    "Φίλτραρε τους users άνω των 18 με array_filter.",
+    "Πάρε μόνο τα ονόματα με array_map.",
+    "Φτιάξε comma-separated λίστα με implode.",
+    "Τύπωσε σύνοψη με sprintf (πλήθος + μέσος όρος ηλικίας)."
+  ]}
+  checkpoints={[
+    "Δεν τροποποιείς το αρχικό array κατά λάθος.",
+    "Χρησιμοποιείς το σωστό function για κάθε βήμα.",
+    "Το output είναι καθαρά formatted."
+  ]}
+  mistakes={[
+    "Να μπερδεύεις isset με array_key_exists σε null τιμές.",
+    "Να γράφεις χειροκίνητο loop εκεί που ταιριάζει array_map/filter.",
+    "Να ενώνεις strings με μακρύ concatenation αντί για sprintf."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μετασχηματίζεις δεδομένα δηλωτικά (map/filter/reduce) χωρίς να σκέφτεσαι σε χειροκίνητα loops."
+/>

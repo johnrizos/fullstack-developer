@@ -1,0 +1,221 @@
+# Providers & Dependency Injection
+
+Η DI είναι η καρδιά του Nest — και το πιο συχνό σημείο που μπερδεύει στη συνέντευξη. «Τι είναι provider;», «πώς ξέρει το Nest τι να κάνει inject;», «τι είναι dynamic module;». Εδώ πας πέρα από το `@Injectable()` και καταλαβαίνεις πώς δουλεύει πραγματικά το IoC container.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς τι είναι provider και πώς γίνεται resolve,
+- να χρησιμοποιείς custom providers (useClass/useValue/useFactory),
+- να καταλαβαίνεις injection scopes (singleton vs request),
+- να φτιάχνεις dynamic module με `forRoot`/`forRootAsync`,
+- να στήνεις typed config με ConfigModule.
+
+## Τι είναι provider
+
+Provider είναι **οτιδήποτε μπορεί να γίνει inject**: services, repositories, factories, values. Το `@Injectable()` το δηλώνει διαθέσιμο στο DI container. Το `providers: []` του module το κάνει register.
+
+```ts
+@Injectable()
+export class TaskService {
+  constructor(private readonly repo: TaskRepository) {}  // inject by type
+}
+
+@Module({
+  providers: [TaskService, TaskRepository],   // register στο container
+  exports: [TaskService],                     // διαθέσιμο σε άλλα modules
+})
+export class TaskModule {}
+```
+
+Το Nest διαβάζει τους τύπους του constructor (μέσω `reflect-metadata`) και κάνει resolve το γράφημα εξαρτήσεων **μία φορά** στο bootstrap. Γι' αυτό χρειάζεσαι `emitDecoratorMetadata: true` στο tsconfig.
+
+## Custom providers — πέρα από το σκέτο class
+
+Όταν το token δεν είναι απλό class, χρησιμοποιείς το αναλυτικό object form:
+
+```ts
+@Module({
+  providers: [
+    TaskService,                                       // shorthand για { provide: TaskService, useClass: TaskService }
+    { provide: "CONFIG", useValue: { maxItems: 100 } }, // useValue: σταθερή τιμή
+    { provide: PaymentGateway, useClass: StripeGateway }, // useClass: swap implementation
+    {
+      provide: "DB_CONNECTION",                          // useFactory: dynamic construction
+      useFactory: (config: ConfigService) => createPool(config.get("DB_URL")),
+      inject: [ConfigService],                           // οι εξαρτήσεις του factory
+    },
+  ],
+})
+export class AppModule {}
+```
+
+Το `inject` λέει στο Nest τι να περάσει στο factory. Το `useClass` σε αφήνει να αλλάξεις implementation (π.χ. `StripeGateway` σε prod, `FakeGateway` σε test) **χωρίς** να αγγίξεις τους consumers.
+
+## Injecting by token
+
+Όταν inject-άρεις non-class token, χρησιμοποιείς `@Inject()`:
+
+```ts
+@Injectable()
+export class TaskService {
+  constructor(
+    @Inject("CONFIG") private readonly config: AppConfig,
+    @Inject("DB_CONNECTION") private readonly db: Pool,
+  ) {}
+}
+```
+
+<PredictOutput
+  title="Πόσες φορές τρέχει ο constructor;"
+  code={`@Injectable()  // default scope
+export class CounterService {
+  constructor() { console.log("created"); }
+}
+// Inject-άρεται σε 3 controllers, δέχεται 100 requests.
+// Πόσα "created" τυπώνονται;`}
+  options={['100', '3', '1', '300']}
+  correctOptionIndex={2}
+  answer="1 — default scope είναι singleton"
+  explanation="Το default injection scope στο Nest είναι SINGLETON: μία instance για όλο το app, που μοιράζεται παντού. Ο constructor τρέχει μία φορά στο bootstrap, ανεξάρτητα από πόσοι το κάνουν inject ή πόσα requests έρχονται."
+/>
+
+## Injection scopes
+
+```txt
+DEFAULT (singleton)  → 1 instance για όλο το app. Default & ταχύτερο.
+REQUEST              → νέα instance ανά request. Για per-request state
+                       (π.χ. tenant context). Έχει performance κόστος.
+TRANSIENT            → νέα instance σε κάθε inject point.
+```
+
+```ts
+@Injectable({ scope: Scope.REQUEST })
+export class RequestContext {
+  constructor(@Inject(REQUEST) private readonly req: Request) {}
+}
+```
+
+Vuln-trap: το REQUEST scope «μολύνει» — αν ένας singleton κάνει inject ένα request-scoped provider, γίνεται κι αυτός request-scoped (bubbling). Χρησιμοποίησέ το **μόνο** όπου πραγματικά χρειάζεσαι per-request state.
+
+## Dynamic modules — forRoot
+
+Όταν ένα module χρειάζεται **configuration**, εκθέτει `forRoot()` που επιστρέφει το module με providers φτιαγμένους από το config:
+
+```ts
+@Module({})
+export class DatabaseModule {
+  static forRoot(options: DbOptions): DynamicModule {
+    return {
+      module: DatabaseModule,
+      providers: [{ provide: "DB_OPTIONS", useValue: options }, DatabaseService],
+      exports: [DatabaseService],
+    };
+  }
+}
+
+// app.module.ts
+@Module({ imports: [DatabaseModule.forRoot({ url: process.env.DB_URL! })] })
+export class AppModule {}
+```
+
+Έτσι δουλεύουν τα `ConfigModule.forRoot()`, `JwtModule.forRoot()` κ.λπ. Η `forRootAsync()` παραλλαγή σε αφήνει να φτιάξεις το config **async** με `useFactory` + `inject`.
+
+## Typed config με ConfigModule
+
+```ts
+@Module({
+  imports: [ConfigModule.forRoot({ isGlobal: true, validationSchema: envSchema })],
+})
+export class AppModule {}
+
+@Injectable()
+export class TaskService {
+  constructor(private readonly config: ConfigService) {}
+  get max() { return this.config.get<number>("MAX_ITEMS"); }
+}
+```
+
+Το `validationSchema` (Joi/Zod) απορρίπτει το boot αν λείπει env var — fail fast αντί για mysterious `undefined` σε production.
+
+<Exercise
+  question="Ένας singleton service κάνει inject έναν REQUEST-scoped provider. Τι γίνεται;"
+  options={[
+    "Ο singleton γίνεται κι αυτός request-scoped (scope bubbling) — νέα instance ανά request, με performance κόστος. Γι' αυτό το REQUEST scope χρησιμοποιείται φειδωλά.",
+    "Πετάει error γιατί δεν επιτρέπεται.",
+    "Ο singleton μένει singleton και παίρνει μία τυχαία instance του provider."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το scope ανεβαίνει στην ιεραρχία (bubbling): οτιδήποτε εξαρτάται από request-scoped provider γίνεται request-scoped. Μπορεί ακούσια να κάνει όλο το γράφημα request-scoped και να χτυπήσει performance."
+/>
+
+<Exercise
+  question="Θες να αλλάζεις PaymentGateway implementation ανάμεσα σε prod και test χωρίς να αγγίξεις τους consumers. Πώς;"
+  options={[
+    "Custom provider με useClass: { provide: PaymentGateway, useClass: isProd ? StripeGateway : FakeGateway }. Οι consumers κάνουν inject το PaymentGateway token και δεν ξέρουν την υλοποίηση.",
+    "if/else μέσα σε κάθε service που το χρησιμοποιεί.",
+    "Δύο διαφορετικά modules με αντιγραμμένο κώδικα."
+  ]}
+  correctOptionIndex={0}
+  explanation="Αυτό είναι το νόημα της DI: ο consumer εξαρτάται από abstraction (token), όχι από concrete class. Με useClass swap-άρεις την υλοποίηση κεντρικά — testable και configurable."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«Explain dependency injection in NestJS.»
+
+> A provider is anything injectable — usually a service marked `@Injectable()` and registered in a module's `providers`. Nest reads the constructor parameter types via reflect-metadata and resolves the whole dependency graph once at bootstrap, so by default every provider is a singleton shared across the app. When the token isn't a plain class I use custom providers — `useValue` for constants, `useClass` to swap implementations between prod and test, and `useFactory` with `inject` for things I build at runtime like a DB pool. Scopes default to singleton; `REQUEST` scope gives a fresh instance per request but it bubbles up to everything that depends on it, so I keep it rare. For configurable modules I expose a `forRoot` that returns a DynamicModule, which is exactly how `ConfigModule` and `JwtModule` work, and I validate env with a schema so the app fails fast on missing config.
+
+<Flashcards
+  title="Providers & DI — interview drills"
+  cards={[
+    {
+      question: "Τι είναι provider;",
+      answer: "Οτιδήποτε injectable: service/repository/factory/value. @Injectable() το δηλώνει, providers:[] το κάνει register, exports:[] το μοιράζει σε άλλα modules. Το Nest κάνει resolve το graph στο bootstrap."
+    },
+    {
+      question: "useClass vs useValue vs useFactory;",
+      answer: "useClass: swap implementation (Stripe/Fake). useValue: σταθερή τιμή/config object. useFactory: dynamic construction με inject:[] για εξαρτήσεις (π.χ. DB pool από ConfigService)."
+    },
+    {
+      question: "Default injection scope;",
+      answer: "SINGLETON — μία instance για όλο το app, constructor τρέχει μία φορά στο bootstrap. REQUEST = ανά request (bubbling, performance κόστος). TRANSIENT = ανά inject point."
+    },
+    {
+      question: "Τι είναι dynamic module / forRoot;",
+      answer: "Module που δέχεται config και επιστρέφει DynamicModule με providers φτιαγμένους από αυτό. forRootAsync για async config (useFactory+inject). Έτσι δουλεύουν ConfigModule/JwtModule."
+    },
+    {
+      question: "Γιατί ConfigModule με validationSchema;",
+      answer: "Fail fast: απορρίπτει το boot αν λείπει/είναι λάθος env var, αντί για undefined που σκάει αργότερα σε production. Typed access μέσω ConfigService.get<T>()."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Custom providers & dynamic module"
+  scenario="Φτιάξε ένα configurable module με factory provider και swappable implementation."
+  outcomes={[
+    "Να γράφεις useFactory provider με inject.",
+    "Να φτιάχνεις forRoot dynamic module.",
+    "Να swap-άρεις implementation μέσω useClass."
+  ]}
+  steps={[
+    "Στήσε ConfigModule.forRoot({ isGlobal: true }) με validation schema.",
+    "Φτιάξε DatabaseModule.forRoot(options) που εκθέτει DatabaseService.",
+    "Πρόσθεσε useFactory provider 'DB_POOL' με inject:[ConfigService].",
+    "Όρισε PaymentGateway με useClass που αλλάζει σε test/prod.",
+    "Inject-αρε τα tokens σε ένα service με @Inject() και τρέξε το."
+  ]}
+  checkpoints={[
+    "Ο factory δέχεται τις εξαρτήσεις του μέσω inject.",
+    "Το app αρνείται να ξεκινήσει αν λείπει env var.",
+    "Swap implementation χωρίς αλλαγή στους consumers."
+  ]}
+  mistakes={[
+    "Ξεχνάς emitDecoratorMetadata/experimentalDecorators στο tsconfig.",
+    "REQUEST scope παντού — μολύνει το graph και χτυπά performance.",
+    "Hardcoded config αντί για ConfigService/validation.",
+    "useFactory χωρίς inject για τις εξαρτήσεις του."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν φτιάχνεις dynamic module με factory providers, διαλέγεις σωστό scope, και swap-άρεις implementations μέσω DI χωρίς να αγγίζεις consumers."
+/>

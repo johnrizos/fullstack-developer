@@ -1,0 +1,166 @@
+# Databases with PDO
+
+Σχεδόν κάθε PHP εφαρμογή μιλάει με βάση δεδομένων. Το **PDO** (PHP Data Objects) είναι ο standard, ασφαλής τρόπος — δουλεύει με MySQL, PostgreSQL, SQLite με τον ίδιο κώδικα.
+
+## Σύνδεση
+
+```php
+<?php
+declare(strict_types=1);
+
+$pdo = new PDO(
+    "mysql:host=localhost;dbname=shop;charset=utf8mb4",
+    "user",
+    "password",
+    [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,  // πέτα exceptions σε λάθη
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, // γραμμές ως associative arrays
+        PDO::ATTR_EMULATE_PREPARES => false,          // πραγματικά prepared statements
+    ],
+);
+```
+
+Αυτές οι τρεις επιλογές είναι **must**: exceptions σε σφάλματα, associative fetch, και απενεργοποίηση emulation για γνήσια ασφάλεια.
+
+## Prepared statements — η ασφάλεια
+
+**ΠΟΤΕ** μη βάζεις δεδομένα χρήστη απευθείας σε SQL string. Αυτό είναι SQL injection:
+
+```php
+<?php
+// ❌ ΕΠΙΚΙΝΔΥΝΟ — ο χρήστης μπορεί να γράψει: ' OR '1'='1
+$pdo->query("SELECT * FROM users WHERE email = '$email'");
+```
+
+Αντ' αυτού, χρησιμοποίησε **prepared statements** με placeholders:
+
+```php
+<?php
+// ✅ ΑΣΦΑΛΕΣ — τα δεδομένα στέλνονται ξεχωριστά από το query
+$stmt = $pdo->prepare("SELECT * FROM users WHERE email = :email");
+$stmt->execute(["email" => $email]);
+$user = $stmt->fetch();   // μία γραμμή (ή false)
+```
+
+Με placeholders, η βάση δεν μπερδεύει ποτέ τα **δεδομένα** με τις **εντολές** — αυτό σκοτώνει το SQL injection.
+
+## SELECT — fetch modes
+
+```php
+<?php
+$stmt = $pdo->prepare("SELECT id, name FROM users WHERE active = :active");
+$stmt->execute(["active" => 1]);
+
+$all = $stmt->fetchAll();   // πίνακας από όλες τις γραμμές
+// ή γραμμή-γραμμή σε loop:
+foreach ($stmt as $row) {
+    echo $row["name"];
+}
+```
+
+- `fetch()`: μία γραμμή.
+- `fetchAll()`: όλες (προσοχή σε τεράστια αποτελέσματα).
+- iterate το statement: γραμμή-γραμμή, οικονομικό σε μνήμη.
+
+## INSERT / UPDATE / DELETE
+
+```php
+<?php
+$stmt = $pdo->prepare(
+    "INSERT INTO users (name, email) VALUES (:name, :email)"
+);
+$stmt->execute(["name" => "Άννα", "email" => "anna@example.com"]);
+
+$id = $pdo->lastInsertId();   // το id της νέας γραμμής
+
+$upd = $pdo->prepare("UPDATE users SET name = :name WHERE id = :id");
+$upd->execute(["name" => "Anna", "id" => $id]);
+echo $upd->rowCount();        // πόσες γραμμές επηρεάστηκαν
+```
+
+## Transactions — όλα ή τίποτα
+
+Όταν πολλές αλλαγές πρέπει να πετύχουν **μαζί** (π.χ. μεταφορά χρημάτων), τις τυλίγεις σε transaction:
+
+```php
+<?php
+try {
+    $pdo->beginTransaction();
+
+    $pdo->prepare("UPDATE accounts SET balance = balance - 100 WHERE id = 1")->execute();
+    $pdo->prepare("UPDATE accounts SET balance = balance + 100 WHERE id = 2")->execute();
+
+    $pdo->commit();           // εφάρμοσε τα πάντα
+} catch (Throwable $e) {
+    $pdo->rollBack();         // ακύρωσε τα πάντα αν κάτι έσκασε
+    throw $e;
+}
+```
+
+Αν σκάσει η δεύτερη ενημέρωση, το `rollBack()` αναιρεί και την πρώτη — δεν μένεις ποτέ σε ενδιάμεση, λάθος κατάσταση.
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you prevent SQL injection in PHP?»
+
+> I never concatenate user input into SQL. I use PDO prepared statements with placeholders and pass the values to `execute()`, so the database treats them as data, never as SQL — that's what eliminates injection. I configure PDO to throw exceptions on errors, fetch as associative arrays, and disable prepare emulation. For operations that must succeed together I wrap them in a transaction with `beginTransaction`/`commit` and `rollBack` in a catch, so the database is never left half-updated.
+
+<Flashcards
+  title="PDO & databases — interview drills"
+  cards={[
+    {
+      question: "Πώς αποτρέπεις SQL injection;",
+      answer: "Prepared statements με placeholders (:email ή ?) και πέρασμα τιμών στο execute(). Τα δεδομένα στέλνονται ΞΕΧΩΡΙΣΤΑ από το query, οπότε η βάση δεν τα εκτελεί ποτέ ως SQL. ΠΟΤΕ concatenation input σε query string."
+    },
+    {
+      question: "Ποιες 3 PDO επιλογές βάζεις πάντα;",
+      answer: "ERRMODE_EXCEPTION (πέτα exceptions αντί για σιωπηλά false), DEFAULT_FETCH_MODE = FETCH_ASSOC (γραμμές ως associative arrays), EMULATE_PREPARES = false (γνήσια prepared statements στη βάση)."
+    },
+    {
+      question: "fetch() vs fetchAll();",
+      answer: "fetch(): επιστρέφει ΜΙΑ γραμμή (ή false). fetchAll(): ΟΛΕΣ τις γραμμές σε array — βολικό αλλά κρατά τα πάντα στη μνήμη. Για τεράστια αποτελέσματα, κάνε iterate το statement γραμμή-γραμμή."
+    },
+    {
+      question: "Τι κάνει ένα transaction;",
+      answer: "Ομαδοποιεί πολλές αλλαγές ώστε να γίνουν ΟΛΕΣ ή ΚΑΜΙΑ. beginTransaction → εντολές → commit. Αν κάτι σκάσει, rollBack() αναιρεί τα πάντα, οπότε η βάση δεν μένει σε μισή/ασυνεπή κατάσταση."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Γιατί τα prepared statements αποτρέπουν το SQL injection;"
+  options={[
+    "Επειδή κρυπτογραφούν το query.",
+    "Επειδή τα δεδομένα στέλνονται ξεχωριστά από την εντολή SQL, οπότε δεν μπορούν να εκτελεστούν ως κώδικας.",
+    "Επειδή κάνουν το query πιο γρήγορο."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Με placeholders η βάση ξεχωρίζει εντολές από δεδομένα — ό,τι κι αν γράψει ο χρήστης, αντιμετωπίζεται ως τιμή, ποτέ ως SQL."
+/>
+
+<TrainingLab
+  title="Φτιάξε ένα ασφαλές CRUD με PDO"
+  scenario="Υλοποίησε create/read/update/delete για έναν πίνακα users, αποκλειστικά με prepared statements, και μια μεταφορά που χρειάζεται transaction."
+  outcomes={[
+    "Να συνδέεσαι σωστά με PDO και τα 3 must-have attributes.",
+    "Να γράφεις queries μόνο με placeholders.",
+    "Να χρησιμοποιείς transactions για ατομικές αλλαγές."
+  ]}
+  steps={[
+    "Σύνδεσε PDO με ERRMODE_EXCEPTION, FETCH_ASSOC, EMULATE_PREPARES=false.",
+    "Γράψε INSERT/SELECT/UPDATE/DELETE με prepared statements.",
+    "Πρόσθεσε μια μεταφορά balance μέσα σε transaction με rollBack στο catch.",
+    "Δοκίμασε με input σαν \" ' OR 1=1 \" και επιβεβαίωσε ότι δεν περνά."
+  ]}
+  checkpoints={[
+    "Κανένα query δεν έχει input σε string concatenation.",
+    "Τα σφάλματα γίνονται exceptions, όχι σιωπηλά false.",
+    "Το transaction κάνει rollBack όταν κάτι αποτυγχάνει."
+  ]}
+  mistakes={[
+    "Να βάζεις $variable κατευθείαν σε SQL string.",
+    "Να ξεχνάς το ERRMODE_EXCEPTION και να χάνεις σφάλματα.",
+    "Να κάνεις πολλαπλά writes χωρίς transaction εκεί που χρειάζεται ατομικότητα."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν γράφεις data access που είναι by-default ασφαλές από injection και ατομικό όπου πρέπει — η βάση πριν το Eloquent του Laravel."
+/>

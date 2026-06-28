@@ -1,0 +1,178 @@
+# PHP Foundations
+
+Η PHP τρέχει ένα τεράστιο κομμάτι του web (WordPress, Laravel, Symfony). Η μοντέρνα PHP 8 δεν έχει σχέση με τη φήμη της παλιάς PHP: έχει τύπους, JIT, enums και καθαρό OOP.
+
+Κάθε αρχείο PHP ξεκινά με `<?php`. Ο κώδικας τρέχει στον server και επιστρέφει HTML/JSON στον browser.
+
+```php
+<?php
+echo "Hello, world!";
+```
+
+## Variables & τύποι
+
+Οι μεταβλητές ξεκινούν με `$`. Η PHP είναι **dynamically typed** αλλά **strongly typed** στις πράξεις.
+
+```php
+<?php
+$name = "Άννα";        // string
+$age = 30;              // int
+$price = 9.99;          // float
+$active = true;         // bool
+$tags = ["php", "web"]; // array
+$nothing = null;        // null
+```
+
+Δες τον τύπο με `gettype()` ή `var_dump()` (το `var_dump` δείχνει τύπο + τιμή — το βασικό σου debugging tool).
+
+```php
+<?php
+var_dump($age); // int(30)
+```
+
+## strict_types — γράψε σαν professional
+
+Από προεπιλογή η PHP κάνει «χαλαρό» coercion (`"5" + 5 === 10`). Σε σοβαρό κώδικα βάζεις στην κορυφή κάθε αρχείου:
+
+```php
+<?php
+declare(strict_types=1);
+```
+
+Με `strict_types`, αν μια function περιμένει `int` και της δώσεις `"5"`, πετάει `TypeError` αντί να το «μαντέψει». Λιγότερα κρυφά bugs.
+
+## String interpolation & concatenation
+
+```php
+<?php
+$name = "Άννα";
+echo "Γεια σου $name!";          // interpolation σε double quotes
+echo 'Γεια σου $name!';          // single quotes → ΧΩΡΙΣ interpolation
+echo "Σύνολο: {$price} €";       // {} για σαφήνεια
+echo "Γεια " . $name . "!";      // concatenation με τελεία (.)
+```
+
+Προσοχή: η PHP ενώνει strings με **τελεία `.`**, όχι με `+` (το `+` είναι μόνο αριθμητικό).
+
+## Control flow
+
+```php
+<?php
+$score = 75;
+
+if ($score >= 50) {
+    echo "Pass";
+} elseif ($score >= 40) {
+    echo "Borderline";
+} else {
+    echo "Fail";
+}
+
+// match (PHP 8): σαν switch αλλά επιστρέφει τιμή και κάνει strict (===) σύγκριση
+$label = match (true) {
+    $score >= 50 => "Pass",
+    $score >= 40 => "Borderline",
+    default      => "Fail",
+};
+```
+
+Το `match` είναι το μοντέρνο `switch`: δεν χρειάζεται `break`, δεν κάνει fall-through, και συγκρίνει με `===`.
+
+## Loops
+
+```php
+<?php
+for ($i = 0; $i < 3; $i++) {
+    echo $i;
+}
+
+$fruits = ["μήλο", "μπανάνα"];
+foreach ($fruits as $fruit) {
+    echo $fruit;
+}
+
+// associative
+$user = ["name" => "Άννα", "age" => 30];
+foreach ($user as $key => $value) {
+    echo "$key: $value\n";
+}
+```
+
+Το `foreach` είναι ο πιο συχνός loop στην PHP — δουλεύει και σε indexed και σε associative arrays.
+
+## == vs === (η κλασική παγίδα)
+
+```php
+<?php
+var_dump(0 == "a");    // PHP 8: false (σε PHP 7 ήταν true!)
+var_dump("1" == 1);    // true  — loose, κάνει coercion
+var_dump("1" === 1);   // false — strict, ΚΑΙ τύπος ΚΑΙ τιμή
+```
+
+Κανόνας: **χρησιμοποίησε πάντα `===`** εκτός αν ξέρεις πολύ καλά γιατί θες loose σύγκριση.
+
+## Πώς απαντάς στη συνέντευξη
+
+«What does modern PHP look like today?»
+
+> Modern PHP 8 is typed and strict. I start files with `declare(strict_types=1)`, use type hints on parameters and return types, prefer `match` over `switch` for value-returning branches, and always compare with `===`. I rely on `var_dump` for quick inspection. The language has enums, readonly properties, named arguments and the nullsafe operator, so it reads much closer to typed languages than the old PHP reputation suggests.
+
+<Flashcards
+  title="PHP foundations — interview drills"
+  cards={[
+    {
+      question: "Τι κάνει το declare(strict_types=1);",
+      answer: "Απενεργοποιεί το type coercion στις function calls. Αν μια function θέλει int και της δώσεις '5', πετάει TypeError αντί να το μετατρέψει σιωπηλά. Μπαίνει στην ΠΡΩΤΗ γραμμή κάθε αρχείου και πιάνει κρυφά bugs."
+    },
+    {
+      question: "== vs === στην PHP;",
+      answer: "== loose: κάνει type coercion πριν συγκρίνει ('1' == 1 → true). === strict: συγκρίνει ΚΑΙ τύπο ΚΑΙ τιμή ('1' === 1 → false). Χρησιμοποίησε πάντα === για να αποφύγεις εκπλήξεις coercion."
+    },
+    {
+      question: "Πώς ενώνεις strings στην PHP;",
+      answer: "Με τελεία (.) όχι με +. Το + είναι μόνο αριθμητικό. 'Γεια ' . \\$name . '!'. Εναλλακτικά interpolation μέσα σε double quotes: \"Γεια \\$name\". Τα single quotes ΔΕΝ κάνουν interpolation."
+    },
+    {
+      question: "match vs switch;",
+      answer: "match (PHP 8): επιστρέφει τιμή, συγκρίνει με === (strict), χωρίς break, χωρίς fall-through. switch: δεν επιστρέφει τιμή, loose σύγκριση (==), θέλει break αλλιώς πέφτει στο επόμενο case. Προτίμησε match."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Γιατί βάζουμε declare(strict_types=1) στην κορυφή των αρχείων;"
+  options={[
+    "Για να τρέχει πιο γρήγορα ο κώδικας.",
+    "Για να μη γίνεται σιωπηλό type coercion στα arguments — πιάνουμε λάθη νωρίς.",
+    "Για να επιτρέπεται το echo."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Με strict_types η PHP πετάει TypeError αντί να μαντεύει μετατροπές, οπότε τα bugs εμφανίζονται αμέσως."
+/>
+
+<TrainingLab
+  title="Γράψε ένα μικρό typed PHP script"
+  scenario="Φτιάξε ένα CLI script που διαβάζει μια λίστα από scores, υπολογίζει στατιστικά και τυπώνει αναφορά — με strict types και === παντού."
+  outcomes={[
+    "Να γράφεις PHP με strict_types και type hints.",
+    "Να χρησιμοποιείς foreach και match σωστά.",
+    "Να αποφεύγεις τις παγίδες του loose comparison."
+  ]}
+  steps={[
+    "Ξεκίνα το αρχείο με declare(strict_types=1).",
+    "Φτιάξε array με scores και διέτρεξέ το με foreach.",
+    "Κατηγοριοποίησε κάθε score με match (Pass/Borderline/Fail).",
+    "Τύπωσε σύνολο και μέσο όρο με var_dump για έλεγχο."
+  ]}
+  checkpoints={[
+    "Όλες οι συγκρίσεις είναι ===.",
+    "Το script τρέχει χωρίς TypeError.",
+    "Το match καλύπτει default περίπτωση."
+  ]}
+  mistakes={[
+    "Να ενώνεις strings με + αντί για τελεία.",
+    "Να βασίζεσαι σε loose == comparisons.",
+    "Να ξεχνάς το strict_types και να αφήνεις σιωπηλά coercions."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν γράφεις typed PHP που μοιάζει με μοντέρνη γλώσσα, χωρίς coercion εκπλήξεις."
+/>

@@ -1,0 +1,174 @@
+# Functions, Includes & Namespaces
+
+Όσο μεγαλώνει ένα project, η οργάνωση του κώδικα μετράει περισσότερο από τη σύνταξη. Εδώ μαθαίνεις functions, πώς να σπας τον κώδικα σε αρχεία, και πώς τα namespaces αποτρέπουν συγκρούσεις ονομάτων.
+
+## Functions με τύπους
+
+```php
+<?php
+declare(strict_types=1);
+
+function add(int $a, int $b): int {
+    return $a + $b;
+}
+
+// nullable τύπος + default τιμή
+function greet(?string $name = null): string {
+    return "Γεια " . ($name ?? "ξένε");
+}
+```
+
+Πάντα βάζεις **type hints** στα parameters και **return type** μετά το `:`. Το `?string` σημαίνει «string ή null».
+
+## Default & named arguments
+
+```php
+<?php
+function makeUser(string $name, int $age = 18, bool $admin = false): array {
+    return compact("name", "age", "admin");
+}
+
+// named arguments (PHP 8): δίνεις μόνο ό,τι θες, με όνομα
+$u = makeUser(name: "Άννα", admin: true);
+```
+
+Τα **named arguments** σε γλιτώνουν από το να θυμάσαι σειρά ή να περνάς `null, null, true`.
+
+## Arrow functions & closures
+
+```php
+<?php
+$tax = 0.24;
+
+// arrow function: κρατά αυτόματα το $tax από το περιβάλλον
+$withTax = fn(float $price): float => $price * (1 + $tax);
+
+// closure: θέλει ρητό use για να «δει» εξωτερικές μεταβλητές
+$withTax2 = function (float $price) use ($tax): float {
+    return $price * (1 + $tax);
+};
+```
+
+Η διαφορά: το `fn() =>` κληρονομεί αυτόματα τις μεταβλητές του scope, ενώ το `function () use (...)` τις θέλει ρητά.
+
+## Σπάσε τον κώδικα σε αρχεία
+
+```php
+<?php
+// helpers.php
+function slugify(string $text): string {
+    return strtolower(str_replace(" ", "-", trim($text)));
+}
+```
+
+```php
+<?php
+// index.php
+require __DIR__ . "/helpers.php";
+echo slugify("Modern PHP"); // modern-php
+```
+
+- `require`: σταματά με fatal error αν λείπει το αρχείο.
+- `include`: συνεχίζει με warning.
+- `require_once` / `include_once`: αποτρέπουν διπλό include.
+
+Κανόνας: για απαραίτητο κώδικα → `require_once`. (Στην πράξη σχεδόν ποτέ δεν γράφεις χειροκίνητα require — το αναλαμβάνει ο Composer autoloader, δες παρακάτω μάθημα.)
+
+## Namespaces — γιατί υπάρχουν
+
+Δύο βιβλιοθήκες μπορεί να έχουν class `Logger`. Χωρίς namespaces, σύγκρουση. Το namespace είναι «επώνυμο» για τον κώδικά σου.
+
+```php
+<?php
+// src/Support/Str.php
+namespace App\Support;
+
+class Str {
+    public static function slug(string $text): string {
+        return strtolower(str_replace(" ", "-", trim($text)));
+    }
+}
+```
+
+```php
+<?php
+// index.php
+require ...;
+
+use App\Support\Str;          // import με όνομα
+
+echo Str::slug("Hello World"); // hello-world
+// ή πλήρως: \App\Support\Str::slug(...)
+```
+
+- `namespace App\Support;` δηλώνει πού «ζει» η class.
+- `use App\Support\Str;` την εισάγει ώστε να γράφεις σκέτο `Str`.
+- Το `\` μπροστά σημαίνει «από τη ρίζα» (global namespace).
+
+Η σύμβαση: το namespace **αντικατοπτρίζει τη δομή φακέλων** (`App\Support\Str` → `src/Support/Str.php`). Αυτό είναι το PSR-4, που κάνει δυνατό το autoloading.
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you organize PHP code across files?»
+
+> I split reusable logic into classes, one per file, under a namespace that mirrors the folder structure — that's the PSR-4 convention. I `use` the classes I need at the top of a file instead of fully-qualifying them everywhere. In real projects I don't write manual `require` calls; Composer's autoloader resolves `App\Support\Str` to `src/Support/Str.php` automatically. For functions I always add type hints and return types, and I prefer arrow functions for short callbacks since they capture scope automatically.
+
+<Flashcards
+  title="Functions & namespaces — interview drills"
+  cards={[
+    {
+      question: "fn() => vs function () use ();",
+      answer: "Arrow function (fn): κληρονομεί ΑΥΤΟΜΑΤΑ τις μεταβλητές του γύρω scope (by value). Closure (function...use): πρέπει να δηλώσεις ρητά ποιες μεταβλητές βλέπει με use(). Τα fn είναι πιο σύντομα για μικρά callbacks."
+    },
+    {
+      question: "require vs include;",
+      answer: "require: fatal error αν λείπει το αρχείο — σταματά. include: μόνο warning — συνεχίζει. Οι *_once εκδοχές αποτρέπουν διπλό φόρτωμα. Για απαραίτητο κώδικα → require_once."
+    },
+    {
+      question: "Τι είναι ένα namespace και γιατί το θες;",
+      answer: "Λογικό 'επώνυμο' για classes/functions ώστε δύο βιβλιοθήκες να μπορούν να έχουν class με ίδιο όνομα χωρίς σύγκρουση. Δηλώνεται με namespace App\\X; και εισάγεται με use. Κατά σύμβαση (PSR-4) αντικατοπτρίζει τη δομή φακέλων."
+    },
+    {
+      question: "Τι κάνουν τα named arguments;",
+      answer: "Περνάς arguments με το όνομά τους (name: 'Άννα') αντί με σειρά. Γλιτώνεις από το να θυμάσαι σειρά ή να περνάς null, null, true για να φτάσεις στο 4ο. Διαβάζεται καλύτερα σε functions με πολλά defaults."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Γιατί η σύμβαση PSR-4 θέλει το namespace να αντικατοπτρίζει τη δομή φακέλων;"
+  options={[
+    "Για διακόσμηση — δεν έχει πρακτικό λόγο.",
+    "Για να μπορεί ο autoloader να βρίσκει αυτόματα το αρχείο μιας class από το όνομά της.",
+    "Για να τρέχει πιο γρήγορα η PHP."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Με PSR-4 το App\\Support\\Str αντιστοιχεί σε src/Support/Str.php, οπότε ο Composer autoloader φορτώνει το σωστό αρχείο χωρίς χειροκίνητα require."
+/>
+
+<TrainingLab
+  title="Φτιάξε ένα namespaced helper module"
+  scenario="Οργάνωσε μερικές βοηθητικές functions σε classes κάτω από namespace App, με καθαρή δομή φακέλων που ακολουθεί PSR-4."
+  outcomes={[
+    "Να γράφεις typed functions με type hints και return types.",
+    "Να σπας κώδικα σε αρχεία και να τα συνδέεις.",
+    "Να οργανώνεις classes με namespaces κατά PSR-4."
+  ]}
+  steps={[
+    "Φτιάξε src/Support/Str.php με namespace App\\Support και static methods.",
+    "Φτιάξε src/Support/Arr.php με μερικά array helpers.",
+    "Στο index.php κάνε use τις classes και κάλεσέ τις.",
+    "Βεβαιώσου ότι το namespace ταιριάζει στη διαδρομή του φακέλου."
+  ]}
+  checkpoints={[
+    "Κάθε class είναι σε δικό της αρχείο.",
+    "Το namespace αντικατοπτρίζει τη δομή φακέλων.",
+    "Όλες οι functions έχουν type hints."
+  ]}
+  mistakes={[
+    "Να βάζεις πολλές classes σε ένα αρχείο με ασύμβατο namespace.",
+    "Να ξεχνάς το use και να γράφεις παντού fully-qualified ονόματα.",
+    "Να χρησιμοποιείς include εκεί που χρειάζεσαι require_once."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να στήσεις namespaced, PSR-4 δομή που μετά θα φορτώνει αυτόματα ο Composer."
+/>

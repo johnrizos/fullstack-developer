@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SiteHeader } from "@/components/SiteHeader";
+import { InlineScript } from "@/components/InlineScript";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -29,7 +30,7 @@ export default function RootLayout({
   return (
     <html lang="el" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <InlineScript html={themeInitScript} />
       </head>
       <body className="flex min-h-screen flex-col bg-gray-50 font-sans text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100">
         <SiteHeader />

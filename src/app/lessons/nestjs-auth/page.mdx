@@ -1,0 +1,209 @@
+# Authentication & Authorization
+
+Στο Nest το auth γίνεται με **Passport** strategies + **guards** — declarative, testable, χωρίς να σπέρνεις `jwt.verify` σε κάθε handler. Στη συνέντευξη: «πώς δουλεύει το AuthGuard;», «strategy vs guard;», «πώς κάνεις role-based access;».
+
+> Τα θεμέλια (bcrypt, JWT, session vs token) είναι στο μάθημα **Authentication & Sessions** του Express track. Εδώ τα εφαρμόζουμε με τον τρόπο του Nest.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να στήνεις local strategy για login,
+- να εκδίδεις JWT και να το επαληθεύεις με JWT strategy + guard,
+- να προστατεύεις routes με `@UseGuards(JwtAuthGuard)`,
+- να κάνεις role-based access με custom decorator + RolesGuard.
+
+## Strategy vs Guard
+
+```txt
+STRATEGY (Passport)   → ΠΩΣ επαληθεύεται ο χρήστης (validate credentials/token)
+GUARD (Nest)          → ΑΝ τρέχει η strategy σε αυτό το route (canActivate)
+```
+
+Η strategy κάνει τη δουλειά της επαλήθευσης· ο guard ενεργοποιεί τη strategy και μπλοκάρει το request αν αποτύχει.
+
+## Login με Local strategy
+
+```ts
+@Injectable()
+export class LocalStrategy extends PassportStrategy(Strategy) {
+  constructor(private readonly auth: AuthService) { super(); }   // default fields: username, password
+
+  async validate(username: string, password: string) {
+    const user = await this.auth.validateUser(username, password);
+    if (!user) throw new UnauthorizedException();   // → 401
+    return user;   // ό,τι επιστρέψεις μπαίνει στο req.user
+  }
+}
+```
+
+```ts
+@Injectable()
+export class AuthService {
+  async validateUser(email: string, password: string) {
+    const user = await this.users.findByEmail(email);
+    if (user && (await bcrypt.compare(password, user.passwordHash))) {
+      const { passwordHash, ...safe } = user;   // ΠΟΤΕ μην επιστρέφεις το hash
+      return safe;
+    }
+    return null;
+  }
+
+  login(user: { id: string; role: string }) {
+    return { accessToken: this.jwt.sign({ sub: user.id, role: user.role }) };
+  }
+}
+```
+
+## JWT strategy + AuthGuard
+
+```ts
+@Injectable()
+export class JwtStrategy extends PassportStrategy(Strategy) {
+  constructor(config: ConfigService) {
+    super({
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      secretOrKey: config.get("JWT_SECRET"),
+    });
+  }
+  async validate(payload: { sub: string; role: string }) {
+    return { id: payload.sub, role: payload.role };   // → req.user
+  }
+}
+
+// Ο guard απλώς ενεργοποιεί τη strategy "jwt"
+@Injectable()
+export class JwtAuthGuard extends AuthGuard("jwt") {}
+
+@UseGuards(JwtAuthGuard)
+@Get("profile")
+profile(@Req() req) { return req.user; }
+```
+
+Η strategy κάνει verify το token (signature + expiry)· ο `validate` τρέχει μόνο αν είναι έγκυρο, και ό,τι επιστρέφει γίνεται `req.user`.
+
+<PredictOutput
+  title="Τι επιστρέφει το validateUser;"
+  code={`async validateUser(email, password) {
+  const user = await this.users.findByEmail(email);  // { id, email, role, passwordHash }
+  if (user && await bcrypt.compare(password, user.passwordHash)) {
+    return user;   // <-- ολόκληρο το user
+  }
+}
+// Το αποτέλεσμα μπαίνει στο req.user και επιστρέφεται στο /profile. Πρόβλημα;`}
+  options={['Κανένα', 'Επιστρέφει το passwordHash στον client', 'Πετάει 401', 'Το role χάνεται']}
+  correctOptionIndex={1}
+  answer="Διαρρέει το passwordHash στο response"
+  explanation="Επιστρέφοντας ολόκληρο το user object, το passwordHash ταξιδεύει στο req.user και μπορεί να καταλήξει στο response. Πάντα κάνε strip τα ευαίσθητα πεδία: const { passwordHash, ...safe } = user; return safe; (ή χρησιμοποίησε Prisma select για να μην τα φέρεις καν)."
+/>
+
+## Role-based access — custom decorator + RolesGuard
+
+```ts
+// roles.decorator.ts
+export const Roles = (...roles: string[]) => SetMetadata("roles", roles);
+
+// roles.guard.ts
+@Injectable()
+export class RolesGuard implements CanActivate {
+  constructor(private readonly reflector: Reflector) {}
+  canActivate(ctx: ExecutionContext): boolean {
+    const required = this.reflector.getAllAndOverride<string[]>("roles", [
+      ctx.getHandler(), ctx.getClass(),
+    ]);
+    if (!required) return true;                       // route χωρίς @Roles → ανοιχτό
+    const { user } = ctx.switchToHttp().getRequest();
+    return required.includes(user?.role);             // false → 403
+  }
+}
+```
+
+```ts
+@Roles("admin")
+@UseGuards(JwtAuthGuard, RolesGuard)   // σειρά: πρώτα auth, μετά role
+@Delete(":id")
+remove(@Param("id") id: string) { /* ... */ }
+```
+
+Πρώτα `JwtAuthGuard` (βάζει το `req.user`), μετά `RolesGuard` (το διαβάζει). Λάθος σειρά → ο RolesGuard δεν θα βρει user.
+
+<Exercise
+  question="Ποια η διαφορά strategy και guard στο Nest auth;"
+  options={[
+    "Η strategy (Passport) ορίζει ΠΩΣ επαληθεύεται ο χρήστης (validate token/credentials)· ο guard (canActivate) αποφασίζει ΑΝ τρέχει η strategy σε αυτό το route και μπλοκάρει αν αποτύχει.",
+    "Είναι συνώνυμα — δύο ονόματα για το ίδιο πράγμα.",
+    "Ο guard κάνει τη verification και η strategy απλώς logging."
+  ]}
+  correctOptionIndex={0}
+  explanation="Passport strategy = ο μηχανισμός επαλήθευσης (local/jwt). Nest guard = το σημείο όπου ενεργοποιείται (AuthGuard('jwt')). Ο guard τυλίγει τη strategy και ελέγχει το canActivate."
+/>
+
+<Exercise
+  question="@UseGuards(RolesGuard, JwtAuthGuard) — τι θα πάει στραβά;"
+  options={[
+    "Ο RolesGuard τρέχει πριν ο JwtAuthGuard βάλει το req.user, οπότε δεν βρίσκει role και αρνείται/σκάει. Σωστή σειρά: JwtAuthGuard πρώτα, μετά RolesGuard.",
+    "Τίποτα, η σειρά των guards δεν έχει σημασία.",
+    "Θα τρέξουν δύο φορές."
+  ]}
+  correctOptionIndex={0}
+  explanation="Οι guards τρέχουν με τη σειρά που δηλώνονται. Ο RolesGuard βασίζεται στο req.user που γεμίζει ο JwtAuthGuard — άρα ο auth guard πρέπει να προηγείται."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How does authentication work in NestJS?»
+
+> I use Passport strategies wrapped in Nest guards. A strategy defines how a user is verified — a local strategy validates email and password with bcrypt on login, returning the user minus the password hash, and `AuthService` then signs a JWT carrying the user id and role. For protected routes a JWT strategy extracts the bearer token, verifies its signature and expiry, and its `validate` return value becomes `req.user`. The `JwtAuthGuard` just activates that strategy via `AuthGuard('jwt')`, so I protect a route with `@UseGuards(JwtAuthGuard)` and never call verify by hand. For authorization I add a `@Roles('admin')` decorator backed by a `RolesGuard` that reads the metadata with `Reflector` and compares against `req.user.role`, returning 403 otherwise — and I order the guards auth-first so the role guard actually has a user to read.
+
+<Flashcards
+  title="Nest auth — interview drills"
+  cards={[
+    {
+      question: "Strategy vs guard;",
+      answer: "Strategy (Passport): ΠΩΣ επαληθεύεται ο χρήστης (validate). Guard (Nest): ΑΝ/πού ενεργοποιείται η strategy (canActivate, AuthGuard('jwt')). Ο guard τυλίγει τη strategy."
+    },
+    {
+      question: "Local strategy flow;",
+      answer: "validate(username,password) → AuthService.validateUser → bcrypt.compare → user χωρίς passwordHash. Ό,τι επιστρέφει η validate μπαίνει στο req.user."
+    },
+    {
+      question: "JWT strategy — τι κάνει;",
+      answer: "ExtractJwt.fromAuthHeaderAsBearerToken() + secret. Verify signature/expiry, μετά validate(payload) → req.user. @UseGuards(JwtAuthGuard) προστατεύει το route."
+    },
+    {
+      question: "Role-based access;",
+      answer: "@Roles('admin') = SetMetadata. RolesGuard με Reflector.getAllAndOverride διαβάζει το metadata και συγκρίνει με req.user.role → 403 αλλιώς. Σειρά: JwtAuthGuard πριν RolesGuard."
+    },
+    {
+      question: "Κλασικό leak;",
+      answer: "Επιστροφή ολόκληρου user object → διαρρέει το passwordHash στο response. Πάντα strip ευαίσθητα πεδία (destructure ή Prisma select)."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="JWT auth με roles στο Nest"
+  scenario="Στήσε login, JWT protected routes και role-based access."
+  outcomes={[
+    "Να γράφεις local + jwt Passport strategies.",
+    "Να προστατεύεις routes με AuthGuard.",
+    "Να κάνεις RBAC με decorator + guard."
+  ]}
+  steps={[
+    "AuthService.validateUser με bcrypt.compare — επέστρεψε user χωρίς passwordHash.",
+    "LocalStrategy + POST /login που εκδίδει JWT (sub, role).",
+    "JwtStrategy με bearer extraction· JwtAuthGuard για protected routes.",
+    "@Roles decorator (SetMetadata) + RolesGuard με Reflector.",
+    "DELETE με @UseGuards(JwtAuthGuard, RolesGuard) + @Roles('admin')."
+  ]}
+  checkpoints={[
+    "Login λάθος credentials → 401, σωστά → token.",
+    "Protected route χωρίς token → 401, λάθος role → 403.",
+    "Κανένα passwordHash δεν διαρρέει στο response."
+  ]}
+  mistakes={[
+    "Επιστροφή ολόκληρου user (διαρρέει το hash).",
+    "Λάθος σειρά guards (RolesGuard πριν JwtAuthGuard).",
+    "jwt.verify με το χέρι μέσα σε handlers αντί για strategy+guard.",
+    "Secret hardcoded αντί για ConfigService."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν χτίζεις JWT auth με Passport strategies, AuthGuard-protected routes και role-based access μέσω decorator + guard."
+/>

@@ -1,0 +1,169 @@
+# Forms & Validation
+
+Τα Django Forms αναλαμβάνουν τρία πράγματα μαζί: rendering των πεδίων, validation των δεδομένων, και καθαρισμό (cleaning). Είναι ένα από τα δυνατά σημεία του framework.
+
+## Ένα απλό Form
+
+```python
+# blog/forms.py
+from django import forms
+
+class ContactForm(forms.Form):
+    name = forms.CharField(max_length=100)
+    email = forms.EmailField()
+    message = forms.CharField(widget=forms.Textarea)
+```
+
+```python
+# views.py
+def contact(request):
+    if request.method == "POST":
+        form = ContactForm(request.POST)
+        if form.is_valid():                      # τρέχει το validation
+            data = form.cleaned_data             # καθαρά, typed δεδομένα
+            send_message(data["email"], data["message"])
+            return redirect("thanks")
+    else:
+        form = ContactForm()
+    return render(request, "blog/contact.html", {"form": form})
+```
+
+Το pattern είναι σταθερό: σε POST φτιάχνεις το form με τα δεδομένα, καλείς `is_valid()`, και αν περάσει χρησιμοποιείς το `cleaned_data` (όπου τα πεδία είναι ήδη σωστού τύπου).
+
+## ModelForm — μηδέν επανάληψη
+
+Όταν η φόρμα αντιστοιχεί σε model, μην ξαναγράφεις τα πεδία:
+
+```python
+from django.forms import ModelForm
+from .models import Post
+
+class PostForm(ModelForm):
+    class Meta:
+        model = Post
+        fields = ["title", "body", "published"]
+```
+
+```python
+def post_create(request):
+    form = PostForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        post = form.save(commit=False)
+        post.author = request.user      # συμπλήρωσε ό,τι λείπει
+        post.save()
+        return redirect("post_list")
+    return render(request, "blog/post_form.html", {"form": form})
+```
+
+Το `ModelForm` παράγει τα fields από το model. Το `form.save()` δημιουργεί/ενημερώνει την εγγραφή· με `commit=False` την «κρατάς» για να βάλεις extra πεδία πριν το save.
+
+## Custom validation
+
+```python
+class PostForm(ModelForm):
+    class Meta:
+        model = Post
+        fields = ["title", "body"]
+
+    # validation ΕΝΟΣ πεδίου: clean_<fieldname>
+    def clean_title(self):
+        title = self.cleaned_data["title"]
+        if "spam" in title.lower():
+            raise forms.ValidationError("Ο τίτλος δεν επιτρέπεται.")
+        return title
+
+    # validation ΠΟΛΛΩΝ πεδίων μαζί
+    def clean(self):
+        cleaned = super().clean()
+        # ... cross-field checks
+        return cleaned
+```
+
+`clean_<field>` για έναν κανόνα ανά πεδίο· `clean()` για κανόνες που εξαρτώνται από **πολλά** πεδία μαζί.
+
+## Rendering & errors στο template
+
+```html
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}              {# render όλα τα πεδία + errors #}
+    <button>Αποθήκευση</button>
+</form>
+
+{# ή χειροκίνητα ανά πεδίο #}
+<label>{{ form.title.label }}</label>
+{{ form.title }}
+{{ form.title.errors }}
+```
+
+Το `{{ form.as_p }}` τυπώνει αυτόματα labels, inputs και error messages. Τα error messages εμφανίζονται δίπλα στα πεδία χωρίς δουλειά από εσένα.
+
+## CSRF — αυτόματο
+
+Όπως και στα templates, κάθε POST form χρειάζεται `{% csrf_token %}`. Το Django απορρίπτει POST χωρίς έγκυρο token (403) — προστασία CSRF by default.
+
+## Πώς απαντάς στη συνέντευξη
+
+«How does Django handle forms and validation?»
+
+> Django Forms render fields, validate input and clean it in one place. I instantiate the form with `request.POST`, call `is_valid()`, and on success use `cleaned_data`, which is already type-converted. When a form maps to a model I use a `ModelForm` so I don't repeat fields, and `save(commit=False)` lets me fill in things like the author before saving. Custom rules go in `clean_<field>` for single fields or `clean()` for cross-field checks, raising `ValidationError`. Every POST form includes `{% csrf_token %}`, so CSRF protection is on by default.
+
+<Flashcards
+  title="Django forms — interview drills"
+  cards={[
+    {
+      question: "Form vs ModelForm;",
+      answer: "Form: ορίζεις τα πεδία χειροκίνητα — για φόρμες χωρίς αντιστοιχία σε model (contact, search). ModelForm: παράγει τα πεδία από ένα model και έχει .save() που δημιουργεί/ενημερώνει εγγραφή. Μηδέν επανάληψη όταν η φόρμα = model."
+    },
+    {
+      question: "Τι είναι το cleaned_data;",
+      answer: "Μετά από επιτυχές is_valid(), το dict με τα validated & type-converted δεδομένα της φόρμας. Π.χ. ένα EmailField γίνεται str έγκυρου email, ένα IntegerField γίνεται int. Δουλεύεις πάντα με cleaned_data, όχι με raw request.POST."
+    },
+    {
+      question: "clean_<field>() vs clean();",
+      answer: "clean_<field>: validation ΕΝΟΣ πεδίου (π.χ. clean_title). clean(): validation που εξαρτάται από ΠΟΛΛΑ πεδία μαζί (cross-field, π.χ. start < end). Και τα δύο πετούν forms.ValidationError σε αποτυχία."
+    },
+    {
+      question: "Τι κάνει το save(commit=False);",
+      answer: "Φτιάχνει το model instance από τη φόρμα ΧΩΡΙΣ να το αποθηκεύσει ακόμα. Έτσι μπορείς να συμπληρώσεις πεδία που δεν είναι στη φόρμα (π.χ. author = request.user) πριν καλέσεις .save()."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Έχεις φόρμα που αντιστοιχεί ακριβώς σε ένα model. Τι χρησιμοποιείς για να μην ξαναγράψεις τα πεδία;"
+  options={[
+    "Ένα απλό Form με χειροκίνητα fields.",
+    "Ένα ModelForm που παράγει τα πεδία από το model και έχει .save().",
+    "Ένα template filter."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Το ModelForm αντλεί τα πεδία από το model και προσφέρει save() — λιγότερη επανάληψη και αυτόματη αποθήκευση."
+/>
+
+<TrainingLab
+  title="Validated ModelForm από άκρη σε άκρη"
+  scenario="Φτιάξε φόρμα δημιουργίας post με ModelForm, custom validation, εμφάνιση σφαλμάτων και CSRF προστασία."
+  outcomes={[
+    "Να χρησιμοποιείς ModelForm για CRUD φόρμες.",
+    "Να γράφεις custom validation σε πεδίο και cross-field.",
+    "Να εμφανίζεις errors και να προστατεύεις με CSRF."
+  ]}
+  steps={[
+    "Φτιάξε PostForm(ModelForm) με Meta.model/fields.",
+    "Πρόσθεσε clean_title που απορρίπτει spam.",
+    "Στο view χρησιμοποίησε save(commit=False) για να βάλεις author.",
+    "Render με {{ form.as_p }} και {% csrf_token %}."
+  ]}
+  checkpoints={[
+    "Άκυρα δεδομένα επιστρέφουν με μηνύματα δίπλα στα πεδία.",
+    "Ο author συμπληρώνεται από το request, όχι από τη φόρμα.",
+    "Η φόρμα έχει CSRF token."
+  ]}
+  mistakes={[
+    "Να διαβάζεις απευθείας request.POST αντί για cleaned_data.",
+    "Να ξαναγράφεις τα fields ενώ ταιριάζει ModelForm.",
+    "Να ξεχνάς το {% csrf_token %}."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν στήνεις validated φόρμες με ελάχιστο κώδικα και σωστό feedback/CSRF."
+/>

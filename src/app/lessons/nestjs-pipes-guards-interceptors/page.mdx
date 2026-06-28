@@ -1,0 +1,221 @@
+# Pipes, Guards & Interceptors
+
+Το request pipeline του Nest είναι ο λόγος που το framework νιώθει «enterprise»: validation, authorization, logging και error shaping γίνονται με **declarative** components αντί για if/else μέσα στους handlers. Στη συνέντευξη: «ποια η σειρά εκτέλεσης;», «pipe vs guard vs interceptor;», «πού πιάνεις τα exceptions;».
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να ξέρεις τη **σειρά** του pipeline,
+- να κάνεις validation με ValidationPipe + DTOs,
+- να γράφεις guards για authorization,
+- να χρησιμοποιείς interceptors για cross-cutting concerns,
+- να shape-άρεις errors με exception filters.
+
+## Η σειρά του pipeline
+
+```txt
+Request
+  → Middleware
+  → Guards            (επιτρέπεται; canActivate → true/false)
+  → Interceptors (pre)
+  → Pipes             (transform/validate input)
+  → ROUTE HANDLER
+  → Interceptors (post) (map/wrap response)
+  → Exception Filters  (αν σκάσει οτιδήποτε)
+Response
+```
+
+Κλειδί: **guards πριν pipes**. Δεν validate-άρεις input για κάποιον που ούτως ή άλλως θα φάει `403`. Και τα exception filters πιάνουν errors από **όλα** τα προηγούμενα στάδια.
+
+## Pipes — validation & transformation
+
+Το ValidationPipe + class-validator DTO είναι ο standard τρόπος:
+
+```ts
+// create-task.dto.ts
+export class CreateTaskDto {
+  @IsString() @MinLength(2)
+  title: string;
+
+  @IsOptional() @IsBoolean()
+  completed?: boolean;
+}
+
+// controller
+@Post()
+create(@Body() dto: CreateTaskDto) {   // ValidationPipe ελέγχει το dto
+  return this.taskService.create(dto);
+}
+
+// main.ts — global
+app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+```
+
+- `whitelist: true` → **πετά** properties που δεν είναι στο DTO (απόρριψη extra fields → mass-assignment protection).
+- `transform: true` → μετατρέπει το plain object σε instance του DTO class και κάνει type coercion (π.χ. `"42"` → `42`).
+
+Invalid input → αυτόματο `400` με λίστα errors. Δεν γράφεις validation logic στον handler.
+
+<PredictOutput
+  title="whitelist σε δράση"
+  code={`// DTO: μόνο { title: string }
+// ValidationPipe({ whitelist: true })
+// POST body:
+{ "title": "Buy milk", "isAdmin": true }
+// Τι φτάνει στο service ως dto;`}
+  options={['{ title: "Buy milk", isAdmin: true }', '{ title: "Buy milk" }', '400 error', '{ isAdmin: true }']}
+  correctOptionIndex={1}
+  answer='{ title: "Buy milk" } — το isAdmin πετιέται'
+  explanation="Με whitelist:true ο ValidationPipe αφαιρεί κάθε property που δεν δηλώνεται στο DTO. Το isAdmin πετιέται σιωπηλά — κρίσιμη προστασία από mass-assignment (ο χρήστης δεν μπορεί να περάσει fields που δεν προβλέπεις). Με forbidNonWhitelisted:true θα γινόταν 400 αντί για σιωπηλή αφαίρεση."
+/>
+
+## Guards — authorization
+
+Ο guard απαντά **ναι/όχι** στο «επιτρέπεται αυτό το request;» μέσω `canActivate`:
+
+```ts
+@Injectable()
+export class JwtAuthGuard implements CanActivate {
+  canActivate(ctx: ExecutionContext): boolean {
+    const req = ctx.switchToHttp().getRequest();
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    if (!token) throw new UnauthorizedException();        // → 401
+    req.user = this.jwt.verify(token);                    // attach user
+    return true;
+  }
+}
+
+@UseGuards(JwtAuthGuard)
+@Get("me")
+me(@Req() req) { return req.user; }
+```
+
+Για role-based access συνδυάζεις guard + custom decorator μέσω `Reflector`:
+
+```ts
+@Roles("admin")           // custom metadata decorator
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Delete(":id")
+remove(@Param("id") id: string) { /* ... */ }
+```
+
+Ο `RolesGuard` διαβάζει το metadata με `reflector.get(Roles, ...)` και συγκρίνει με το `req.user.role`.
+
+## Interceptors — cross-cutting concerns
+
+Ο interceptor τυλίγει τον handler — τρέχει **πριν και μετά**. Ιδανικός για logging, response shaping, caching, timeouts:
+
+```ts
+@Injectable()
+export class TransformInterceptor implements NestInterceptor {
+  intercept(ctx: ExecutionContext, next: CallHandler): Observable<any> {
+    const now = Date.now();
+    return next.handle().pipe(                 // next.handle() = ο handler
+      map((data) => ({ data, tookMs: Date.now() - now })),  // wrap response
+    );
+  }
+}
+```
+
+Επειδή δουλεύει με RxJS `Observable`, μπορείς να κάνεις `map`, `tap` (side effects/logging), `timeout`, `catchError`. Π.χ. ένα logging interceptor κάνει `tap` πριν/μετά χωρίς να αγγίζει τον handler.
+
+## Exception filters — error shaping
+
+Όλα τα exceptions καταλήγουν σε filter που τα μετατρέπει σε HTTP response:
+
+```ts
+@Catch(HttpException)
+export class HttpErrorFilter implements ExceptionFilter {
+  catch(ex: HttpException, host: ArgumentsHost) {
+    const res = host.switchToHttp().getResponse();
+    res.status(ex.getStatus()).json({
+      error: ex.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+```
+
+Το Nest έχει built-in filter που ήδη κάνει sensible μετατροπή των `HttpException` (π.χ. `NotFoundException` → 404). Γράφεις custom μόνο όταν θες ενιαίο error shape ή logging.
+
+<Exercise
+  question="Σε ποια σειρά τρέχουν guard και pipe;"
+  options={[
+    "Guard πρώτα, μετά pipe — δεν έχει νόημα να validate-άρεις input για request που θα απορριφθεί με 403/401. Η authorization προηγείται της validation.",
+    "Pipe πρώτα, μετά guard — πρέπει να καθαρίσεις το input πριν αποφασίσεις πρόσβαση.",
+    "Τρέχουν παράλληλα."
+  ]}
+  correctOptionIndex={0}
+  explanation="Pipeline: middleware → guards → interceptors(pre) → pipes → handler. Οι guards αποφασίζουν πρόσβαση ΠΡΙΝ σπαταληθεί δουλειά στο validation/transformation του input."
+/>
+
+<Exercise
+  question="Θες να προσθέσεις logging με χρόνο εκτέλεσης σε όλα τα endpoints χωρίς να αγγίξεις τους handlers. Τι χρησιμοποιείς;"
+  options={[
+    "Interceptor — τυλίγει τον handler, μετράς χρόνο πριν με next.handle() και κάνεις tap/map μετά. Cross-cutting concern, ένα σημείο, μηδέν αλλαγή στους handlers.",
+    "Pipe — γιατί επεξεργάζεται input/output.",
+    "Guard — γιατί τρέχει σε κάθε request."
+  ]}
+  correctOptionIndex={0}
+  explanation="Οι interceptors είναι ακριβώς για cross-cutting concerns γύρω από τον handler (logging, timing, caching, response wrapping). Δουλεύουν με RxJS Observable: μετράς πριν, κάνεις tap/map στο αποτέλεσμα."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«Walk me through the NestJS request pipeline.»
+
+> A request goes middleware, then guards, then interceptors, then pipes, then the handler, and on the way out interceptors again, with exception filters catching anything that throws. Guards run before pipes on purpose — there's no point validating input for a request that'll be rejected with 403. Guards implement `canActivate` and return true/false, so I put JWT auth and role checks there, reading role metadata with a Reflector. Pipes handle validation and transformation; I use `ValidationPipe` with `whitelist: true` so unknown fields are stripped — that's mass-assignment protection — and `transform: true` to get a real DTO instance with coerced types. Interceptors wrap the handler with RxJS, so logging, timing, caching and response shaping live there without touching handlers. Finally exception filters turn thrown exceptions into a consistent HTTP error shape; Nest already maps its built-in `HttpException`s sensibly so I only add a custom filter for a unified envelope or logging.
+
+<Flashcards
+  title="Pipeline — interview drills"
+  cards={[
+    {
+      question: "Σειρά του pipeline;",
+      answer: "middleware → guards → interceptors(pre) → pipes → handler → interceptors(post) → exception filters. Guards ΠΡΙΝ pipes (authz πριν validation)."
+    },
+    {
+      question: "ValidationPipe — whitelist & transform;",
+      answer: "whitelist:true πετά unknown properties (mass-assignment protection). transform:true φτιάχνει DTO instance + type coercion. Invalid → αυτόματο 400 με errors. forbidNonWhitelisted → 400 αντί σιωπηλής αφαίρεσης."
+    },
+    {
+      question: "Τι κάνει ο guard;",
+      answer: "canActivate(ctx) → true/false: επιτρέπεται το request; Auth/role checks. throw UnauthorizedException → 401. Με Reflector διαβάζει role metadata από custom @Roles decorator."
+    },
+    {
+      question: "Πότε interceptor;",
+      answer: "Cross-cutting concerns γύρω από τον handler: logging, timing, caching, response wrapping. RxJS Observable — next.handle().pipe(map/tap/timeout/catchError). Τρέχει πριν & μετά."
+    },
+    {
+      question: "Exception filter;",
+      answer: "Πιάνει exceptions από όλα τα στάδια και τα κάνει HTTP response. @Catch(HttpException). Built-in filter ήδη map-άρει HttpException sensibly· custom για ενιαίο error shape/logging."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Request pipeline σε ένα module"
+  scenario="Βάλε validation, authorization, logging και unified errors σε ένα tasks module."
+  outcomes={[
+    "Να validate-άρεις με DTO + ValidationPipe.",
+    "Να γράφεις JWT + roles guards.",
+    "Να προσθέτεις logging interceptor και error filter."
+  ]}
+  steps={[
+    "Στήσε global ValidationPipe({ whitelist:true, transform:true }) στο main.ts.",
+    "Φτιάξε CreateTaskDto με class-validator decorators.",
+    "JwtAuthGuard (canActivate) που attach-άρει req.user ή ρίχνει 401.",
+    "RolesGuard + @Roles('admin') decorator μέσω Reflector για DELETE.",
+    "LoggingInterceptor με χρόνο εκτέλεσης και HttpErrorFilter για ενιαίο error shape."
+  ]}
+  checkpoints={[
+    "Extra fields στο body πετιούνται (whitelist).",
+    "Request χωρίς token → 401, λάθος role → 403.",
+    "Κάθε error βγαίνει με το ίδιο JSON shape."
+  ]}
+  mistakes={[
+    "Validation logic μέσα στον handler αντί για DTO/pipe.",
+    "Pipe πριν guard στη λογική σου (το Nest τρέχει guard πρώτα — μη βασίζεσαι σε λάθος σειρά).",
+    "Χωρίς whitelist → mass-assignment μέσω extra fields.",
+    "Try/catch σε κάθε handler αντί για exception filter."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν χτίζεις module με declarative validation, authorization και logging χωρίς if/else μέσα στους handlers."
+/>

@@ -1,0 +1,172 @@
+# Routing & Jinja2 Templates
+
+Εδώ εμβαθύνεις στο routing του Flask (dynamic URLs, named routes) και μαθαίνεις το **Jinja2**, τον templating engine που χρησιμοποιεί και το Flask και πολλά άλλα Python εργαλεία.
+
+## Dynamic routes
+
+```python
+@app.route("/posts/<int:post_id>")
+def post_detail(post_id):
+    return f"Post {post_id}"
+
+@app.route("/users/<username>")          # default: string
+def profile(username):
+    return f"Profile: {username}"
+
+@app.route("/files/<path:filepath>")     # επιτρέπει slashes
+def serve(filepath):
+    return filepath
+```
+
+Το `<int:post_id>` είναι **converter**: πιάνει το κομμάτι του URL, το μετατρέπει σε int, και το περνά ως argument. Άλλοι: `string` (default), `path`, `float`, `uuid`.
+
+## url_for — named routes
+
+```python
+from flask import url_for, redirect
+
+@app.route("/go")
+def go():
+    return redirect(url_for("post_detail", post_id=42))   # → /posts/42
+```
+
+Το `url_for` φτιάχνει URL από το **όνομα της view function**. Ποτέ hardcoded paths — αν αλλάξει το route, τα links μένουν σωστά. (Δουλεύει και για static: `url_for('static', filename='css/app.css')`.)
+
+## Rendering templates
+
+```python
+from flask import render_template
+
+@app.route("/posts")
+def post_list():
+    posts = [{"id": 1, "title": "Γεια"}, {"id": 2, "title": "Κόσμε"}]
+    return render_template("post_list.html", posts=posts)
+```
+
+Τα templates ζουν στον φάκελο `templates/`. Τα keyword arguments του `render_template` γίνονται μεταβλητές μέσα στο template.
+
+## Jinja2 — variables & escaping
+
+```html
+<!-- templates/post_list.html -->
+<h1>{{ title }}</h1>
+<p>{{ post.author }}</p>          {# attribute access #}
+<p>{{ user.name|upper }}</p>      {# filter #}
+```
+
+Το `{{ }}` κάνει **αυτόματο HTML escaping** — XSS-safe by default, όπως το Django. Filters με `|`: `upper`, `truncate`, `default`, `length`.
+
+## Control flow
+
+```html
+{% if posts %}
+    <ul>
+    {% for post in posts %}
+        <li><a href="{{ url_for('post_detail', post_id=post.id) }}">{{ post.title }}</a></li>
+    {% endfor %}
+    </ul>
+{% else %}
+    <p>Δεν υπάρχουν posts.</p>
+{% endif %}
+```
+
+Πρόσεξε το `url_for` **μέσα** στο template — έτσι φτιάχνεις links χωρίς hardcoded paths.
+
+## Template inheritance
+
+```html
+<!-- templates/base.html -->
+<!DOCTYPE html>
+<html>
+<head><title>{% block title %}MyApp{% endblock %}</title></head>
+<body>
+    {% include "nav.html" %}
+    <main>{% block content %}{% endblock %}</main>
+</body>
+</html>
+```
+
+```html
+<!-- templates/post_list.html -->
+{% extends "base.html" %}
+{% block title %}Posts{% endblock %}
+{% block content %}
+    <h1>Όλα τα posts</h1>
+{% endblock %}
+```
+
+Ίδιο μοτίβο με το Django (επειδή και το Django template language εμπνεύστηκε από το Jinja): `extends` / `block` / `include` για DRY layouts.
+
+## Static files
+
+```html
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+```
+
+Τα static αρχεία (CSS/JS/images) μπαίνουν στον φάκελο `static/` και σερβίρονται αυτόματα στο dev.
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do routing and templating work in Flask?»
+
+> Routes use `@app.route` with converters like `<int:post_id>` to capture and type URL parameters. I never hardcode paths — `url_for('view_name', **params)` builds URLs from the view function's name, in both Python and templates, so links survive route changes. Templating is Jinja2: `render_template` passes context, `{{ }}` auto-escapes for XSS safety, filters format values, and I keep layouts DRY with `extends`/`block`/`include` — the same pattern Django borrowed. Static assets live in `static/` and are referenced via `url_for('static', ...)`.
+
+<Flashcards
+  title="Flask routing & Jinja2 — interview drills"
+  cards={[
+    {
+      question: "Τι κάνει το url_for;",
+      answer: "Φτιάχνει URL από το ΟΝΟΜΑ της view function (όχι hardcoded path). url_for('post_detail', post_id=42) → /posts/42. Δουλεύει σε Python και templates· αν αλλάξει το route pattern, τα links μένουν σωστά. Και για static files."
+    },
+    {
+      question: "Τι είναι οι route converters;",
+      answer: "Πιάνουν & μετατρέπουν κομμάτι URL: <int:id>, <string:name> (default), <float:x>, <path:p> (επιτρέπει slashes), <uuid:id>. Η τιμή περνά ως argument στη view με το όνομα μετά το ':'."
+    },
+    {
+      question: "Είναι ασφαλές το Jinja2 από XSS;",
+      answer: "Ναι, by default: το {{ }} κάνει αυτόματο HTML escaping. Παρακάμπτεις μόνο ρητά με |safe — και μόνο σε έμπιστο περιεχόμενο. Ίδια φιλοσοφία με τα Django templates."
+    },
+    {
+      question: "Πώς κρατάς DRY τα Jinja templates;",
+      answer: "Template inheritance: base.html με {% block %}, το child κάνει {% extends 'base.html' %} και γεμίζει τα blocks· {% include %} για partials. Έτσι header/footer γράφονται μία φορά."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Γιατί χρησιμοποιείς url_for αντί να γράψεις το path '/posts/42' με το χέρι;"
+  options={[
+    "Επειδή είναι πιο γρήγορο στην εκτέλεση.",
+    "Επειδή φτιάχνει το URL από το όνομα της view — αν αλλάξει το route pattern, τα links δεν σπάνε.",
+    "Επειδή το Flask δεν δέχεται strings."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Το url_for αναφέρεται στο όνομα της view function, οπότε τα URLs παραμένουν σωστά ακόμα κι αν αλλάξει το path."
+/>
+
+<TrainingLab
+  title="Σελίδες με dynamic routes & inheritance"
+  scenario="Φτιάξε ένα μικρό blog UI με Flask: λίστα posts, detail σελίδα με dynamic route, Jinja inheritance και static CSS."
+  outcomes={[
+    "Να ορίζεις dynamic routes με converters.",
+    "Να φτιάχνεις links με url_for σε Python και templates.",
+    "Να δομείς templates με inheritance και να σερβίρεις static files."
+  ]}
+  steps={[
+    "Φτιάξε route /posts (λίστα) και /posts/<int:post_id> (detail).",
+    "Φτιάξε base.html με blocks και κάνε extends στις σελίδες.",
+    "Χρησιμοποίησε url_for για links στη λίστα.",
+    "Πρόσθεσε static/css/app.css με url_for('static', ...)."
+  ]}
+  checkpoints={[
+    "Τα links φτιάχνονται με url_for παντού.",
+    "Το layout δεν επαναλαμβάνεται (inheritance).",
+    "Το output χρήστη είναι escaped."
+  ]}
+  mistakes={[
+    "Να γράφεις hardcoded paths αντί για url_for.",
+    "Να αντιγράφεις header/footer σε κάθε template.",
+    "Να χρησιμοποιείς |safe σε δεδομένα χρήστη."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν φτιάχνεις DRY, ασφαλή Jinja templates με dynamic routing χωρίς hardcoded URLs."
+/>

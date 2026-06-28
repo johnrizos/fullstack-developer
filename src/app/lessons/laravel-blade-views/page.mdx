@@ -1,0 +1,173 @@
+# Blade Templates & Views
+
+Το **Blade** είναι ο templating engine του Laravel. Γράφεις HTML με μικρές, καθαρές οδηγίες — και το Blade κάνει αυτόματα escaping ώστε να είσαι ασφαλής από XSS.
+
+## Echo & escaping
+
+```blade
+{{-- escaped: ασφαλές από XSS (αυτόματο htmlspecialchars) --}}
+<h1>{{ $title }}</h1>
+
+{{-- raw: ΧΩΡΙΣ escaping — μόνο αν εμπιστεύεσαι 100% το περιεχόμενο --}}
+<div>{!! $trustedHtml !!}</div>
+
+{{-- σχόλιο που δεν εμφανίζεται στο HTML --}}
+```
+
+Κανόνας: σχεδόν πάντα `{{ }}`. Το `{!! !!}` μόνο για περιεχόμενο που εσύ ελέγχεις (π.χ. sanitized markdown) — αλλιώς ανοίγεις πόρτα σε XSS.
+
+## Control structures
+
+```blade
+@if ($posts->isEmpty())
+    <p>Δεν υπάρχουν posts.</p>
+@else
+    @foreach ($posts as $post)
+        <li>{{ $post->title }}</li>
+    @endforeach
+@endif
+
+@forelse ($posts as $post)
+    <li>{{ $post->title }}</li>
+@empty
+    <p>Κενό.</p>
+@endforelse
+```
+
+Το `@forelse`/`@empty` είναι το βολικό «loop ή μήνυμα κενού» σε ένα block.
+
+## Layouts με inheritance
+
+Φτιάξε ένα master layout και «γέμισέ» το:
+
+```blade
+{{-- resources/views/layouts/app.blade.php --}}
+<!DOCTYPE html>
+<html>
+<head><title>@yield('title')</title></head>
+<body>
+    @include('partials.nav')
+    <main>
+        @yield('content')
+    </main>
+</body>
+</html>
+```
+
+```blade
+{{-- resources/views/posts/index.blade.php --}}
+@extends('layouts.app')
+
+@section('title', 'Posts')
+
+@section('content')
+    <h1>Όλα τα posts</h1>
+@endsection
+```
+
+- `@yield('x')`: σημείο όπου μπαίνει περιεχόμενο.
+- `@section/@extends`: το παιδί γεμίζει τα sections του layout.
+- `@include('partials.nav')`: ενσωματώνει ένα κομμάτι (partial).
+
+## Blade Components — ο μοντέρνος τρόπος
+
+```bash
+php artisan make:component Alert
+```
+
+```blade
+{{-- resources/views/components/alert.blade.php --}}
+<div class="alert alert-{{ $type }}">
+    {{ $slot }}
+</div>
+```
+
+```blade
+{{-- χρήση --}}
+<x-alert type="error">
+    Κάτι πήγε στραβά!
+</x-alert>
+```
+
+Τα **components** είναι σαν React components για Blade: reusable κομμάτια UI με props (`type`) και `{{ $slot }}` για το περιεχόμενο. Προτιμότερα από `@include` για επαναχρησιμοποιήσιμα UI elements.
+
+## Πέρασμα δεδομένων & helpers
+
+```blade
+{{-- δεδομένα από controller: return view('posts.index', ['posts' => $posts]) --}}
+
+{{ $post->title }}
+{{ $post->created_at->diffForHumans() }}   {{-- "πριν 2 ώρες" --}}
+
+<a href="{{ route('posts.show', $post) }}">Δες</a>
+@csrf   {{-- hidden CSRF token σε φόρμες --}}
+@method('PUT')   {{-- για PUT/DELETE μέσω HTML form --}}
+```
+
+Το `@csrf` βάζει αυτόματα το hidden token που έμαθες στο PHP security — εδώ είναι μία λέξη.
+
+## Πώς απαντάς στη συνέντευξη
+
+«How does Blade help and how is it safe?»
+
+> Blade is Laravel's templating engine. `{{ $value }}` auto-escapes output through `htmlspecialchars`, so views are XSS-safe by default; I only use `{!! !!}` for content I fully trust. I structure pages with layout inheritance — `@extends`, `@section`, `@yield` — and extract reusable UI into Blade components with props and a `{{ $slot }}`, which feel like React components. Forms get `@csrf` for the token and `@method` to spoof PUT/DELETE. Data comes from the controller via the array passed to `view()`.
+
+<Flashcards
+  title="Blade — interview drills"
+  cards={[
+    {
+      question: "{{ }} vs {!! !!};",
+      answer: "{{ $x }}: escaped output (αυτόματο htmlspecialchars) — ασφαλές από XSS, ο κανόνας. {!! $x !!}: raw, ΧΩΡΙΣ escaping — μόνο για περιεχόμενο που εμπιστεύεσαι 100% (π.χ. sanitized HTML), αλλιώς XSS κίνδυνος."
+    },
+    {
+      question: "@extends/@section/@yield;",
+      answer: "Layout inheritance. Το layout ορίζει @yield('content') ως 'τρύπα'. Το child κάνει @extends('layout') και γεμίζει με @section('content')...@endsection. Έτσι μοιράζεσαι κοινό HTML (header/footer) χωρίς επανάληψη."
+    },
+    {
+      question: "Blade component vs @include;",
+      answer: "@include: ενσωματώνει ένα partial (μοιράζεται μεταβλητές scope). Component (<x-alert>): reusable UI με ΡΗΤΑ props και {{ $slot }}, σαν React component — πιο καθαρή ενθυλάκωση. Προτίμησε components για reusable UI."
+    },
+    {
+      question: "Τι κάνουν τα @csrf και @method;",
+      answer: "@csrf: βάζει το hidden CSRF token σε φόρμα (απαραίτητο για POST/PUT/DELETE, αλλιώς 419). @method('PUT'): επειδή τα HTML forms στέλνουν μόνο GET/POST, 'πλαστογραφεί' τη μέθοδο ώστε να φτάσει στο PUT/DELETE route."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Γιατί το {{ $value }} είναι ασφαλές από XSS;"
+  options={[
+    "Επειδή κρυπτογραφεί τη μεταβλητή.",
+    "Επειδή κάνει αυτόματα escaping (htmlspecialchars), οπότε τυχόν <script> εμφανίζεται ως κείμενο.",
+    "Επειδή τρέχει JavaScript στον server."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Το Blade κάνει escape by default στα {{ }}. Μόνο το {!! !!} παρακάμπτει το escaping, γι' αυτό το χρησιμοποιείς μόνο σε έμπιστο περιεχόμενο."
+/>
+
+<TrainingLab
+  title="Φτιάξε reusable UI με Blade"
+  scenario="Χτίσε ένα layout με header/footer, μια σελίδα posts που το επεκτείνει, και ένα reusable alert component με props και slot."
+  outcomes={[
+    "Να δομείς σελίδες με layout inheritance.",
+    "Να φτιάχνεις Blade components με props και slots.",
+    "Να κρατάς τα views ασφαλή με σωστό escaping."
+  ]}
+  steps={[
+    "Φτιάξε layouts/app.blade.php με @yield('content') και @include nav.",
+    "Κάνε την posts/index να @extends το layout και να γεμίζει το section.",
+    "php artisan make:component Alert και χρησιμοποίησε <x-alert>.",
+    "Πρόσθεσε φόρμα με @csrf και @method('PUT')."
+  ]}
+  checkpoints={[
+    "Το κοινό HTML (header/footer) δεν επαναλαμβάνεται.",
+    "Το alert επαναχρησιμοποιείται με διαφορετικό type/slot.",
+    "Όλο το output χρήστη είναι escaped."
+  ]}
+  mistakes={[
+    "Να χρησιμοποιείς {!! !!} σε δεδομένα χρήστη.",
+    "Να αντιγράφεις header/footer σε κάθε view αντί για layout.",
+    "Να ξεχνάς το @csrf και να παίρνεις 419 στις φόρμες."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν φτιάχνεις DRY, ασφαλή views με layouts και components αντί για επαναλαμβανόμενο HTML."
+/>

@@ -1,0 +1,185 @@
+# Building APIs
+
+Πολύ συχνά το Laravel δεν σερβίρει HTML αλλά **JSON** για ένα React/mobile frontend. Εδώ μαθαίνεις API routes, καθαρά JSON responses με Resources, και token authentication με Sanctum.
+
+## API routes
+
+```php
+<?php
+// routes/api.php  — αυτόματο prefix /api, stateless, χωρίς CSRF/sessions
+use App\Http\Controllers\Api\PostController;
+
+Route::apiResource("posts", PostController::class);
+```
+
+Το `apiResource` είναι σαν το `resource` αλλά **χωρίς** τα `create`/`edit` (που είναι για HTML φόρμες) — μένουν index/store/show/update/destroy.
+
+## JSON responses
+
+```php
+<?php
+public function show(Post $post) {
+    return response()->json($post);          // αυτόματα JSON + σωστά headers
+}
+
+public function store(Request $request) {
+    $post = Post::create($request->validated());
+    return response()->json($post, 201);     // 201 Created
+}
+
+public function destroy(Post $post) {
+    $post->delete();
+    return response()->noContent();          // 204
+}
+```
+
+Επέστρεψε **σωστά HTTP status codes**: 200 ok, 201 created, 204 no content, 404 not found, 422 validation, 401/403 auth.
+
+## API Resources — έλεγξε το σχήμα του JSON
+
+Μην επιστρέφεις ωμά το model (μπορεί να διαρρεύσει πεδία όπως `password`). Χρησιμοποίησε **Resource**:
+
+```bash
+php artisan make:resource PostResource
+```
+
+```php
+<?php
+class PostResource extends JsonResource {
+    public function toArray(Request $request): array {
+        return [
+            "id" => $this->id,
+            "title" => $this->title,
+            "author" => $this->user->name,
+            "created_at" => $this->created_at->toIso8601String(),
+            // ΔΕΝ εκθέτουμε internal πεδία
+        ];
+    }
+}
+```
+
+```php
+<?php
+public function show(Post $post) {
+    return new PostResource($post);
+}
+
+public function index() {
+    return PostResource::collection(Post::with("user")->paginate(15));
+}
+```
+
+Το Resource είναι ένα **transformation layer**: εσύ ελέγχεις ακριβώς τι βγαίνει στο JSON, ανεξάρτητα από το schema της βάσης.
+
+## Pagination
+
+```php
+<?php
+Post::paginate(15);   // επιστρέφει data + meta (current_page, total, links)
+```
+
+Το Laravel βάζει αυτόματα `meta`/`links` στο JSON για paginated αποτελέσματα — ο client ξέρει πόσες σελίδες υπάρχουν.
+
+## Token authentication με Sanctum
+
+```php
+<?php
+// login endpoint: δώσε token
+public function login(Request $request) {
+    $request->validate(["email" => "required|email", "password" => "required"]);
+
+    if (! Auth::attempt($request->only("email", "password"))) {
+        return response()->json(["message" => "Invalid credentials"], 401);
+    }
+
+    $token = $request->user()->createToken("api")->plainTextToken;
+    return response()->json(["token" => $token]);
+}
+```
+
+```php
+<?php
+// protected routes
+Route::middleware("auth:sanctum")->group(function () {
+    Route::get("/user", fn(Request $r) => $r->user());
+    Route::apiResource("posts", PostController::class);
+});
+```
+
+Ο client στέλνει σε κάθε request: `Authorization: Bearer <token>`. Stateless — κανένα session.
+
+## Versioning & error shape
+
+```php
+<?php
+// πρόθεμα έκδοσης ώστε να μη σπας παλιούς clients
+Route::prefix("v1")->group(function () { /* ... */ });
+```
+
+Κράτα **σταθερό σχήμα** για errors σε όλο το API (π.χ. `{ "message": "...", "errors": {...} }`) — ο client βασίζεται σε αυτό. Το Laravel ήδη επιστρέφει 422 με αυτό το σχήμα στα validation errors.
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you build a clean JSON API in Laravel?»
+
+> I put stateless routes in `api.php` and use `apiResource` for CRUD. Instead of returning raw models — which can leak fields — I shape output with API Resources, a transformation layer where I decide exactly what JSON goes out. I return correct status codes (201, 204, 404, 422) and paginate lists so clients get `meta` and `links`. Auth is token-based with Sanctum: the client sends `Authorization: Bearer <token>`, and I protect routes with `auth:sanctum`. I version the API under a prefix and keep a consistent error shape so clients can rely on it.
+
+<Flashcards
+  title="Laravel APIs — interview drills"
+  cards={[
+    {
+      question: "Γιατί API Resources αντί για ωμό model;",
+      answer: "Transformation layer: ελέγχεις ΑΚΡΙΒΩΣ τι πεδία βγαίνουν στο JSON, ανεξάρτητα από το schema. Αποτρέπει διαρροή internal πεδίων (password, internal flags), επιτρέπει renaming/nesting, και κρατά σταθερό API contract."
+    },
+    {
+      question: "resource vs apiResource;",
+      answer: "resource: 7 routes με create/edit (HTML φόρμες). apiResource: μόνο index/store/show/update/destroy — χωρίς create/edit, γιατί ένα API δεν σερβίρει φόρμες HTML. Για API πάντα apiResource."
+    },
+    {
+      question: "Πώς δουλεύει το token auth με Sanctum;",
+      answer: "Ο χρήστης κάνει login, παίρνει token (createToken()->plainTextToken). Το στέλνει σε κάθε request ως header Authorization: Bearer <token>. Τα routes προστατεύονται με middleware auth:sanctum. Stateless — κανένα session/cookie."
+    },
+    {
+      question: "Ποια status codes επιστρέφεις σε ένα API;",
+      answer: "200 OK, 201 Created (μετά POST), 204 No Content (μετά DELETE), 404 Not Found, 422 Unprocessable (validation), 401 Unauthenticated, 403 Forbidden. Σωστά codes = ο client ξέρει τι έγινε χωρίς να διαβάζει το body."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Γιατί χρησιμοποιούμε API Resource αντί να επιστρέψουμε απευθείας το Eloquent model;"
+  options={[
+    "Για να τρέχει πιο γρήγορα η βάση.",
+    "Για να ελέγχουμε ακριβώς ποια πεδία βγαίνουν στο JSON και να μη διαρρέουν internal δεδομένα.",
+    "Επειδή τα models δεν μετατρέπονται σε JSON."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Το Resource είναι transformation layer που ορίζει το ακριβές σχήμα του JSON και αποτρέπει διαρροή πεδίων όπως password."
+/>
+
+<TrainingLab
+  title="Χτίσε REST API με resources & token auth"
+  scenario="Φτιάξε ένα JSON API για posts: apiResource routes, API Resources για το output, pagination, και Sanctum token authentication."
+  outcomes={[
+    "Να ορίζεις stateless API routes με σωστά status codes.",
+    "Να διαμορφώνεις το JSON output με API Resources.",
+    "Να προστατεύεις endpoints με Sanctum tokens."
+  ]}
+  steps={[
+    "Στο api.php όρισε Route::apiResource('posts', ...).",
+    "Φτιάξε PostResource και επέστρεψέ το από index/show.",
+    "Πρόσθεσε pagination με paginate() και δες meta/links.",
+    "Φτιάξε login endpoint που δίνει token και προστάτεψε με auth:sanctum."
+  ]}
+  checkpoints={[
+    "Το JSON δεν εκθέτει internal πεδία.",
+    "Τα status codes είναι σωστά (201/204/404/422).",
+    "Τα protected endpoints απαιτούν Bearer token."
+  ]}
+  mistakes={[
+    "Να επιστρέφεις ωμά models και να διαρρέεις πεδία.",
+    "Να επιστρέφεις 200 για τα πάντα.",
+    "Να χρησιμοποιείς resource (με create/edit) αντί apiResource."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν χτίζεις ένα καθαρό, versioned JSON API με σταθερό σχήμα και token auth, έτοιμο να καταναλωθεί από React/mobile."
+/>

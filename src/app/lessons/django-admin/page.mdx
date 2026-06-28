@@ -1,0 +1,139 @@
+# The Django Admin
+
+Το **admin** είναι το feature που έκανε διάσημο το Django: ένα πλήρες, αυτόματο διαχειριστικό panel για τα δεδομένα σου, χωρίς να γράψεις σχεδόν τίποτα. Είναι ιδανικό για content management και internal tools.
+
+## Ενεργοποίηση & superuser
+
+Το admin είναι ήδη στο `INSTALLED_APPS` και στα `urls.py` ενός νέου project:
+
+```python
+# config/urls.py
+from django.contrib import admin
+from django.urls import path
+
+urlpatterns = [
+    path("admin/", admin.site.urls),
+]
+```
+
+```bash
+python manage.py createsuperuser   # φτιάξε διαχειριστή
+python manage.py runserver
+# → http://localhost:8000/admin
+```
+
+## Register ένα model
+
+```python
+# blog/admin.py
+from django.contrib import admin
+from .models import Post
+
+admin.site.register(Post)
+```
+
+Μόλις το κάνεις register, αποκτάς **αυτόματα** πλήρες CRUD: λίστα, αναζήτηση, δημιουργία, επεξεργασία, διαγραφή — με σωστά forms βασισμένα στο model. Μηδέν κώδικας UI.
+
+## Customization με ModelAdmin
+
+```python
+@admin.register(Post)
+class PostAdmin(admin.ModelAdmin):
+    list_display = ("title", "author", "published", "created_at")  # στήλες λίστας
+    list_filter = ("published", "created_at")                       # φίλτρα στο πλάι
+    search_fields = ("title", "body")                               # search box
+    list_editable = ("published",)                                  # inline edit
+    ordering = ("-created_at",)
+    prepopulated_fields = {"slug": ("title",)}                      # auto slug
+```
+
+Με λίγες γραμμές `ModelAdmin` φτιάχνεις ένα ισχυρό διαχειριστικό: στήλες, φίλτρα, αναζήτηση, ταξινόμηση, inline editing.
+
+## Inlines — σχετιζόμενα δεδομένα μαζί
+
+```python
+class CommentInline(admin.TabularInline):
+    model = Comment
+    extra = 1
+
+@admin.register(Post)
+class PostAdmin(admin.ModelAdmin):
+    inlines = [CommentInline]   # επεξεργασία comments ΜΕΣΑ στο post
+```
+
+Τα inlines σου επιτρέπουν να επεξεργάζεσαι σχετιζόμενες εγγραφές (π.χ. comments ενός post) στην ίδια σελίδα με το parent.
+
+## Πότε (δεν) το χρησιμοποιείς
+
+Το admin είναι **για διαχειριστές/staff**, όχι για τελικούς χρήστες:
+
+- ✅ Internal tools, content management, γρήγορο data entry, debugging δεδομένων.
+- ❌ Public-facing UI — εκεί φτιάχνεις δικά σου views/templates.
+
+Η πρόσβαση ελέγχεται από permissions (`is_staff`, `is_superuser`) — δες το επόμενο μάθημα.
+
+## Πώς απαντάς στη συνέντευξη
+
+«What makes the Django admin special?»
+
+> The admin is an auto-generated CRUD interface for your models. After `createsuperuser` and registering a model with `admin.site.register`, you get list, search, create, edit and delete with no UI code. I customise it with a `ModelAdmin`: `list_display` for columns, `list_filter` and `search_fields` for finding records, `list_editable` for inline edits, and inlines to manage related rows on the same page. It's perfect for internal tools and content management, gated by staff permissions — but for public-facing UI I build my own views and templates instead.
+
+<Flashcards
+  title="Django admin — interview drills"
+  cards={[
+    {
+      question: "Τι κερδίζεις απλώς κάνοντας register ένα model στο admin;",
+      answer: "Αυτόματα πλήρες CRUD interface: λίστα, create/edit/delete forms (βασισμένα στο model), βασική διαχείριση — χωρίς να γράψεις UI κώδικα. Είναι το χαρακτηριστικό που έκανε διάσημο το Django."
+    },
+    {
+      question: "Τι κάνει το ModelAdmin;",
+      answer: "Customizes το admin για ένα model: list_display (στήλες), list_filter (φίλτρα), search_fields (αναζήτηση), list_editable (inline edit), ordering, prepopulated_fields (auto slug), inlines (σχετιζόμενα δεδομένα)."
+    },
+    {
+      question: "Για ποιον είναι το Django admin;",
+      answer: "Για διαχειριστές/staff (is_staff), όχι για τελικούς χρήστες. Ιδανικό για internal tools, content management, data entry, debugging. Για public UI φτιάχνεις δικά σου views/templates."
+    },
+    {
+      question: "Τι είναι τα admin inlines;",
+      answer: "Επιτρέπουν επεξεργασία σχετιζόμενων εγγραφών (π.χ. comments) ΜΕΣΑ στη σελίδα του parent (post). TabularInline/StackedInline στο inlines=[...] ενός ModelAdmin."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Γιατί ξεχωρίζει το Django admin σε σχέση με άλλα frameworks;"
+  options={[
+    "Επειδή είναι το μόνο που έχει βάση δεδομένων.",
+    "Επειδή σου δίνει αυτόματα ένα πλήρες διαχειριστικό CRUD panel για τα models, σχεδόν χωρίς κώδικα.",
+    "Επειδή αντικαθιστά την ανάγκη για views."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Με register + ModelAdmin αποκτάς έτοιμο, customizable admin — τεράστιο κέρδος για internal tools και content management."
+/>
+
+<TrainingLab
+  title="Customized admin για content management"
+  scenario="Στήσε το admin για posts & comments: register, ModelAdmin με στήλες/φίλτρα/αναζήτηση, και inline comments."
+  outcomes={[
+    "Να ενεργοποιείς το admin και να φτιάχνεις superuser.",
+    "Να customάρεις τη λίστα με list_display/filter/search.",
+    "Να διαχειρίζεσαι σχετιζόμενα δεδομένα με inlines."
+  ]}
+  steps={[
+    "createsuperuser και είσοδος στο /admin.",
+    "Register το Post με @admin.register και ModelAdmin.",
+    "Πρόσθεσε list_display, list_filter, search_fields, list_editable.",
+    "Φτιάξε CommentInline και βάλ' το στο PostAdmin."
+  ]}
+  checkpoints={[
+    "Η λίστα δείχνει χρήσιμες στήλες και φίλτρα.",
+    "Η αναζήτηση βρίσκει posts.",
+    "Τα comments επεξεργάζονται μέσα στο post."
+  ]}
+  mistakes={[
+    "Να δίνεις admin πρόσβαση σε τελικούς χρήστες.",
+    "Να φτιάχνεις custom UI εκεί που το admin αρκεί (internal tool).",
+    "Να ξεχνάς να κάνεις register το model."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν στήνεις ένα χρηστικό admin για διαχείριση περιεχομένου σε λίγα λεπτά."
+/>

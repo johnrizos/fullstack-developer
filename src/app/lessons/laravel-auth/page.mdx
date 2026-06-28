@@ -1,0 +1,188 @@
+# Authentication & Authorization
+
+Δύο διαφορετικά πράγματα που συχνά μπερδεύονται:
+
+- **Authentication** = *ποιος είσαι;* (login).
+- **Authorization** = *τι επιτρέπεται να κάνεις;* (permissions).
+
+Το Laravel τα δίνει και τα δύο έτοιμα.
+
+## Authentication scaffolding
+
+Δεν χτίζεις login/register από το μηδέν — χρησιμοποιείς starter kit:
+
+```bash
+composer require laravel/breeze --dev
+php artisan breeze:install
+php artisan migrate
+```
+
+Αυτό σου δίνει έτοιμα: register, login, logout, password reset, email verification — με hashing και CSRF ήδη ρυθμισμένα.
+
+## Πώς δουλεύει το auth (web)
+
+```php
+<?php
+use Illuminate\Support\Facades\Auth;
+
+// login attempt — κάνει password_verify από κάτω
+if (Auth::attempt(["email" => $email, "password" => $password])) {
+    $request->session()->regenerate();   // αποτροπή session fixation
+    return redirect()->intended("dashboard");
+}
+
+Auth::check();      // είναι συνδεδεμένος;
+Auth::user();       // το τρέχον User model (ή null)
+$request->user();   // το ίδιο, από το request
+Auth::logout();
+```
+
+Οι κωδικοί αποθηκεύονται **hashed** (bcrypt) — ακριβώς το `password_hash` που έμαθες, αλλά αυτόματα.
+
+## Προστασία routes
+
+```php
+<?php
+Route::middleware("auth")->group(function () {
+    Route::get("/dashboard", [DashboardController::class, "index"]);
+});
+```
+
+Το `auth` middleware μπλοκάρει μη-συνδεδεμένους και τους στέλνει στο login.
+
+## Authorization: Gates
+
+Τα **Gates** είναι απλοί έλεγχοι «μπορεί ο χρήστης Χ να κάνει Υ;»:
+
+```php
+<?php
+// AppServiceProvider boot()
+Gate::define("access-admin", function (User $user) {
+    return $user->is_admin;
+});
+```
+
+```php
+<?php
+if (Gate::allows("access-admin")) { /* ... */ }
+$this->authorize("access-admin");   // πετά 403 αν δεν επιτρέπεται
+```
+
+```blade
+@can('access-admin')
+    <a href="/admin">Admin panel</a>
+@endcan
+```
+
+## Authorization: Policies
+
+Για αυθεντικοποίηση γύρω από **ένα model**, χρησιμοποιείς Policy:
+
+```bash
+php artisan make:policy PostPolicy --model=Post
+```
+
+```php
+<?php
+class PostPolicy {
+    // μπορεί αυτός ο user να ενημερώσει ΑΥΤΟ το post;
+    public function update(User $user, Post $post): bool {
+        return $user->id === $post->user_id;
+    }
+}
+```
+
+```php
+<?php
+// στον controller
+public function update(Request $request, Post $post) {
+    $this->authorize("update", $post);   // 403 αν δεν είναι ο ιδιοκτήτης
+    // ...
+}
+```
+
+```blade
+@can('update', $post)
+    <a href="{{ route('posts.edit', $post) }}">Edit</a>
+@endcan
+```
+
+**Gate vs Policy**: Gate για γενικές άδειες (access-admin)· Policy για άδειες γύρω από συγκεκριμένο model (μπορώ να επεξεργαστώ *αυτό* το post;).
+
+## Sanctum: auth για APIs & SPAs
+
+Για API/mobile, αντί για sessions χρησιμοποιείς **tokens** με Laravel Sanctum:
+
+```php
+<?php
+$token = $user->createToken("mobile")->plainTextToken;
+// ο client το στέλνει: Authorization: Bearer <token>
+
+Route::middleware("auth:sanctum")->get("/user", fn(Request $r) => $r->user());
+```
+
+## Πώς απαντάς στη συνέντευξη
+
+«Authentication vs authorization in Laravel?»
+
+> Authentication is verifying who the user is — login. I don't build it by hand; I use a starter kit like Breeze, and under the hood `Auth::attempt` checks a bcrypt-hashed password and I regenerate the session to prevent fixation. Authorization is what they're allowed to do. I use Gates for general permissions like `access-admin`, and Policies for model-specific rules like "can this user update *this* post". I enforce them with `$this->authorize()` in controllers and `@can` in Blade. For APIs and SPAs I switch from sessions to token auth with Sanctum.
+
+<Flashcards
+  title="Auth — interview drills"
+  cards={[
+    {
+      question: "Authentication vs authorization;",
+      answer: "Authentication = ΠΟΙΟΣ είσαι (login, επαλήθευση ταυτότητας). Authorization = ΤΙ επιτρέπεται να κάνεις (permissions). Πρώτα authenticate, μετά authorize. Συχνά μπερδεύονται αλλά είναι ξεχωριστά στάδια."
+    },
+    {
+      question: "Gate vs Policy;",
+      answer: "Gate: γενικός έλεγχος άδειας, χωρίς συγκεκριμένο model (π.χ. access-admin). Policy: άδειες γύρω από ΕΝΑ model — μέθοδοι όπως update(User, Post) που ελέγχουν αν αυτός ο user μπορεί να πειράξει ΑΥΤΟ το post."
+    },
+    {
+      question: "Πώς αποθηκεύει το Laravel τους κωδικούς;",
+      answer: "Hashed με bcrypt (το password_hash από κάτω), ποτέ plaintext. Auth::attempt() κάνει το verify αυτόματα. Μετά από login κάνεις session()->regenerate() για αποτροπή session fixation."
+    },
+    {
+      question: "Πότε Sanctum αντί για sessions;",
+      answer: "Για APIs, SPAs και mobile clients που είναι stateless: ο χρήστης παίρνει token και το στέλνει ως Authorization: Bearer. Middleware auth:sanctum. Τα sessions/cookies ταιριάζουν σε κλασικές server-rendered web σελίδες."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Θέλεις να ελέγξεις αν ένας χρήστης μπορεί να επεξεργαστεί ΣΥΓΚΕΚΡΙΜΕΝΟ post. Τι χρησιμοποιείς;"
+  options={[
+    "Ένα Gate χωρίς παραμέτρους.",
+    "Μια Policy (π.χ. PostPolicy::update) που ελέγχει αν ο user είναι ο ιδιοκτήτης του post.",
+    "Το $fillable του model."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Οι Policies είναι για άδειες γύρω από συγκεκριμένο model. Το Gate ταιριάζει σε γενικές άδειες χωρίς αναφορά σε συγκεκριμένη εγγραφή."
+/>
+
+<TrainingLab
+  title="Protected area με policies"
+  scenario="Στήσε authentication με Breeze και authorization ώστε μόνο ο συγγραφέας ενός post να μπορεί να το επεξεργαστεί/διαγράψει, και μόνο admins να βλέπουν το admin panel."
+  outcomes={[
+    "Να στήνεις login/register με starter kit.",
+    "Να προστατεύεις routes με auth middleware.",
+    "Να γράφεις Gates και Policies και να τα εφαρμόζεις σε controllers/Blade."
+  ]}
+  steps={[
+    "Εγκατέστησε Breeze και τρέξε migrate.",
+    "Βάλε τα προστατευμένα routes σε auth middleware group.",
+    "Φτιάξε PostPolicy::update/delete (έλεγχος ιδιοκτήτη).",
+    "Όρισε Gate access-admin και κρύψε links με @can στο Blade."
+  ]}
+  checkpoints={[
+    "Μη-συνδεδεμένος χρήστης ανακατευθύνεται στο login.",
+    "Χρήστης που δεν είναι ιδιοκτήτης παίρνει 403 στο edit.",
+    "Τα admin links εμφανίζονται μόνο σε admins."
+  ]}
+  mistakes={[
+    "Να μπερδεύεις authentication με authorization.",
+    "Να ελέγχεις ownership με χειροκίνητο if αντί για Policy.",
+    "Να κρύβεις απλώς το κουμπί χωρίς server-side authorize() (μπορεί να κληθεί απευθείας)."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν προστατεύεις και ταυτότητα και δικαιώματα σωστά — server-side, όχι μόνο κρύβοντας UI."
+/>

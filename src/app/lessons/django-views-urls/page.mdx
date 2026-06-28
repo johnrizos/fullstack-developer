@@ -1,0 +1,161 @@
+# Views & URL Routing
+
+Το view είναι ο controller του Django: δέχεται το `request`, κάνει τη δουλειά, και επιστρέφει `response`. Εδώ μαθαίνεις function-based & class-based views, και πώς το URLconf αντιστοιχίζει URLs σε views.
+
+## Function-based views (FBV)
+
+```python
+# blog/views.py
+from django.shortcuts import render, get_object_or_404, redirect
+from .models import Post
+
+def post_list(request):
+    posts = Post.objects.filter(published=True)
+    return render(request, "blog/post_list.html", {"posts": posts})
+
+def post_detail(request, pk):
+    post = get_object_or_404(Post, pk=pk)   # 404 αν δεν υπάρχει
+    return render(request, "blog/post_detail.html", {"post": post})
+```
+
+Το `get_object_or_404` είναι το βολικό «βρες το ή γύρνα 404» — αντικαθιστά το χειροκίνητο try/except.
+
+## Χειρισμός HTTP methods
+
+```python
+def post_create(request):
+    if request.method == "POST":
+        title = request.POST.get("title")
+        Post.objects.create(title=title, author=request.user)
+        return redirect("post_list")
+    return render(request, "blog/post_form.html")
+```
+
+Το `request.method`, `request.POST`, `request.GET`, `request.user` είναι τα βασικά εργαλεία ενός view.
+
+## URLconf — αντιστοίχιση
+
+```python
+# blog/urls.py
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path("", views.post_list, name="post_list"),
+    path("post/<int:pk>/", views.post_detail, name="post_detail"),
+    path("post/new/", views.post_create, name="post_create"),
+]
+```
+
+Το `<int:pk>` είναι **path converter**: πιάνει αριθμό και τον περνά ως `pk` argument στο view. Άλλοι: `<slug:slug>`, `<str:name>`, `<uuid:id>`.
+
+## Named URLs & reverse
+
+```python
+# στον κώδικα
+from django.urls import reverse
+url = reverse("post_detail", args=[42])   # /post/42/
+return redirect("post_detail", pk=42)
+```
+
+```html
+<!-- στο template -->
+<a href="{% url 'post_detail' post.pk %}">Δες</a>
+```
+
+Πάντα αναφέρσου σε routes με το **όνομά** τους (`{% url %}` / `reverse`), όχι hardcoded paths — αν αλλάξει το URL, δεν σπάει τίποτα.
+
+## Class-based views (CBV)
+
+Για συνηθισμένα patterns (list, detail, create), το Django δίνει έτοιμες generic views με ελάχιστο κώδικα:
+
+```python
+from django.views.generic import ListView, DetailView, CreateView
+
+class PostListView(ListView):
+    model = Post
+    template_name = "blog/post_list.html"
+    context_object_name = "posts"
+
+class PostDetailView(DetailView):
+    model = Post
+
+class PostCreateView(CreateView):
+    model = Post
+    fields = ["title", "body"]
+    success_url = "/posts/"
+```
+
+```python
+# urls.py
+path("", PostListView.as_view(), name="post_list"),
+path("post/<int:pk>/", PostDetailView.as_view(), name="post_detail"),
+```
+
+**FBV vs CBV**: τα FBV είναι ρητά και απλά (καλά για ξεκάθαρη/custom λογική)· τα CBV εξαλείφουν boilerplate για τα κλασικά CRUD patterns μέσω κληρονομικότητας/mixins.
+
+## Πώς απαντάς στη συνέντευξη
+
+«Function-based vs class-based views?»
+
+> A view receives the request and returns a response. FBVs are plain functions — explicit and easy to read, ideal for custom logic. CBVs are classes built on generic views like `ListView`, `DetailView` and `CreateView` that remove boilerplate for standard CRUD through inheritance and mixins. I route with a URLconf using path converters like `<int:pk>` to capture parameters, and I always reference routes by name with `reverse` or `{% url %}` rather than hardcoding paths, plus `get_object_or_404` for clean 404 handling.
+
+<Flashcards
+  title="Django views — interview drills"
+  cards={[
+    {
+      question: "FBV vs CBV;",
+      answer: "Function-based: απλές functions, ρητές, καλές για custom λογική. Class-based: generic views (ListView/DetailView/CreateView) που εξαλείφουν boilerplate για τα κλασικά CRUD μέσω κληρονομικότητας/mixins. Διάλεγε ανάλογα με το πόσο standard είναι το pattern."
+    },
+    {
+      question: "Τι είναι τα path converters;",
+      answer: "Σύνταξη στο URLconf που πιάνει & μετατρέπει κομμάτι του URL: <int:pk>, <slug:slug>, <str:name>, <uuid:id>. Η τιμή περνά ως argument στο view με το όνομα μετά το ':'."
+    },
+    {
+      question: "Γιατί named URLs με reverse/{% url %};",
+      answer: "Αναφέρεσαι στο route με το όνομά του αντί για hardcoded path. Αν αλλάξει το URL pattern, όλα τα links/redirects παραμένουν σωστά. reverse() στον κώδικα, {% url 'name' %} στο template."
+    },
+    {
+      question: "Τι κάνει το get_object_or_404;",
+      answer: "Φέρνει ένα object ή πετά Http404 αν δεν υπάρχει — αυτόματο 404 αντί για χειροκίνητο try/except DoesNotExist. Καθαρότερος κώδικας σε detail/update/delete views."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Τι κάνει το <int:pk> σε ένα URL pattern;"
+  options={[
+    "Κρυπτογραφεί το URL.",
+    "Πιάνει έναν ακέραιο από το URL και τον περνά ως argument pk στο view.",
+    "Ορίζει το template."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Είναι path converter: αντιστοιχεί μόνο αριθμούς και τους δίνει στο view ως pk."
+/>
+
+<TrainingLab
+  title="CRUD views με URL routing"
+  scenario="Υλοποίησε list/detail/create/update/delete για posts, πρώτα με function-based views και μετά μετατρέποντας μερικά σε class-based generic views."
+  outcomes={[
+    "Να γράφεις FBV που χειρίζονται GET/POST.",
+    "Να ορίζεις URLconf με path converters και named URLs.",
+    "Να αναγνωρίζεις πότε ένα CBV εξοικονομεί κώδικα."
+  ]}
+  steps={[
+    "Γράψε FBV post_list/post_detail με get_object_or_404.",
+    "Φτιάξε URLconf με <int:pk> και name σε κάθε route.",
+    "Πρόσθεσε post_create που χειρίζεται POST και κάνει redirect.",
+    "Μετάτρεψε το list/detail σε ListView/DetailView."
+  ]}
+  checkpoints={[
+    "Τα URLs αναφέρονται με όνομα παντού.",
+    "Μη υπαρκτό post επιστρέφει 404.",
+    "Το CBV κάνει το ίδιο με λιγότερο κώδικα."
+  ]}
+  mistakes={[
+    "Να γράφεις hardcoded URLs αντί για {% url %}.",
+    "Να ξεχνάς να χειριστείς και GET και POST σε form view.",
+    "Να φορτώνεις CBV εκεί που η λογική θέλει ρητό FBV."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν διαλέγεις συνειδητά FBV ή CBV και στήνεις καθαρό, named URL routing."
+/>

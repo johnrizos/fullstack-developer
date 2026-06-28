@@ -1,0 +1,179 @@
+# Requests, Validation & Sessions
+
+Κάθε δεδομένο που έρχεται από τον χρήστη πρέπει να ελεγχθεί πριν φτάσει στη βάση. Το Laravel κάνει το validation καθαρό, δηλωτικό και ασφαλές — με αυτόματο CSRF και session handling.
+
+## Διάβασε το request
+
+```php
+<?php
+use Illuminate\Http\Request;
+
+public function store(Request $request) {
+    $title = $request->input("title");
+    $all = $request->only(["title", "body"]);
+    $has = $request->has("title");
+    $file = $request->file("avatar");
+}
+```
+
+## Inline validation
+
+```php
+<?php
+public function store(Request $request) {
+    $validated = $request->validate([
+        "title" => ["required", "string", "max:255"],
+        "body"  => ["required", "string"],
+        "email" => ["required", "email", "unique:users,email"],
+        "age"   => ["nullable", "integer", "min:18"],
+    ]);
+
+    // Αν αποτύχει: αυτόματο redirect πίσω με errors + old input.
+    // Αν περάσει: το $validated έχει ΜΟΝΟ τα ελεγμένα πεδία.
+    Post::create($validated);
+}
+```
+
+Δύο τεράστια οφέλη: σε αποτυχία γίνεται **αυτόματα** redirect πίσω με τα μηνύματα σφάλματος, και το `$validated` περιέχει **μόνο** τα πεδία που πέρασαν — ιδανικό μαζί με το `$fillable`.
+
+## Form Request classes — ο καθαρός τρόπος
+
+Για πιο σύνθετη λογική, βγάλε το validation σε δική του class:
+
+```bash
+php artisan make:request StorePostRequest
+```
+
+```php
+<?php
+class StorePostRequest extends FormRequest {
+    public function authorize(): bool {
+        return $this->user() !== null;   // ποιος επιτρέπεται
+    }
+
+    public function rules(): array {
+        return [
+            "title" => ["required", "string", "max:255"],
+            "body"  => ["required", "string"],
+        ];
+    }
+
+    public function messages(): array {
+        return ["title.required" => "Ο τίτλος είναι υποχρεωτικός."];
+    }
+}
+```
+
+```php
+<?php
+// ο controller καθαρίζει εντελώς — το validation γίνεται ΠΡΙΝ μπει στη method
+public function store(StorePostRequest $request) {
+    Post::create($request->validated());
+}
+```
+
+Το type-hint του Form Request κάνει το validation **πριν** τρέξει ο controller. Αν αποτύχει, ο χρήστης δεν φτάνει ποτέ στη method.
+
+## Δείξε errors & old input στο Blade
+
+```blade
+<form method="post" action="/posts">
+    @csrf
+    <input name="title" value="{{ old('title') }}">
+    @error('title')
+        <span class="text-red-600">{{ $message }}</span>
+    @enderror
+    <button>Αποθήκευση</button>
+</form>
+```
+
+- `@error('field')`: δείχνει το μήνυμα σφάλματος του πεδίου.
+- `old('title')`: ξαναβάζει αυτό που είχε γράψει ο χρήστης (δεν χάνει τη φόρμα).
+
+## Sessions & flash messages
+
+```php
+<?php
+// flash: ζει για το ΕΠΟΜΕΝΟ μόνο request (ιδανικό για "Saved!")
+return redirect()->route("posts.index")->with("status", "Το post αποθηκεύτηκε!");
+
+// session data
+session(["cart_count" => 3]);
+$count = session("cart_count", 0);
+```
+
+```blade
+@if (session('status'))
+    <div class="alert">{{ session('status') }}</div>
+@endif
+```
+
+## CSRF — αυτόματο
+
+Το Laravel ελέγχει **αυτόματα** CSRF token σε κάθε POST/PUT/DELETE μέσω web routes. Εσύ απλώς βάζεις `@csrf` στη φόρμα. Αν λείπει → 419. (Θυμήσου το χειροκίνητο CSRF του PHP — εδώ είναι μία λέξη.)
+
+## Πώς απαντάς στη συνέντευξη
+
+«How does validation work in Laravel?»
+
+> I validate with `$request->validate([...])` or, for anything non-trivial, a Form Request class with `rules()` and `authorize()`. The big win is that validation runs before the controller body — on failure Laravel auto-redirects back with error messages and old input, and on success `validated()` returns only the checked fields, which pairs safely with `$fillable`. In Blade I show errors with `@error` and repopulate with `old()`. CSRF is automatic on web routes via `@csrf`, and I use flash messages with `->with()` for one-request feedback like "Saved".
+
+<Flashcards
+  title="Validation & requests — interview drills"
+  cards={[
+    {
+      question: "Τι γίνεται όταν αποτυγχάνει το $request->validate();",
+      answer: "Αυτόματο redirect πίσω στη φόρμα, με τα error messages στο session ($errors στο Blade) και το old input διατηρημένο. Ο κώδικας μετά το validate ΔΕΝ τρέχει. Σε επιτυχία, επιστρέφει μόνο τα ελεγμένα πεδία."
+    },
+    {
+      question: "Γιατί Form Request αντί για inline validation;",
+      answer: "Καθαρίζει τον controller (το validation φεύγει σε δική του class με rules()/authorize()/messages()), επαναχρησιμοποιείται, και τρέχει ΠΡΙΝ μπει η method. Το type-hint του Form Request ενεργοποιεί αυτόματα τον έλεγχο."
+    },
+    {
+      question: "Τι κάνουν τα @error και old();",
+      answer: "@error('field'): εμφανίζει το μήνυμα σφάλματος ενός πεδίου στο Blade. old('field'): ξαναβάζει την προηγούμενη τιμή που έγραψε ο χρήστης, ώστε να μη χάνεται η φόρμα μετά από αποτυχημένο submit."
+    },
+    {
+      question: "Τι είναι το flash message;",
+      answer: "Δεδομένα στο session που ζουν ΜΟΝΟ για το επόμενο request (redirect()->with('status', ...)). Ιδανικό για 'Saved!' μηνύματα μετά από ενέργεια — εμφανίζονται μία φορά και μετά εξαφανίζονται."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Ποιο είναι το βασικό πλεονέκτημα του να τρέχει το validation σε Form Request;"
+  options={[
+    "Τρέχει πριν τον controller — αν αποτύχει, ο χρήστης δεν φτάνει ποτέ στη method, και ο controller μένει καθαρός.",
+    "Κάνει τη βάση πιο γρήγορη.",
+    "Επιτρέπει να παρακάμψεις το CSRF."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σωστά. Το type-hinted Form Request validάρει πριν την εκτέλεση της method, με αυτόματο redirect σε αποτυχία και καθαρό controller."
+/>
+
+<TrainingLab
+  title="Validated φόρμα από άκρη σε άκρη"
+  scenario="Φτιάξε φόρμα δημιουργίας post με Form Request validation, εμφάνιση σφαλμάτων, διατήρηση old input και flash message επιτυχίας."
+  outcomes={[
+    "Να γράφεις validation rules και custom messages.",
+    "Να καθαρίζεις controllers με Form Request classes.",
+    "Να δίνεις σωστό feedback (errors, old input, flash)."
+  ]}
+  steps={[
+    "php artisan make:request StorePostRequest με rules() και authorize().",
+    "Type-hint-άρε το στον controller και κάλεσε ->validated().",
+    "Στο Blade πρόσθεσε @csrf, @error και old().",
+    "Σε επιτυχία κάνε redirect με ->with('status', ...) και δείξ' το."
+  ]}
+  checkpoints={[
+    "Άκυρα δεδομένα γυρνούν με μηνύματα χωρίς να χαθεί η φόρμα.",
+    "Ο controller δεν περιέχει validation λογική.",
+    "Το flash message εμφανίζεται μία φορά μετά το redirect."
+  ]}
+  mistakes={[
+    "Να κάνεις create($request->all()) χωρίς validation/fillable.",
+    "Να ξεχνάς το @csrf και να παίρνεις 419.",
+    "Να μη δείχνεις old() και να χάνει ο χρήστης ό,τι έγραψε."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν κάθε φόρμα σου validάρει καθαρά, δίνει χρήσιμο feedback, και ο controller μένει λεπτός."
+/>

@@ -1,0 +1,162 @@
+# Flask Foundations
+
+Το **Flask** είναι ένα **micro-framework**: σου δίνει τα ελάχιστα (routing, request/response, templating) και σε αφήνει να διαλέξεις τα υπόλοιπα (ORM, forms, auth). Αντίθετο φιλοσοφικά με το Django — ευελιξία αντί για conventions.
+
+## Η πρώτη εφαρμογή
+
+```bash
+pip install flask
+```
+
+```python
+# app.py
+from flask import Flask
+
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Γεια σου κόσμε!"
+
+if __name__ == "__main__":
+    app.run(debug=True)
+```
+
+```bash
+flask run    # ή python app.py
+```
+
+Με μόλις λίγες γραμμές έχεις τρέχουσα εφαρμογή. Το `@app.route` συνδέει ένα URL με μια function (view).
+
+## Micro-framework: τι σημαίνει
+
+- **Δίνει**: routing, request/response, Jinja2 templating, dev server, debugger.
+- **ΔΕΝ δίνει** (διαλέγεις εσύ): ORM, forms, auth, admin, migrations.
+
+Αυτό το κάνει ιδανικό για μικρά apps, APIs, microservices και prototypes — αλλά εσύ ευθύνεσαι για τη δομή.
+
+> **Flask vs Django**: Flask = «φέρε τα δικά σου κομμάτια», μέγιστη ευελιξία. Django = «όλα μέσα», conventions & ταχύτητα για μεγάλα apps.
+
+## Routes & HTTP methods
+
+```python
+@app.route("/about")
+def about():
+    return "About page"
+
+@app.route("/submit", methods=["GET", "POST"])
+def submit():
+    from flask import request
+    if request.method == "POST":
+        return "Received!"
+    return "Show form"
+```
+
+By default ένα route δέχεται μόνο `GET` — δηλώνεις ρητά `methods` για POST/PUT/DELETE.
+
+## Το request object
+
+```python
+from flask import request
+
+@app.route("/search")
+def search():
+    q = request.args.get("q", "")          # query string (?q=flask)
+    return f"Searching: {q}"
+
+@app.route("/posts", methods=["POST"])
+def create():
+    title = request.form.get("title")      # form data
+    data = request.get_json()              # JSON body
+    return "ok", 201
+```
+
+- `request.args`: query string params.
+- `request.form`: δεδομένα φόρμας.
+- `request.get_json()`: JSON body (για APIs).
+
+## Responses & status codes
+
+```python
+from flask import jsonify
+
+@app.route("/api/posts")
+def api_posts():
+    return jsonify([{"id": 1, "title": "Γεια"}])   # αυτόματα JSON
+
+@app.route("/missing")
+def missing():
+    return "Not found", 404                        # tuple: (body, status)
+```
+
+Επέστρεψε string (HTML), `jsonify(...)` (JSON), ή tuple `(body, status)` για να ελέγξεις το status code.
+
+## Debug mode
+
+Με `debug=True` έχεις auto-reload σε αλλαγές + διαδραστικό debugger στον browser. **Ποτέ** `debug=True` σε production (εκτελεί κώδικα από τον browser — τεράστιο κενό ασφαλείας).
+
+## Πώς απαντάς στη συνέντευξη
+
+«Flask vs Django?»
+
+> Flask is a micro-framework: it gives me routing, request/response and Jinja2 templating, and leaves ORM, forms and auth to me — maximum flexibility, great for small apps, APIs and microservices. Django is batteries-included with an ORM, admin and conventions, which shines for large apps. In Flask I map URLs with `@app.route`, default to GET and opt into other methods explicitly, read input from `request.args`/`request.form`/`request.get_json()`, and return strings, `jsonify`, or a `(body, status)` tuple. I use `debug=True` only locally, never in production.
+
+<Flashcards
+  title="Flask foundations — interview drills"
+  cards={[
+    {
+      question: "Τι σημαίνει 'micro-framework';",
+      answer: "Το Flask δίνει τα ελάχιστα (routing, request/response, Jinja2, dev server) και αφήνει σε εσένα ORM/forms/auth/migrations. Μέγιστη ευελιξία & μικρό surface — αλλά εσύ ευθύνεσαι για τη δομή. Αντίθετο του 'batteries-included' Django."
+    },
+    {
+      question: "Πώς ορίζεις route και methods;",
+      answer: "@app.route('/path') συνδέει URL με view function. By default μόνο GET· δηλώνεις methods=['GET','POST'] για άλλα. Το request.method λέει ποια μέθοδος ήρθε."
+    },
+    {
+      question: "request.args vs request.form vs get_json();",
+      answer: "request.args: query string (?q=x). request.form: δεδομένα HTML φόρμας (POST). request.get_json(): JSON body (για APIs). Διάλεξε ανάλογα με το πώς στέλνει ο client."
+    },
+    {
+      question: "Πώς επιστρέφεις διαφορετικά responses;",
+      answer: "string → HTML. jsonify(...) → JSON με σωστά headers. tuple (body, status) → έλεγχος status code, π.χ. ('Not found', 404) ή (data, 201). debug=True μόνο τοπικά, ΠΟΤΕ production."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Ποια είναι η κύρια διαφορά Flask με Django;"
+  options={[
+    "Το Flask δεν υποστηρίζει routing.",
+    "Το Flask είναι micro-framework (δίνει τα ελάχιστα, διαλέγεις τα υπόλοιπα), ενώ το Django είναι batteries-included με conventions.",
+    "Το Django δεν τρέχει Python."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Flask = ευελιξία & ελάχιστα built-in. Django = όλα μέσα (ORM/admin/auth) με conventions για μεγάλα apps."
+/>
+
+<TrainingLab
+  title="Η πρώτη σου Flask εφαρμογή"
+  scenario="Φτιάξε μια μικρή Flask app με μερικά routes που χειρίζονται GET/POST, διαβάζουν query/form/JSON και επιστρέφουν σωστά responses."
+  outcomes={[
+    "Να στήνεις και να τρέχεις μια Flask app.",
+    "Να ορίζεις routes με σωστά HTTP methods.",
+    "Να διαβάζεις input και να επιστρέφεις HTML/JSON/status."
+  ]}
+  steps={[
+    "Φτιάξε app.py με app = Flask(__name__) και route /.",
+    "Πρόσθεσε /search που διαβάζει request.args.",
+    "Πρόσθεσε /api/posts που επιστρέφει jsonify(...).",
+    "Πρόσθεσε POST route που διαβάζει request.form και γυρνά (body, 201)."
+  ]}
+  checkpoints={[
+    "Τα routes απαντούν στις σωστές μεθόδους.",
+    "Το JSON endpoint έχει σωστά headers (jsonify).",
+    "Το debug=True είναι μόνο για τοπική ανάπτυξη."
+  ]}
+  mistakes={[
+    "Να ξεχνάς το methods=['POST'] και να παίρνεις 405.",
+    "Να επιστρέφεις dict χωρίς jsonify σε παλιές εκδόσεις.",
+    "Να αφήνεις debug=True σε production."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν στήνεις γρήγορα μια Flask app και καταλαβαίνεις πότε διαλέγεις Flask αντί για Django."
+/>

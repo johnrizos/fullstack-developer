@@ -1,0 +1,182 @@
+# Migrations & Seeding
+
+Το schema αλλάζει συνεχώς: νέα πεδία, νέοι πίνακες, renames. Οι migrations είναι το versioned ιστορικό αυτών των αλλαγών — και η πηγή πολλών production ατυχημάτων αν τις χειριστείς λάθος. Στη συνέντευξη: «migrate dev vs deploy;», «τι είναι schema drift;», «πώς κάνεις safe migration σε production;».
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να διακρίνεις `migrate dev` από `migrate deploy`,
+- να καταλαβαίνεις το shadow database και το drift,
+- να κάνεις safe schema changes σε production (expand/contract),
+- να γράφεις seed script.
+
+## migrate dev vs deploy
+
+```bash
+# DEVELOPMENT — φτιάχνει & εφαρμόζει migration, regenerate client
+npx prisma migrate dev --name add_user_role
+
+# PRODUCTION — εφαρμόζει ΜΟΝΟ υπάρχουσες migrations, καμία δημιουργία
+npx prisma migrate deploy
+```
+
+```txt
+migrate dev     → συγκρίνει schema, δημιουργεί νέο migration file,
+                  το εφαρμόζει, regenerate client. Χρησιμοποιεί shadow DB.
+                  ΜΟΝΟ για development.
+migrate deploy  → εφαρμόζει pending migrations με τη σειρά. Idempotent,
+                  μη-interactive. Αυτό τρέχεις σε CI/CD & production.
+```
+
+Κρίσιμο: **ποτέ** `migrate dev` σε production — μπορεί να ζητήσει reset/να χάσει δεδομένα. Σε production μόνο `migrate deploy`.
+
+## Shadow database & drift
+
+Το `migrate dev` φτιάχνει προσωρινά μια **shadow database**: εφαρμόζει εκεί όλες τις migrations από την αρχή για να ανιχνεύσει **drift** — αν η πραγματική βάση δεν ταιριάζει με το migration ιστορικό (π.χ. κάποιος άλλαξε schema με το χέρι).
+
+```txt
+DRIFT = η βάση διαφέρει από αυτό που περιγράφουν οι migrations.
+Αιτίες: manual ALTER TABLE, edited migration file, partial apply.
+Σύμπτωμα: "Drift detected" στο migrate dev.
+```
+
+Ο κανόνας: **ποτέ μην πειράζεις τη βάση με το χέρι** ούτε edit-άρεις applied migration. Κάθε αλλαγή → νέο migration.
+
+<PredictOutput
+  title="migrate dev σε production"
+  code={`# Στο production CI, κατά λάθος:
+npx prisma migrate dev --name hotfix
+# Η βάση έχει drift (κάποιος έκανε manual change).
+# Τι μπορεί να κάνει;`}
+  options={['Απλώς εφαρμόζει το migration', 'Μπορεί να προτείνει DB RESET → απώλεια όλων των δεδομένων', 'Κάνει μόνο backup', 'Τίποτα, είναι safe']}
+  correctOptionIndex={1}
+  answer="Μπορεί να ζητήσει reset → data loss"
+  explanation="Το migrate dev είναι interactive/development tool: σε drift μπορεί να προτείνει reset της βάσης για να ξαναχτίσει καθαρό state — καταστροφικό σε production. Γι' αυτό production = ΜΟΝΟ migrate deploy (idempotent, εφαρμόζει pending, ποτέ δεν κάνει reset)."
+/>
+
+## Safe production changes — expand/contract
+
+Destructive αλλαγές (drop column, rename, NOT NULL χωρίς default) μπορούν να σπάσουν το running app ή να χάσουν δεδομένα. Το pattern είναι **expand → migrate → contract** σε ξεχωριστά deploys:
+
+```txt
+RENAME column oldName → newName, με zero downtime:
+1. EXPAND:   πρόσθεσε newName (nullable). Deploy.
+2. BACKFILL: αντίγραψε oldName → newName (data migration).
+3. Ο κώδικας γράφει & στα δύο / διαβάζει newName. Deploy.
+4. CONTRACT: drop oldName, μόλις τίποτα δεν το χρησιμοποιεί. Deploy.
+```
+
+Adding NOT NULL: πρώτα πρόσθεσε με default ή nullable + backfill, μετά κάνε το NOT NULL. Ποτέ NOT NULL χωρίς default σε γεμάτο πίνακα — σκάει.
+
+## Seeding
+
+```ts
+// prisma/seed.ts
+const prisma = new PrismaClient();
+async function main() {
+  await prisma.role.createMany({
+    data: [{ name: "admin" }, { name: "user" }],
+    skipDuplicates: true,        // idempotent: ξανατρέχει χωρίς error
+  });
+}
+main().finally(() => prisma.$disconnect());
+```
+
+```json
+// package.json
+"prisma": { "seed": "tsx prisma/seed.ts" }
+```
+
+`npx prisma db seed` γεμίζει reference data (roles, categories) ή dev fixtures. Κάνε το **idempotent** (`skipDuplicates` / `upsert`) ώστε να ξανατρέχει χωρίς να σπάει.
+
+## db push vs migrate
+
+```txt
+prisma db push   → συγχρονίζει schema στη βάση ΧΩΡΙΣ migration file.
+                   Γρήγορο για prototyping/early dev. ΟΧΙ ιστορικό.
+prisma migrate   → versioned migration files. Για ομάδες & production.
+```
+
+`db push` για γρήγορο πειραματισμό σόλο· `migrate` μόλις χρειάζεσαι versioned, shareable ιστορικό (δηλαδή σχεδόν πάντα σε ομάδα).
+
+<Exercise
+  question="Στο CI/CD pipeline για production deploy, ποια εντολή τρέχεις;"
+  options={[
+    "prisma migrate deploy — εφαρμόζει τις pending migrations με τη σειρά, idempotent και μη-interactive, χωρίς ποτέ να κάνει reset ή να δημιουργεί migration.",
+    "prisma migrate dev — για να φτιάξει και να εφαρμόσει ό,τι χρειάζεται.",
+    "prisma db push — πιο γρήγορο, χωρίς migration files."
+  ]}
+  correctOptionIndex={0}
+  explanation="migrate deploy είναι το production command: idempotent, non-interactive, εφαρμόζει μόνο pending migrations. migrate dev μπορεί να ζητήσει reset (data loss)· db push δεν κρατά ιστορικό και κάνει drift-prone αλλαγές."
+/>
+
+<Exercise
+  question="Θες να κάνεις rename ενός column σε πίνακα με εκατομμύρια rows, χωρίς downtime. Πώς;"
+  options={[
+    "Expand/contract: πρόσθεσε το νέο column (nullable), backfill τα δεδομένα, γύρνα τον κώδικα στο νέο, και μόνο μετά drop το παλιό — σε ξεχωριστά deploys.",
+    "Ένα migration που κάνει RENAME COLUMN κατευθείαν.",
+    "Drop το παλιό και add το νέο στο ίδιο migration."
+  ]}
+  correctOptionIndex={0}
+  explanation="Άμεσο rename/drop σπάει το running app (παλιός κώδικας ψάχνει το παλιό όνομα) και είναι ριψοκίνδυνο. Expand/contract σε σταδιακά deploys κρατά compatibility σε όλη τη μετάβαση = zero downtime."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you handle database migrations safely?»
+
+> In development I use `migrate dev`, which diffs the schema, creates a versioned migration file, applies it through a shadow database that detects drift, and regenerates the client. In production I only ever run `migrate deploy` — it's idempotent and non-interactive, applies pending migrations in order, and never resets, whereas `migrate dev` can propose a destructive reset on drift. The golden rule is never to touch the database by hand or edit an applied migration, since that's what causes drift. For risky changes like renames or new NOT NULL columns I do expand/contract across separate deploys — add the new column nullable, backfill, switch the code, then drop the old one — so the running app stays compatible the whole time and there's zero downtime. I keep seed scripts idempotent with `skipDuplicates` or `upsert` for reference data.
+
+<Flashcards
+  title="Migrations — interview drills"
+  cards={[
+    {
+      question: "migrate dev vs deploy;",
+      answer: "dev: δημιουργεί+εφαρμόζει migration, shadow DB, regenerate client — ΜΟΝΟ development (μπορεί να ζητήσει reset). deploy: εφαρμόζει pending, idempotent, non-interactive — production/CI."
+    },
+    {
+      question: "Shadow database;",
+      answer: "Προσωρινή βάση που το migrate dev χτίζει από το μηδέν με όλες τις migrations, για να ανιχνεύσει drift (αν η πραγματική βάση διαφέρει από το ιστορικό)."
+    },
+    {
+      question: "Τι είναι drift;",
+      answer: "Η βάση διαφέρει από αυτό που περιγράφουν οι migrations. Αιτίες: manual ALTER, edited migration, partial apply. Αποφυγή: ποτέ manual αλλαγές, κάθε change = νέο migration."
+    },
+    {
+      question: "Safe rename/NOT NULL σε production;",
+      answer: "Expand/contract: add new (nullable) → backfill → switch code → drop old, σε ξεχωριστά deploys. NOT NULL: add με default/nullable + backfill, μετά κάνε NOT NULL. Ποτέ destructive σε ένα βήμα."
+    },
+    {
+      question: "Seeding idempotent;",
+      answer: "prisma/seed.ts + package.json prisma.seed. createMany skipDuplicates ή upsert ώστε να ξανατρέχει χωρίς error. Για reference data/dev fixtures."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Migration workflow με seed"
+  scenario="Εξέλιξε ένα schema με safe migrations και idempotent seed."
+  outcomes={[
+    "Να δημιουργείς migrations με migrate dev.",
+    "Να κάνεις safe additive & expand/contract αλλαγές.",
+    "Να γράφεις idempotent seed."
+  ]}
+  steps={[
+    "Αρχικό schema + migrate dev --name init.",
+    "Πρόσθεσε role enum με νέο migration (additive).",
+    "Rename column με expand/contract (add nullable → backfill → drop).",
+    "Γράψε seed.ts με createMany skipDuplicates για roles.",
+    "Δοκίμασε migrate deploy σε καθαρή βάση (CI σενάριο)."
+  ]}
+  checkpoints={[
+    "Κάθε αλλαγή έχει δικό της migration file (καμία manual αλλαγή).",
+    "Το seed ξανατρέχει χωρίς error.",
+    "migrate deploy εφαρμόζει τα πάντα από το μηδέν χωρίς reset."
+  ]}
+  mistakes={[
+    "migrate dev σε production (πιθανό reset/data loss).",
+    "Manual ALTER ή edit applied migration → drift.",
+    "NOT NULL χωρίς default σε γεμάτο πίνακα.",
+    "Μη-idempotent seed που σκάει στο δεύτερο run."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν εξελίσσεις schema με versioned migrations, κάνεις destructive αλλαγές με expand/contract, και deploy-άρεις με migrate deploy χωρίς ρίσκο δεδομένων."
+/>

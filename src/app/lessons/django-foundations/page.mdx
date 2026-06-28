@@ -1,0 +1,168 @@
+# Django Foundations & MVT
+
+Το **Django** είναι το «batteries-included» Python framework: σου δίνει ORM, admin, auth, forms, templates και security έτοιμα. Είναι ουσιαστικά το Python αντίστοιχο του Laravel — convention over configuration.
+
+## Setup
+
+```bash
+pip install django
+django-admin startproject config .    # το project (ρυθμίσεις)
+python manage.py startapp blog         # ένα app (feature)
+python manage.py runserver             # dev server στο :8000
+```
+
+Το `manage.py` είναι το CLI εργαλείο σου — το χρησιμοποιείς συνέχεια (`runserver`, `migrate`, `createsuperuser`, `startapp`).
+
+## Project vs App — η βασική διάκριση
+
+- **Project**: όλη η εγκατάσταση + ρυθμίσεις (`settings.py`, `urls.py`). Ένα ανά εφαρμογή.
+- **App**: ένα αυτοτελές feature (blog, accounts, payments). **Πολλά** apps ανά project, και ιδανικά επαναχρησιμοποιήσιμα.
+
+Αυτή η μοντελοποίηση σε σπρώχνει να σπας το project σε μικρά, εστιασμένα κομμάτια από την αρχή.
+
+## MVT — το νοητικό μοντέλο
+
+Το Django λέγεται **Model–View–Template** (το δικό του spin στο MVC):
+
+- **Model**: τα δεδομένα (μια Python class → πίνακας βάσης).
+- **View**: η λογική — δέχεται request, μιλάει με models, επιστρέφει response. (Προσοχή: το «view» του Django είναι ο controller άλλων frameworks!)
+- **Template**: το HTML που βλέπει ο χρήστης.
+
+```txt
+Request → URLconf → View → Model (DB) → Template → Response
+```
+
+> Παγίδα ορολογίας: στο Django το **View = controller**, και το **Template = view** του κλασικού MVC.
+
+## settings.py
+
+Η καρδιά της ρύθμισης:
+
+```python
+# config/settings.py
+INSTALLED_APPS = [
+    "django.contrib.admin",
+    "django.contrib.auth",
+    # ...
+    "blog",                 # το δικό σου app — πρέπει να δηλωθεί εδώ
+]
+
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": "myapp",
+        # ...
+    }
+}
+
+DEBUG = True   # ΠΟΤΕ True σε production
+```
+
+Κάθε νέο app πρέπει να μπει στο `INSTALLED_APPS` για να το «δει» το Django.
+
+## Η πρώτη ροή: URL → View → Template
+
+```python
+# blog/views.py
+from django.shortcuts import render
+
+def post_list(request):
+    posts = ["Πρώτο post", "Δεύτερο post"]
+    return render(request, "blog/post_list.html", {"posts": posts})
+```
+
+```python
+# blog/urls.py
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path("posts/", views.post_list, name="post_list"),
+]
+```
+
+```python
+# config/urls.py
+from django.urls import include, path
+
+urlpatterns = [
+    path("", include("blog.urls")),   # σύνδεσε τα urls του app
+]
+```
+
+```html
+<!-- blog/templates/blog/post_list.html -->
+<ul>
+{% for post in posts %}
+    <li>{{ post }}</li>
+{% endfor %}
+</ul>
+```
+
+Πάτα `/posts/` → το URLconf βρίσκει το view → το view δίνει context στο template → ο χρήστης βλέπει HTML.
+
+## Πώς απαντάς στη συνέντευξη
+
+«How is a Django project structured?»
+
+> Django splits a project — the settings and root URLconf — from apps, which are self-contained features you register in `INSTALLED_APPS`. It follows MVT: a request hits the URLconf, which routes to a view (the controller in classic MVC terms), the view talks to models via the ORM and renders a template. Configuration lives in `settings.py`, and I never run with `DEBUG=True` in production. The `manage.py` command-line tool drives everything — `runserver`, `migrate`, `startapp`, `createsuperuser`.
+
+<Flashcards
+  title="Django foundations — interview drills"
+  cards={[
+    {
+      question: "Project vs app στο Django;",
+      answer: "Project: όλη η εγκατάσταση + ρυθμίσεις (settings.py, root urls.py) — ένα. App: αυτοτελές feature (blog, accounts) — πολλά ανά project, ιδανικά επαναχρησιμοποιήσιμα. Κάθε app δηλώνεται στο INSTALLED_APPS."
+    },
+    {
+      question: "Τι σημαίνει MVT και ποια η παγίδα ορολογίας;",
+      answer: "Model–View–Template. ΠΡΟΣΟΧΗ: το Django 'View' = controller (λογική request→response), και το 'Template' = view (το HTML) του κλασικού MVC. Ο Model είναι ο ίδιος (δεδομένα)."
+    },
+    {
+      question: "Τι κάνει το manage.py;",
+      answer: "Το CLI του Django: runserver (dev server), migrate (εφαρμογή schema), makemigrations, startapp, createsuperuser, shell. Το αντίστοιχο του artisan στο Laravel."
+    },
+    {
+      question: "Γιατί κάθε app μπαίνει στο INSTALLED_APPS;",
+      answer: "Για να το 'δει' το Django: να βρει τα models του (migrations), templates, static files, admin registrations και management commands. Χωρίς δήλωση, το app αγνοείται."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Στην ορολογία του Django, τι είναι το 'view';"
+  options={[
+    "Το HTML που βλέπει ο χρήστης.",
+    "Η λογική που δέχεται το request, μιλάει με models και επιστρέφει response — δηλαδή ο controller του κλασικού MVC.",
+    "Το schema της βάσης."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Στο MVT του Django το view παίζει τον ρόλο του controller· το HTML είναι το template."
+/>
+
+<TrainingLab
+  title="Στήσε Django και την πρώτη MVT ροή"
+  scenario="Δημιούργησε ένα Django project με ένα blog app και υλοποίησε πλήρη ροή URL → view → template για λίστα posts."
+  outcomes={[
+    "Να ξεχωρίζεις project από app και να ρυθμίζεις το INSTALLED_APPS.",
+    "Να συνδέεις URLconf, view και template.",
+    "Να καταλαβαίνεις τη ροή ενός request στο MVT."
+  ]}
+  steps={[
+    "startproject config . και startapp blog· δήλωσε το blog στο INSTALLED_APPS.",
+    "Γράψε view post_list που κάνει render template με context.",
+    "Φτιάξε blog/urls.py και κάνε include στο config/urls.py.",
+    "Δημιούργησε το template και τρέξε runserver."
+  ]}
+  checkpoints={[
+    "Το /posts/ εμφανίζει τη λίστα από το view.",
+    "Το app είναι δηλωμένο στο INSTALLED_APPS.",
+    "Καταλαβαίνεις γιατί το view είναι ο controller."
+  ]}
+  mistakes={[
+    "Να βάζεις λογική στο template αντί στο view.",
+    "Να ξεχνάς να δηλώσεις το app στο INSTALLED_APPS.",
+    "Να μπερδεύεις την ορολογία view/template του Django."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να εξηγήσεις τη διαδρομή ενός request στο MVT και να στήσεις project + app + πρώτη ροή."
+/>

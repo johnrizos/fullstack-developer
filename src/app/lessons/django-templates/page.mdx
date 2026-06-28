@@ -1,0 +1,173 @@
+# Templates & Static Files
+
+Τα Django templates παράγουν το HTML που βλέπει ο χρήστης. Η γλώσσα είναι σκόπιμα περιορισμένη — λογική παρουσίασης, όχι business logic — και κάνει αυτόματο escaping για ασφάλεια.
+
+## Variables & escaping
+
+```html
+<h1>{{ post.title }}</h1>
+<p>{{ post.author.username }}</p>   {# πρόσβαση σε attributes με τελεία #}
+
+{# Django template comment — δεν εμφανίζεται #}
+```
+
+Το `{{ }}` κάνει **αυτόματο HTML escaping** — input χρήστη σαν `<script>` εμφανίζεται ως κείμενο, όχι εκτελέσιμο. Είσαι XSS-safe by default.
+
+## Filters
+
+```html
+{{ post.title|upper }}
+{{ post.body|truncatewords:30 }}
+{{ post.created_at|date:"d/m/Y" }}
+{{ price|floatformat:2 }}
+{{ name|default:"Ανώνυμος" }}
+{{ comment|linebreaks }}
+```
+
+Τα **filters** (με `|`) μετασχηματίζουν τιμές για εμφάνιση. Αλυσιδώνονται: `{{ value|lower|truncatewords:5 }}`.
+
+## Tags & control flow
+
+```html
+{% if posts %}
+    <ul>
+    {% for post in posts %}
+        <li class="{% cycle 'odd' 'even' %}">{{ post.title }}</li>
+    {% empty %}
+        <li>Δεν υπάρχουν posts.</li>
+    {% endfor %}
+    </ul>
+{% else %}
+    <p>Κενό.</p>
+{% endif %}
+```
+
+Το `{% for %}...{% empty %}` καλύπτει και την περίπτωση κενής λίστας σε ένα block.
+
+## Template inheritance — DRY layouts
+
+```html
+<!-- templates/base.html -->
+<!DOCTYPE html>
+<html>
+<head><title>{% block title %}MyApp{% endblock %}</title></head>
+<body>
+    {% include "partials/nav.html" %}
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>
+```
+
+```html
+<!-- blog/templates/blog/post_list.html -->
+{% extends "base.html" %}
+
+{% block title %}Posts{% endblock %}
+
+{% block content %}
+    <h1>Όλα τα posts</h1>
+{% endblock %}
+```
+
+- `{% block %}`: σημείο που μπορεί να γεμίσει/αντικαταστήσει το child.
+- `{% extends %}`: το child κληρονομεί το base.
+- `{% include %}`: ενσωματώνει ένα partial.
+
+Έτσι γράφεις header/footer **μία φορά** και τα μοιράζεσαι παντού.
+
+## URLs & CSRF στα templates
+
+```html
+<a href="{% url 'post_detail' post.pk %}">Δες</a>
+
+<form method="post">
+    {% csrf_token %}   {# ΥΠΟΧΡΕΩΤΙΚΟ σε κάθε POST form #}
+    <input name="title">
+    <button>Αποθήκευση</button>
+</form>
+```
+
+Το `{% csrf_token %}` βάζει το hidden CSRF token — χωρίς αυτό, τα POST forms απορρίπτονται (403).
+
+## Static files (CSS/JS/images)
+
+```html
+{% load static %}
+<link rel="stylesheet" href="{% static 'css/app.css' %}">
+<img src="{% static 'img/logo.png' %}" alt="Logo">
+```
+
+```python
+# settings.py
+STATIC_URL = "static/"
+```
+
+Τα static αρχεία ζουν σε `static/` φακέλους. Σε production τρέχεις `collectstatic` για να τα μαζέψεις σε έναν φάκελο που σερβίρει ο web server.
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do Django templates work?»
+
+> Django templates render HTML with a deliberately limited language — presentation logic only. `{{ }}` auto-escapes output, so views are XSS-safe by default, and filters like `truncatewords` or `date` format values for display. I keep things DRY with inheritance: a `base.html` defines `{% block %}` placeholders, child templates `{% extends %}` and fill them, and `{% include %}` pulls in partials. Forms need `{% csrf_token %}`, links use `{% url %}` so they don't break, and static assets load via `{% static %}` with `collectstatic` for production.
+
+<Flashcards
+  title="Django templates — interview drills"
+  cards={[
+    {
+      question: "Είναι ασφαλή τα Django templates από XSS;",
+      answer: "Ναι, by default: το {{ }} κάνει αυτόματο HTML escaping, οπότε input χρήστη σαν <script> εμφανίζεται ως κείμενο. Παρακάμπτεις μόνο ρητά με το |safe filter ή {% autoescape off %} — και μόνο σε έμπιστο περιεχόμενο."
+    },
+    {
+      question: "extends/block/include;",
+      answer: "{% block %}: 'τρύπα' στο base που γεμίζει το child. {% extends 'base.html' %}: το child κληρονομεί το layout. {% include 'partial.html' %}: ενσωματώνει επαναχρησιμοποιήσιμο κομμάτι. Έτσι γράφεις header/footer μία φορά."
+    },
+    {
+      question: "Τι είναι τα template filters;",
+      answer: "Μετασχηματισμοί τιμών για εμφάνιση με |: {{ x|upper }}, {{ body|truncatewords:30 }}, {{ d|date:'d/m/Y' }}, {{ n|default:'-' }}. Αλυσιδώνονται. Είναι λογική ΠΑΡΟΥΣΙΑΣΗΣ — όχι business logic."
+    },
+    {
+      question: "Τι κάνει το {% csrf_token %} και το {% static %};",
+      answer: "{% csrf_token %}: βάζει hidden CSRF token σε POST forms (χωρίς αυτό → 403). {% static 'path' %}: παράγει το σωστό URL για static asset (CSS/JS/img), με collectstatic να τα μαζεύει για production."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Γιατί τα Django templates είναι ασφαλή από XSS by default;"
+  options={[
+    "Επειδή δεν επιτρέπουν HTML.",
+    "Επειδή το {{ }} κάνει αυτόματο escaping, μετατρέποντας special chars σε entities.",
+    "Επειδή τρέχουν JavaScript στον server."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Το auto-escaping του {{ }} εξουδετερώνει κακόβουλο input· το παρακάμπτεις μόνο ρητά με |safe σε έμπιστο περιεχόμενο."
+/>
+
+<TrainingLab
+  title="DRY templates με inheritance"
+  scenario="Φτιάξε ένα base layout με header/footer, μια λίστα posts που το επεκτείνει, filters για formatting, και σωστό χειρισμό static files & CSRF."
+  outcomes={[
+    "Να δομείς σελίδες με template inheritance.",
+    "Να μορφοποιείς δεδομένα με filters.",
+    "Να χειρίζεσαι static files, URLs και CSRF στα templates."
+  ]}
+  steps={[
+    "Φτιάξε base.html με blocks title/content και include nav.",
+    "Κάνε την post_list να extends το base.",
+    "Χρησιμοποίησε filters (truncatewords, date) στη λίστα.",
+    "Πρόσθεσε φόρμα με {% csrf_token %} και link με {% url %}."
+  ]}
+  checkpoints={[
+    "Το header/footer δεν επαναλαμβάνεται.",
+    "Το output χρήστη είναι escaped.",
+    "Τα static & CSRF λειτουργούν σωστά."
+  ]}
+  mistakes={[
+    "Να βάζεις |safe σε δεδομένα χρήστη.",
+    "Να αντιγράφεις layout σε κάθε template αντί για extends.",
+    "Να ξεχνάς το {% csrf_token %} και να παίρνεις 403."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν φτιάχνεις DRY, ασφαλή templates με inheritance και σωστό static/CSRF handling."
+/>

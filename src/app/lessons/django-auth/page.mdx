@@ -1,0 +1,167 @@
+# Authentication & Permissions
+
+Το Django έρχεται με πλήρες auth system: users, login/logout, password hashing, permissions και groups — έτοιμα στο `django.contrib.auth`. Δεν χτίζεις τίποτα από το μηδέν.
+
+## Authentication vs authorization
+
+- **Authentication**: *ποιος είσαι;* (login).
+- **Authorization / permissions**: *τι επιτρέπεται να κάνεις;*
+
+## Το User model
+
+```python
+from django.contrib.auth.models import User
+
+user = User.objects.create_user(username="anna", password="secret")  # hashes αυτόματα
+user.check_password("secret")   # True
+user.is_authenticated           # στα views
+user.is_staff                   # πρόσβαση στο admin
+user.is_superuser
+```
+
+Το `create_user` κάνει **hash** τον κωδικό αυτόματα (PBKDF2). Ποτέ δεν αποθηκεύεις plaintext.
+
+## Login / logout
+
+```python
+from django.contrib.auth import authenticate, login, logout
+
+def login_view(request):
+    if request.method == "POST":
+        user = authenticate(
+            request,
+            username=request.POST["username"],
+            password=request.POST["password"],
+        )
+        if user is not None:
+            login(request, user)              # ξεκινά session
+            return redirect("dashboard")
+    return render(request, "registration/login.html")
+
+def logout_view(request):
+    logout(request)
+    return redirect("login")
+```
+
+Το `authenticate` ελέγχει credentials· το `login` ξεκινά το session. Από εκεί, το `request.user` είναι ο συνδεδεμένος χρήστης σε κάθε request.
+
+## Προστασία views
+
+```python
+from django.contrib.auth.decorators import login_required, permission_required
+
+@login_required
+def dashboard(request):
+    return render(request, "dashboard.html")
+
+@permission_required("blog.add_post", raise_exception=True)
+def post_create(request):
+    ...
+```
+
+```python
+# class-based views
+from django.contrib.auth.mixins import LoginRequiredMixin
+
+class DashboardView(LoginRequiredMixin, ListView):
+    ...
+```
+
+Το `@login_required` (FBV) ή `LoginRequiredMixin` (CBV) μπλοκάρει μη-συνδεδεμένους και τους στέλνει στο login.
+
+## Permissions & groups
+
+Το Django φτιάχνει **αυτόματα** permissions για κάθε model (`add`, `change`, `delete`, `view`):
+
+```python
+user.has_perm("blog.change_post")        # έλεγχος
+user.user_permissions.add(permission)    # ανάθεση
+
+# groups: σύνολα permissions (ρόλοι)
+from django.contrib.auth.models import Group
+editors = Group.objects.create(name="Editors")
+editors.permissions.add(...)
+user.groups.add(editors)                 # ο χρήστης κληρονομεί τα perms του group
+```
+
+Τα **groups** είναι ρόλοι: αντί να δίνεις permissions ένα-ένα σε κάθε χρήστη, τα ομαδοποιείς (Editors, Moderators) και βάζεις χρήστες σε group.
+
+## Στο template
+
+```html
+{% if user.is_authenticated %}
+    Γεια, {{ user.username }} — <a href="{% url 'logout' %}">Έξοδος</a>
+{% else %}
+    <a href="{% url 'login' %}">Είσοδος</a>
+{% endif %}
+
+{% if perms.blog.add_post %}
+    <a href="{% url 'post_create' %}">Νέο post</a>
+{% endif %}
+```
+
+## Πώς απαντάς στη συνέντευξη
+
+«How does Django handle auth and permissions?»
+
+> Django ships a full auth system in `django.contrib.auth`. `create_user` hashes passwords with PBKDF2, `authenticate` checks credentials and `login` starts the session, so `request.user` is available everywhere. I protect views with `@login_required` / `LoginRequiredMixin` and check authorization with `@permission_required` or `has_perm`. Django auto-creates add/change/delete/view permissions per model, and I组 group them into roles like "Editors" so users inherit permissions from a group instead of being assigned each one individually. Templates gate UI with `user.is_authenticated` and `perms`.
+
+<Flashcards
+  title="Django auth — interview drills"
+  cards={[
+    {
+      question: "Authentication vs permissions στο Django;",
+      answer: "Authentication: ΠΟΙΟΣ είσαι — authenticate() + login() ξεκινά session, request.user. Permissions (authorization): ΤΙ μπορείς — has_perm('app.action'), @permission_required. Πρώτα authenticate, μετά check permission."
+    },
+    {
+      question: "Πώς αποθηκεύει το Django κωδικούς;",
+      answer: "Hashed με PBKDF2 (by default) μέσω create_user()/set_password(). check_password() κάνει το verify. ΠΟΤΕ plaintext. Δεν γράφεις εσύ hashing — το auth system το κάνει."
+    },
+    {
+      question: "Τι κάνουν τα @login_required και permissions;",
+      answer: "@login_required (FBV) / LoginRequiredMixin (CBV): μπλοκάρει μη-συνδεδεμένους → redirect σε login. @permission_required('app.perm') / has_perm: ελέγχει συγκεκριμένη άδεια. Το Django φτιάχνει auto add/change/delete/view perms ανά model."
+    },
+    {
+      question: "Τι είναι τα groups;",
+      answer: "Σύνολα permissions = ρόλοι (Editors, Moderators). Αντί να αναθέτεις perms ένα-ένα σε κάθε χρήστη, τα ομαδοποιείς σε group και βάζεις χρήστες στο group — κληρονομούν όλα τα perms του."
+    }
+  ]}
+/>
+
+<Exercise
+  question="Θες πολλοί χρήστες να μοιράζονται το ίδιο σύνολο δικαιωμάτων (ρόλος 'Editor'). Τι χρησιμοποιείς;"
+  options={[
+    "Δίνεις τα permissions ένα-ένα σε κάθε χρήστη.",
+    "Φτιάχνεις ένα Group με τα permissions και βάζεις τους χρήστες σε αυτό.",
+    "Τους κάνεις όλους superuser."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά. Τα groups είναι ρόλοι: ομαδοποιείς permissions μία φορά και οι χρήστες του group τα κληρονομούν."
+/>
+
+<TrainingLab
+  title="Protected area με permissions"
+  scenario="Στήσε login/logout και προστάτεψε views ώστε μόνο συνδεδεμένοι να βλέπουν το dashboard και μόνο 'Editors' να δημιουργούν posts."
+  outcomes={[
+    "Να υλοποιείς login/logout με το auth system.",
+    "Να προστατεύεις views με login_required και permissions.",
+    "Να οργανώνεις δικαιώματα με groups."
+  ]}
+  steps={[
+    "Φτιάξε login/logout views (authenticate + login/logout).",
+    "Βάλε @login_required στο dashboard.",
+    "Δημιούργησε group 'Editors' με το permission blog.add_post.",
+    "Προστάτεψε το post_create με @permission_required και κρύψε το link με {% if perms %}."
+  ]}
+  checkpoints={[
+    "Μη-συνδεδεμένος → redirect στο login.",
+    "Χρήστης χωρίς το perm δεν μπορεί να δημιουργήσει post.",
+    "Οι κωδικοί είναι hashed, ποτέ plaintext."
+  ]}
+  mistakes={[
+    "Να ελέγχεις μόνο στο template και όχι στο view (παρακάμπτεται).",
+    "Να αναθέτεις perms ένα-ένα αντί για group.",
+    "Να μπερδεύεις authentication με authorization."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν προστατεύεις σωστά ταυτότητα και δικαιώματα — server-side, με groups για ρόλους."
+/>

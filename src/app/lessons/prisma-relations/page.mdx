@@ -1,0 +1,203 @@
+# Relations & Nested Writes
+
+Το 80% της δουλειάς σε ένα data layer είναι relations: users έχουν posts, posts έχουν tags, orders έχουν items. Στη συνέντευξη: «πώς μοντελοποιείς m-n;», «include vs select;», «τι είναι nested write;». Το Prisma τα κάνει type-safe — αρκεί να καταλάβεις το schema μοντέλο.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να μοντελοποιείς 1-1, 1-n, m-n relations στο schema,
+- να κάνεις nested create/update σε μία κλήση,
+- να διαλέγεις σωστά ανάμεσα σε `include` και `select`,
+- να φιλτράρεις με βάση related records.
+
+## Το relation μοντέλο
+
+Κάθε relation έχει δύο πλευρές: το **relation field** (virtual, για navigation) και το **scalar foreign key** (το πραγματικό column).
+
+```prisma
+model User {
+  id    String @id @default(cuid())
+  posts Post[]                          // 1-n: relation field (όχι column)
+}
+
+model Post {
+  id       String @id @default(cuid())
+  title    String
+  author   User   @relation(fields: [authorId], references: [id])
+  authorId String                        // το πραγματικό foreign key column
+}
+```
+
+Το `posts Post[]` δεν υπάρχει στη βάση — είναι navigation. Το `authorId` είναι το column. Αυτό μπερδεύει αρχικά: **το relation field είναι για το Prisma, το scalar FK για τη βάση**.
+
+## Many-to-many — implicit vs explicit
+
+```prisma
+// IMPLICIT: το Prisma φτιάχνει μόνο του τον join table
+model Post { id String @id; tags Tag[] }
+model Tag  { id String @id; posts Post[] }
+
+// EXPLICIT: όταν θες extra πεδία στο join (π.χ. πότε προστέθηκε)
+model PostTag {
+  post     Post @relation(fields: [postId], references: [id])
+  postId   String
+  tag      Tag  @relation(fields: [tagId], references: [id])
+  tagId    String
+  addedAt  DateTime @default(now())
+  @@id([postId, tagId])
+}
+```
+
+Implicit όταν το join είναι «καθαρό»· explicit όταν χρειάζεσαι metadata πάνω στη σχέση.
+
+## Nested writes — μία κλήση, πολλά records
+
+Αντί για χωριστά inserts + manual FK wiring, το Prisma φτιάχνει parent + children μαζί:
+
+```ts
+const post = await prisma.post.create({
+  data: {
+    title: "Hello",
+    author: { connect: { id: userId } },     // σύνδεσε σε υπάρχοντα user
+    tags: {
+      connectOrCreate: [                       // φτιάξε αν δεν υπάρχει, αλλιώς σύνδεσε
+        { where: { name: "prisma" }, create: { name: "prisma" } },
+      ],
+    },
+  },
+  include: { tags: true },
+});
+```
+
+- `connect` → σύνδεση σε υπάρχον record (έχεις το id).
+- `create` → φτιάξε νέο child μαζί με τον parent.
+- `connectOrCreate` → idempotent: σύνδεσε αν υπάρχει, φτιάξε αν όχι.
+
+Όλα τρέχουν σε **μία transaction** — ή όλα ή τίποτα.
+
+<PredictOutput
+  title="include vs select"
+  code={`const post = await prisma.post.findUnique({
+  where: { id },
+  select: { title: true, author: { select: { name: true } } },
+});
+// Τι περιέχει το post;`}
+  options={['Όλα τα fields του post + author', '{ title, author: { name } } — ΜΟΝΟ αυτά', '{ title } χωρίς author', 'Error: δεν συνδυάζονται']}
+  correctOptionIndex={1}
+  answer="{ title, author: { name } } — μόνο ό,τι ζήτησες"
+  explanation="Το select είναι allowlist: επιστρέφει ΜΟΝΟ τα πεδία που δηλώνεις (εδώ title + author.name). Το include αντίθετα επιστρέφει ΟΛΑ τα scalar fields του post ΣΥΝ τις σχέσεις που ζητάς. Δεν συνδυάζονται στο ίδιο επίπεδο — ή select ή include."
+/>
+
+## include vs select — το βασικό
+
+```txt
+include → ΟΛΑ τα scalar fields + τις σχέσεις που προσθέτεις
+select  → ΜΟΝΟ τα fields/σχέσεις που δηλώνεις ρητά (allowlist)
+```
+
+```ts
+// include: όλα τα post fields + author
+prisma.post.findMany({ include: { author: true } });
+
+// select: μόνο τα απαραίτητα (λιγότερα bytes, καμία διαρροή)
+prisma.post.findMany({ select: { id: true, title: true } });
+```
+
+Προτίμησε `select` σε APIs: επιστρέφεις μόνο ό,τι χρειάζεται ο client (performance + δεν διαρρέεις π.χ. `passwordHash`). Το `include` είναι βολικό αλλά φέρνει τα πάντα.
+
+## Filtering με βάση relations
+
+```ts
+// users που έχουν τουλάχιστον ένα published post
+prisma.user.findMany({
+  where: { posts: { some: { published: true } } },
+});
+// posts των οποίων ο author είναι admin
+prisma.post.findMany({
+  where: { author: { role: "admin" } },
+});
+```
+
+`some` / `every` / `none` για 1-n· nested object για 1-1/n-1. Το φιλτράρισμα γίνεται στη βάση, όχι στη μνήμη.
+
+<Exercise
+  question="Σε ένα API θες να επιστρέψεις posts με μόνο id, title και το όνομα του author. Τι χρησιμοποιείς;"
+  options={[
+    "select με nested select: { id: true, title: true, author: { select: { name: true } } } — επιστρέφει ΜΟΝΟ αυτά, λιγότερα bytes και καμία διαρροή ευαίσθητων πεδίων.",
+    "include: { author: true } — απλό και αρκεί.",
+    "Φέρνεις τα πάντα και φιλτράρεις στη JavaScript."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το select λειτουργεί ως allowlist: παίρνεις ακριβώς τα fields που χρειάζεται ο client. Το include:{author:true} θα έφερνε ΟΛΑ τα author fields (π.χ. email/passwordHash). Φιλτράρισμα στη JS = wasteful query."
+/>
+
+<Exercise
+  question="Θες να φτιάξεις post και να συνδέσεις tags που μπορεί να υπάρχουν ή όχι, χωρίς duplicates. Τι;"
+  options={[
+    "connectOrCreate μέσα στο nested write — idempotent: συνδέει το tag αν υπάρχει, το φτιάχνει αν όχι. Όλα σε μία transaction.",
+    "Πρώτα create κάθε tag, μετά create το post με connect — με χειροκίνητο έλεγχο για duplicates.",
+    "create και για τα tags πάντα — αν υπάρχει, το Prisma το αγνοεί."
+  ]}
+  correctOptionIndex={0}
+  explanation="connectOrCreate είναι ακριβώς για 'σύνδεσε αν υπάρχει, φτιάξε αν όχι' χωρίς race/duplicates (με unique constraint στο name). create πάντα θα έσκαγε σε unique violation· χειροκίνητος έλεγχος είναι race-prone και πολλαπλά round-trips."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you model and query relations in Prisma?»
+
+> Each relation has two sides in the schema — a relation field for navigation, like `posts Post[]`, which isn't a real column, and a scalar foreign key like `authorId`, which is. For many-to-many I use an implicit relation and let Prisma manage the join table, switching to an explicit join model when I need metadata on the relationship like a timestamp. I create related records with nested writes in a single call — `connect` for existing ids, `create` for new children, and `connectOrCreate` for idempotent tag-style links — all in one transaction. For reads I prefer `select` over `include` in APIs because select is an allowlist returning only the fields the client needs, which is faster and avoids leaking things like a password hash, whereas include returns every scalar field. And I filter on relations in the database with `some`/`every`/`none`, never in memory.
+
+<Flashcards
+  title="Relations — interview drills"
+  cards={[
+    {
+      question: "Relation field vs scalar FK;",
+      answer: "Relation field (posts Post[], author User) = virtual navigation, ΔΕΝ είναι column. Scalar FK (authorId) = το πραγματικό column στη βάση. Το @relation συνδέει τα δύο."
+    },
+    {
+      question: "Implicit vs explicit m-n;",
+      answer: "Implicit: το Prisma φτιάχνει το join table μόνο του (καθαρή σχέση). Explicit: δικό σου join model όταν θες extra fields πάνω στη σχέση (π.χ. addedAt)."
+    },
+    {
+      question: "connect / create / connectOrCreate;",
+      answer: "connect: σύνδεση σε υπάρχον (έχεις id). create: νέο child μαζί με parent. connectOrCreate: idempotent — σύνδεσε αν υπάρχει, φτιάξε αν όχι. Όλα σε μία transaction."
+    },
+    {
+      question: "include vs select;",
+      answer: "include: ΟΛΑ τα scalar fields + σχέσεις που προσθέτεις. select: ΜΟΝΟ τα δηλωμένα (allowlist). Σε APIs προτίμησε select — performance + καμία διαρροή."
+    },
+    {
+      question: "Filtering σε relations;",
+      answer: "1-n: some/every/none. 1-1/n-1: nested object στο where (π.χ. author: { role: 'admin' }). Γίνεται στη βάση, όχι στη μνήμη."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Σχεσιακό μοντέλο με nested writes"
+  scenario="Μοντελοποίησε users/posts/tags και γράψε nested writes + relation filters."
+  outcomes={[
+    "Να μοντελοποιείς 1-n και m-n.",
+    "Να κάνεις nested create με connect/connectOrCreate.",
+    "Να διαλέγεις select για καθαρά API responses."
+  ]}
+  steps={[
+    "Schema: User 1-n Post, Post m-n Tag (implicit).",
+    "create post με author connect και tags connectOrCreate.",
+    "Επέστρεψε posts με select { id, title, author: { select: { name } } }.",
+    "Φίλτραρε users που έχουν published post (some).",
+    "Άλλαξε το m-n σε explicit join με addedAt field."
+  ]}
+  checkpoints={[
+    "Nested write φτιάχνει parent + children σε μία κλήση.",
+    "Το API response δεν περιέχει περιττά/ευαίσθητα πεδία.",
+    "Relation filtering γίνεται στο query, όχι στη JS."
+  ]}
+  mistakes={[
+    "Σύγχυση relation field με scalar FK.",
+    "include παντού → over-fetching και διαρροή πεδίων.",
+    "create αντί connectOrCreate → unique violation σε υπάρχοντα tags.",
+    "Filtering σε σχέσεις στη μνήμη αντί στο where."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μοντελοποιείς relations σωστά, κάνεις nested writes σε μία transaction, και επιστρέφεις ακριβώς τα πεδία που χρειάζεται ο client με select."
+/>

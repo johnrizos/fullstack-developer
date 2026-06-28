@@ -1,0 +1,186 @@
+# Transactions & Performance
+
+Εδώ χωρίζονται οι junior από τους mid backend engineers. Στη συνέντευξη: «τι είναι το N+1 problem;», «πώς δουλεύει το connection pooling;», «πότε χρειάζεσαι transaction;». Το Prisma δίνει τα εργαλεία — εσύ πρέπει να ξέρεις πότε και γιατί.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να χρησιμοποιείς transactions (sequential & interactive),
+- να αναγνωρίζεις και να λύνεις το N+1 problem,
+- να καταλαβαίνεις connection pooling και τα όριά του,
+- να ξέρεις πού βοηθούν indexes.
+
+## Transactions — atomicity
+
+Όταν πολλές γραφές πρέπει να πετύχουν **όλες ή καμία**:
+
+```ts
+// Sequential ($transaction array): ανεξάρτητες λειτουργίες, atomic
+const [order, payment] = await prisma.$transaction([
+  prisma.order.create({ data: orderData }),
+  prisma.payment.create({ data: paymentData }),
+]);
+
+// Interactive: όταν το επόμενο εξαρτάται από το προηγούμενο
+await prisma.$transaction(async (tx) => {
+  const account = await tx.account.findUnique({ where: { id } });
+  if (account.balance < amount) throw new Error("Insufficient funds");  // rollback
+  await tx.account.update({ where: { id }, data: { balance: { decrement: amount } } });
+  await tx.transfer.create({ data: { amount, accountId: id } });
+});
+```
+
+Στο interactive transaction, ένα `throw` κάνει **rollback** όλων — η βάση μένει consistent. Πρόσεξε: κράτα τα transactions **σύντομα** (κρατούν locks)· μη βάζεις HTTP calls μέσα.
+
+## Το N+1 problem — ο κλασικός killer
+
+```ts
+// ΛΑΘΟΣ: 1 query για posts + N queries (μία ανά post) για author
+const posts = await prisma.post.findMany();          // 1 query
+for (const post of posts) {
+  post.author = await prisma.user.findUnique({ where: { id: post.authorId } });  // N queries!
+}
+// 100 posts → 101 queries
+```
+
+```ts
+// ΣΩΣΤΟ: ένα query με join
+const posts = await prisma.post.findMany({ include: { author: true } });  // 1 query
+```
+
+Το `include`/`select` με relations κάνει το join στη βάση — **1-2 queries** αντί για N+1. Είναι το πιο συχνό performance bug σε ORMs.
+
+<PredictOutput
+  title="Πόσα queries;"
+  code={`const users = await prisma.user.findMany();   // 50 users
+const result = await Promise.all(
+  users.map(u => prisma.post.findMany({ where: { userId: u.id } }))
+);
+// Πόσα database queries συνολικά;`}
+  options={['1', '2', '51 — ένα για users + ένα ανά user', '50']}
+  correctOptionIndex={2}
+  answer="51 (1 + 50) — κλασικό N+1"
+  explanation="Το Promise.all τρέχει τα queries παράλληλα, αλλά παραμένουν 50 ξεχωριστά queries + 1 για τους users = 51 round-trips. Παράλληλα ≠ λιγότερα queries. Η λύση: ένα findMany με include:{posts:true}, ή ένα query με where:{userId:{in: ids}}."
+/>
+
+## Connection pooling
+
+```txt
+Κάθε query χρειάζεται connection. Το άνοιγμα connection είναι ακριβό,
+οπότε το Prisma κρατά POOL από ανοιχτά connections και τα ανακυκλώνει.
+
+connection_limit (default ~ num_cpus * 2 + 1)
+  πολύ μικρό → requests περιμένουν σε ουρά (timeout)
+  πολύ μεγάλο → εξαντλείς τα connections της βάσης
+```
+
+```bash
+DATABASE_URL="postgresql://...?connection_limit=10&pool_timeout=20"
+```
+
+Σε **serverless** (Lambda/Vercel), κάθε instance ανοίγει pool → εκατοντάδες connections γρήγορα. Λύση: external pooler (PgBouncer / Prisma Accelerate / Data Proxy) που μοιράζεται connections ανάμεσα σε instances.
+
+## Indexes — πού βοηθούν
+
+```prisma
+model Post {
+  id        String   @id
+  authorId  String
+  slug      String   @unique          // unique index
+  createdAt DateTime
+  @@index([authorId])                  // index για το συχνό where
+  @@index([authorId, createdAt])       // composite για where + orderBy
+}
+```
+
+Index βάζεις σε columns που μπαίνουν συχνά σε `where`, `orderBy`, ή σε joins (foreign keys). Trade-off: indexes επιταχύνουν reads αλλά **επιβραδύνουν writes** και πιάνουν χώρο — μη βάζεις παντού. Composite index για queries που φιλτράρουν+ταξινομούν μαζί.
+
+## Μέτρα, μη μαντεύεις
+
+```ts
+const prisma = new PrismaClient({ log: ["query"] });   // δες τα πραγματικά SQL
+```
+
+Ενεργοποίησε query logging για να δεις πόσα/ποια queries τρέχουν στ' αλήθεια — έτσι πιάνεις N+1. Σε production, χρησιμοποίησε `EXPLAIN ANALYZE` για slow queries πριν προσθέσεις index.
+
+<Exercise
+  question="Listing 200 orders δείχνει το customer name κάθε order και κάνει 201 queries. Τι φταίει και πώς το λύνεις;"
+  options={[
+    "N+1 problem: 1 query για orders + 1 ανά order για τον customer. Λύση: prisma.order.findMany({ include: { customer: true } }) — ένα query με join.",
+    "Η βάση είναι αργή· πρόσθεσε περισσότερα connections στο pool.",
+    "Πρέπει να κάνεις cache κάθε customer ξεχωριστά στο Redis."
+  ]}
+  correctOptionIndex={0}
+  explanation="201 = 1 + 200 είναι η υπογραφή του N+1: ξεχωριστό query για τη σχέση κάθε record. Η σωστή λύση είναι ένα query με include/select που κάνει το join στη βάση. Περισσότερα connections/cache δεν διορθώνουν το root cause."
+/>
+
+<Exercise
+  question="Deploy-άρεις Prisma σε serverless και βλέπεις 'too many connections'. Γιατί και πώς;"
+  options={[
+    "Κάθε serverless instance ανοίγει δικό του connection pool· με πολλά concurrent instances εξαντλούνται τα connections της βάσης. Λύση: external connection pooler (PgBouncer/Accelerate) ή χαμηλό connection_limit.",
+    "Το Prisma έχει bug με serverless — άλλαξε ORM.",
+    "Πρέπει να ανοίγεις νέο PrismaClient σε κάθε request."
+  ]}
+  correctOptionIndex={0}
+  explanation="Serverless = πολλές βραχύβιες instances, καθεμία με δικό της pool → πολλαπλασιασμός connections. Ένας external pooler μοιράζεται ένα μικρό σύνολο connections ανάμεσα σε όλες τις instances. Νέος client ανά request κάνει το πρόβλημα χειρότερο."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you keep a Prisma data layer fast and correct?»
+
+> For correctness, when several writes must all succeed or none I wrap them in a transaction — a `$transaction` array for independent ops, or an interactive transaction when one step depends on the previous, where a throw rolls everything back; I keep them short because they hold locks and never put HTTP calls inside. The biggest performance trap is N+1 — fetching a list then a query per row for its relation, so 100 posts become 101 queries; I fix it with `include`/`select` so the join happens in one database query, and `Promise.all` doesn't help because it's still N queries. I tune the connection pool with `connection_limit`, and in serverless I put an external pooler like PgBouncer or Accelerate in front since each instance otherwise opens its own pool and exhausts connections. I add indexes on columns used in where, orderBy and foreign keys — composite when I filter and sort together — knowing they speed reads but slow writes. And I turn on query logging to measure rather than guess.
+
+<Flashcards
+  title="Transactions & performance — interview drills"
+  cards={[
+    {
+      question: "Sequential vs interactive transaction;",
+      answer: "$transaction([...]) array: ανεξάρτητες ops, atomic. Interactive $transaction(async tx => ...): όταν το επόμενο βήμα εξαρτάται από το προηγούμενο· throw → rollback. Κράτα τα σύντομα (locks), χωρίς HTTP μέσα."
+    },
+    {
+      question: "Τι είναι N+1;",
+      answer: "1 query για λίστα + N queries (μία ανά record) για τη σχέση. 100 posts → 101 queries. Λύση: include/select για join σε 1-2 queries. Promise.all δεν βοηθά (ίδια N queries)."
+    },
+    {
+      question: "Connection pooling;",
+      answer: "Pool ανοιχτών connections που ανακυκλώνονται. connection_limit: μικρό→queueing/timeout, μεγάλο→exhaustion. Serverless: external pooler (PgBouncer/Accelerate) γιατί κάθε instance ανοίγει δικό του pool."
+    },
+    {
+      question: "Πού βάζεις index;",
+      answer: "Columns σε συχνά where/orderBy/joins (FKs). Composite για filter+sort μαζί. Trade-off: επιταχύνει reads, επιβραδύνει writes + χώρος — όχι παντού."
+    },
+    {
+      question: "Πώς πιάνεις performance bugs;",
+      answer: "new PrismaClient({ log:['query'] }) για να δεις τα πραγματικά SQL (πιάνεις N+1). EXPLAIN ANALYZE για slow queries πριν προσθέσεις index. Μέτρα, μη μαντεύεις."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Transaction-safe operation χωρίς N+1"
+  scenario="Φτιάξε ένα money-transfer + listing που είναι atomic και αποδοτικά."
+  outcomes={[
+    "Να γράφεις interactive transaction με rollback.",
+    "Να εντοπίζεις και να λύνεις N+1.",
+    "Να ρυθμίζεις pooling και indexes."
+  ]}
+  steps={[
+    "Interactive transaction: έλεγχος balance → decrement → record transfer (throw σε insufficient).",
+    "Ενεργοποίησε log:['query'] και βρες ένα N+1 σε ένα listing.",
+    "Λύσε το με include/select (ένα query).",
+    "Πρόσθεσε @@index στο authorId και composite [authorId, createdAt].",
+    "Ρύθμισε connection_limit στο DATABASE_URL και σκέψου serverless pooler."
+  ]}
+  checkpoints={[
+    "Insufficient funds → rollback, καμία μερική εγγραφή.",
+    "Το listing πέφτει από N+1 σε 1-2 queries (επιβεβαίωσε στο log).",
+    "Το συχνό where χρησιμοποιεί index."
+  ]}
+  mistakes={[
+    "Πολλαπλά writes χωρίς transaction → ασυνεπές state σε σφάλμα.",
+    "HTTP call / αργή δουλειά μέσα σε transaction (κρατά locks).",
+    "N+1 κρυμμένο σε loop ή Promise.all.",
+    "Indexes παντού (αργά writes) ή πουθενά (αργά reads). Serverless χωρίς pooler."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν γράφεις atomic transactions, εξαλείφεις N+1 με join queries, και ρυθμίζεις pooling/indexes με μετρήσεις αντί για εικασίες."
+/>

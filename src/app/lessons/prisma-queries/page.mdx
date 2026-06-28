@@ -1,0 +1,195 @@
+# Queries, Filtering & Pagination
+
+Listing endpoints είναι παντού: αναζήτηση, φίλτρα, ταξινόμηση, σελιδοποίηση. Στη συνέντευξη: «cursor vs offset pagination;», «πώς κάνεις aggregation;», «πότε raw query;». Το Prisma δίνει type-safe API για όλα — με μερικές παγίδες performance.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να φιλτράρεις με `where` (operators, AND/OR, search),
+- να ταξινομείς και να σελιδοποιείς (offset & cursor),
+- να κάνεις aggregations και `groupBy`,
+- να ξέρεις πότε κατεβαίνεις σε raw SQL.
+
+## Filtering με where
+
+```ts
+prisma.product.findMany({
+  where: {
+    price: { gte: 10, lte: 100 },          // range
+    name: { contains: "phone", mode: "insensitive" },  // case-insensitive search
+    category: { in: ["tech", "audio"] },   // IN list
+    AND: [{ stock: { gt: 0 } }, { active: true }],
+    OR: [{ featured: true }, { discount: { gt: 0 } }],
+    NOT: { archived: true },
+  },
+});
+```
+
+Operators: `equals, not, in, notIn, lt, lte, gt, gte, contains, startsWith, endsWith`. Συνδυάζονται με `AND`/`OR`/`NOT`. Όλα μεταφράζονται σε SQL — το φιλτράρισμα γίνεται στη **βάση**.
+
+## Sorting & offset pagination
+
+```ts
+prisma.product.findMany({
+  orderBy: [{ featured: "desc" }, { createdAt: "desc" }],  // multi-column
+  skip: (page - 1) * pageSize,    // offset
+  take: pageSize,                  // limit
+});
+```
+
+Το offset pagination (`skip`/`take`) είναι απλό αλλά **αργό σε βαθιές σελίδες**: `skip: 100000` αναγκάζει τη βάση να διασχίσει 100k rows πριν επιστρέψει. Καλό για μικρά datasets / page numbers.
+
+## Cursor pagination — για scale
+
+```ts
+prisma.product.findMany({
+  take: pageSize,
+  cursor: lastId ? { id: lastId } : undefined,  // ξεκίνα μετά το τελευταίο
+  skip: lastId ? 1 : 0,                          // skip το ίδιο το cursor
+  orderBy: { id: "asc" },
+});
+```
+
+Το cursor pagination χρησιμοποιεί το `id` (ή timestamp) του τελευταίου record αντί για offset. **Σταθερή ταχύτητα** ανεξάρτητα από βάθος (χρησιμοποιεί index seek, όχι scan) — ιδανικό για infinite scroll / μεγάλα datasets. Trade-off: δεν πας σε αυθαίρετη «σελίδα 50».
+
+<PredictOutput
+  title="Γιατί αργεί η σελίδα 5000;"
+  code={`// 1M rows. Ζητάς σελίδα 5000, pageSize 20:
+prisma.product.findMany({
+  skip: 99980,   // (5000-1) * 20
+  take: 20,
+});
+// Τι κάνει η βάση;`}
+  options={['Πάει κατευθείαν στο row 99980 (γρήγορα)', 'Διασχίζει 99980 rows πριν επιστρέψει 20 (αργά)', 'Πετάει error', 'Επιστρέφει τα πρώτα 20']}
+  correctOptionIndex={1}
+  answer="Διασχίζει 99980 rows — offset = scan"
+  explanation="Το OFFSET δεν είναι seek· η βάση πρέπει να μετρήσει/προσπεράσει 99980 rows πριν φτάσει στα 20 που θες. Όσο πιο βαθιά η σελίδα, τόσο πιο αργά. Cursor pagination χρησιμοποιεί index seek (WHERE id > cursor) → σταθερός χρόνος."
+/>
+
+## Aggregations & groupBy
+
+```ts
+// συγκεντρωτικά
+const stats = await prisma.order.aggregate({
+  _count: true,
+  _sum: { total: true },
+  _avg: { total: true },
+  where: { status: "paid" },
+});
+
+// ανά κατηγορία
+const byCategory = await prisma.product.groupBy({
+  by: ["category"],
+  _count: { _all: true },
+  _avg: { price: true },
+  having: { price: { _avg: { gt: 50 } } },   // filter σε aggregate
+  orderBy: { _count: { category: "desc" } },
+});
+```
+
+`aggregate` για συνολικά νούμερα, `groupBy` για ανά-ομάδα. Το `having` φιλτράρει **μετά** το grouping (όπως SQL HAVING).
+
+## Count + data μαζί
+
+```ts
+const [items, total] = await prisma.$transaction([
+  prisma.product.findMany({ where, skip, take }),
+  prisma.product.count({ where }),           // ίδιο where!
+]);
+// response: { items, total, page, pageSize }
+```
+
+Για paginated response χρειάζεσαι και τα δεδομένα και το συνολικό count — σε ένα `$transaction` ώστε να είναι consistent.
+
+## Πότε raw SQL
+
+```ts
+const rows = await prisma.$queryRaw`
+  SELECT category, COUNT(*) FROM "Product"
+  WHERE price > ${minPrice} GROUP BY category
+`;  // parameterized — ΟΧΙ string concatenation (SQL injection)
+```
+
+Κατεβαίνεις σε raw όταν: πολύπλοκο SQL που δεν εκφράζεται με το API (window functions, CTEs), ή performance tuning. **Πάντα** tagged template (`$queryRaw\`...\``) με interpolation — ποτέ string concatenation, που ανοίγει SQL injection.
+
+<Exercise
+  question="Infinite-scroll feed πάνω σε 5M rows. Ποιο pagination;"
+  options={[
+    "Cursor pagination — χρησιμοποιεί index seek (WHERE id > cursor) και έχει σταθερό χρόνο ανεξάρτητα από βάθος. Ιδανικό για infinite scroll.",
+    "Offset pagination — απλό και πάντα αρκετά γρήγορο.",
+    "Φέρε όλα τα rows και σελιδοποίησε στη μνήμη του server."
+  ]}
+  correctOptionIndex={0}
+  explanation="Σε βαθιά scrolling, το offset (skip) αναγκάζει scan όλο και περισσότερων rows → γραμμική επιβράδυνση. Το cursor κάνει index seek από το τελευταίο id → σταθερός χρόνος. Φόρτωμα όλων στη μνήμη είναι εκτός συζήτησης σε 5M rows."
+/>
+
+<Exercise
+  question="Χρειάζεσαι raw SQL με user input. Πώς αποφεύγεις SQL injection;"
+  options={[
+    "Tagged template: prisma.$queryRaw`... WHERE id = ${userId}` — το Prisma παραμετροποιεί το input. ΠΟΤΕ string concatenation στο query.",
+    "Κάνεις escape μόνος σου τα quotes στο input.",
+    "Δεν υπάρχει κίνδυνος με raw queries στο Prisma."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το $queryRaw ως tagged template παραμετροποιεί τις τιμές (prepared statement) — το input δεν γίνεται ποτέ μέρος του SQL string. String concatenation (ή $queryRawUnsafe με concatenation) ανοίγει injection."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«How do you build a listing endpoint with Prisma?»
+
+> I filter in the database with `where` — range operators, case-insensitive `contains` for search, and `AND`/`OR`/`NOT` to combine — never in memory. I sort with `orderBy`, supporting multiple columns. For pagination I default to offset `skip`/`take` for small datasets and page numbers, but switch to cursor pagination for large datasets or infinite scroll, because offset forces the database to scan all skipped rows and gets slower the deeper you go, while a cursor does an index seek from the last id at constant time. I return both the page and a total count from a single `$transaction` with the same where clause so they stay consistent. For dashboards I use `aggregate` and `groupBy` with `having`. I only drop to `$queryRaw` for SQL the API can't express, always as a tagged template so values are parameterized and there's no injection.
+
+<Flashcards
+  title="Queries — interview drills"
+  cards={[
+    {
+      question: "where operators;",
+      answer: "equals/not/in/notIn, lt/lte/gt/gte, contains/startsWith/endsWith (+ mode:'insensitive'). Combine με AND/OR/NOT. Όλα → SQL, φιλτράρισμα στη βάση."
+    },
+    {
+      question: "Offset vs cursor pagination;",
+      answer: "Offset (skip/take): απλό, page numbers, ΑΛΛΑ scan όσων rows προσπερνά → αργό σε βάθος. Cursor (cursor+take, WHERE id>last): index seek, σταθερός χρόνος, ιδανικό για infinite scroll· δεν πας σε αυθαίρετη σελίδα."
+    },
+    {
+      question: "aggregate vs groupBy;",
+      answer: "aggregate: συνολικά (_count/_sum/_avg/_min/_max). groupBy: ανά-ομάδα με by:[], + having για filter μετά το grouping (όπως SQL HAVING)."
+    },
+    {
+      question: "Count + data για paginated response;",
+      answer: "$transaction([findMany({where,skip,take}), count({where})]) — ίδιο where, consistent. Επιστρέφεις { items, total, page, pageSize }."
+    },
+    {
+      question: "Πότε raw SQL & ασφάλεια;",
+      answer: "Window functions/CTEs/perf tuning που δεν εκφράζει το API. ΠΑΝΤΑ $queryRaw tagged template (parameterized) — ποτέ string concatenation/$queryRawUnsafe με input (SQL injection)."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Listing endpoint με φίλτρα & pagination"
+  scenario="Φτιάξε product listing με search, sort, pagination και stats."
+  outcomes={[
+    "Να χτίζεις δυναμικό where με operators.",
+    "Να υλοποιείς cursor pagination.",
+    "Να επιστρέφεις aggregate stats."
+  ]}
+  steps={[
+    "where με price range, case-insensitive search, category in [...].",
+    "orderBy multi-column (featured desc, createdAt desc).",
+    "Offset pagination με count σε $transaction → { items, total }.",
+    "Πρόσθεσε cursor-based variant για infinite scroll.",
+    "groupBy category με _avg price και having."
+  ]}
+  checkpoints={[
+    "Όλο το φιλτράρισμα/sorting γίνεται στη βάση.",
+    "Βαθιά σελίδα: cursor σταθερός χρόνος vs offset αργό.",
+    "Καμία raw query με concatenated input."
+  ]}
+  mistakes={[
+    "Offset σε huge dataset / deep pages → scan.",
+    "Φιλτράρισμα/sorting στη JS μετά από findMany χωρίς where.",
+    "count με διαφορετικό where από τα data (ασυνεπές total).",
+    "$queryRawUnsafe με user input → SQL injection."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν χτίζεις listing endpoint που φιλτράρει/ταξινομεί στη βάση, σελιδοποιεί με cursor σε scale, και δίνει consistent count + stats."
+/>
