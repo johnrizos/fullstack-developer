@@ -9,12 +9,25 @@ export type Lesson = {
 
 export const lessonDurationsMinutes: Record<string, number> = {
   "web-basics": 35,
+  "how-the-web-works": 65,
   "html-css": 45,
   "html-semantics": 40,
   "html-forms-accessibility": 50,
+  "web-accessibility": 60,
   "css-box-model": 40,
   "css-flex-responsive": 55,
   "css-grid-layouts": 55,
+  "css-modern-styling": 55,
+  "tailwind-foundations": 55,
+  "tailwind-layout-responsive": 55,
+  "tailwind-states-dark-mode": 50,
+  "tailwind-customization": 55,
+  "tailwind-reuse-production": 55,
+  "bootstrap-foundations": 50,
+  "bootstrap-grid-layout": 55,
+  "bootstrap-components": 55,
+  "bootstrap-javascript": 55,
+  "bootstrap-customization-a11y": 50,
   "javascript-intro": 50,
   "javascript-logic": 55,
   "javascript-arrays-objects": 60,
@@ -52,6 +65,7 @@ export const lessonDurationsMinutes: Record<string, number> = {
   "nextjs-metadata-seo": 60,
   "nextjs-optimization-production": 85,
   "frontend-testing": 80,
+  "backend-frameworks-overview": 75,
   "node-runtime-modules": 70,
   "node-async-streams": 80,
   "node-express": 75,
@@ -118,6 +132,7 @@ export const lessonDurationsMinutes: Record<string, number> = {
   "laravel-testing-production": 80,
   "websockets-realtime": 75,
   "api-integrations": 70,
+  "ai-llm-integration": 75,
   "architecture-monolith-microservices": 80,
   "db-relational-modeling": 75,
   "db-sql-queries": 80,
@@ -189,6 +204,15 @@ export const curriculum: CurriculumSection[] = [
         skills: ["Internet", "Browser", "Server"],
         href: "/lessons/web-basics",
       },
+      {
+        id: "how-the-web-works",
+        title: "How the Web Really Works",
+        description:
+          "HTTP/HTTPS, TLS, DNS, CDN, caching headers, cookies και CORS — τι συμβαίνει πραγματικά από το URL μέχρι την απάντηση του server.",
+        project: "Διάγραμμα ενός request: DNS → TLS → HTTP → response, με τα headers που μετράνε.",
+        skills: ["HTTP", "DNS", "CORS"],
+        href: "/lessons/how-the-web-works",
+      },
     ],
   },
   {
@@ -221,6 +245,15 @@ export const curriculum: CurriculumSection[] = [
         href: "/lessons/html-forms-accessibility",
       },
       {
+        id: "web-accessibility",
+        title: "Accessibility (a11y)",
+        description:
+          "ARIA roles, keyboard navigation, focus management, WCAG και screen reader testing — πώς φτιάχνεις σελίδες που χρησιμοποιούν όλοι.",
+        project: "Κάνε ένα interactive component (modal/menu) πλήρως προσβάσιμο.",
+        skills: ["ARIA", "keyboard nav", "WCAG"],
+        href: "/lessons/web-accessibility",
+      },
+      {
         id: "css-box-model",
         title: "CSS Box Model",
         description: "Margin, padding, border, width και σωστές αποστάσεις.",
@@ -243,6 +276,111 @@ export const curriculum: CurriculumSection[] = [
         project: "Responsive dashboard grid.",
         skills: ["grid", "columns", "responsive"],
         href: "/lessons/css-grid-layouts",
+      },
+      {
+        id: "css-modern-styling",
+        title: "Styling at Scale",
+        description:
+          "Το πρόβλημα του CSS at scale και ο χάρτης των λύσεων: utility-first vs component-first, CSS Modules, design tokens και dark mode — πριν μπεις στα Tailwind/Bootstrap.",
+        project: "Ξαναέντυσε ένα component με design tokens και dark mode.",
+        skills: ["CSS Modules", "design tokens", "dark mode"],
+        href: "/lessons/css-modern-styling",
+      },
+      {
+        id: "tailwind",
+        title: "Tailwind CSS",
+        description:
+          "Το κυρίαρχο utility-first framework, από τα foundations μέχρι production: λεξιλόγιο & κλίμακα, layout/responsive, states & dark mode, customization/theming και reuse — σε πλήρες βάθος.",
+        lessons: [
+          {
+            id: "tailwind-foundations",
+            title: "Tailwind Foundations",
+            description: "Utility-first φιλοσοφία, setup/JIT, οι κατηγορίες utilities και η σταθερή κλίμακα spacing/colors.",
+            project: "Ξαναέντυσε ένα κουμπί/κάρτα μόνο με utilities από την κλίμακα.",
+            skills: ["utility-first", "scale", "JIT"],
+            href: "/lessons/tailwind-foundations",
+          },
+          {
+            id: "tailwind-layout-responsive",
+            title: "Layout & Responsive",
+            description: "Flexbox/grid utilities, mobile-first breakpoints και responsive layouts με prefixes (md:/lg:).",
+            project: "Responsive grid layout που αλλάζει στήλες ανά breakpoint.",
+            skills: ["flex/grid", "mobile-first", "breakpoints"],
+            href: "/lessons/tailwind-layout-responsive",
+          },
+          {
+            id: "tailwind-states-dark-mode",
+            title: "States, Variants & Dark Mode",
+            description: "hover/focus/active/disabled, group & peer variants, και dark mode με το dark: variant.",
+            project: "Interactive component με states και λειτουργικό dark mode.",
+            skills: ["state variants", "group/peer", "dark mode"],
+            href: "/lessons/tailwind-states-dark-mode",
+          },
+          {
+            id: "tailwind-customization",
+            title: "Customization & Theming",
+            description: "theme config, design tokens, arbitrary values [..], plugins και επέκταση της παλέτας/κλίμακας.",
+            project: "Brand theme στο config και χρήση των tokens ως utilities.",
+            skills: ["theme config", "tokens", "arbitrary values"],
+            href: "/lessons/tailwind-customization",
+          },
+          {
+            id: "tailwind-reuse-production",
+            title: "Components, Reuse & Production",
+            description: "Reuse με components vs @apply, αποφυγή επανάληψης, JIT/purge και μικρό production bundle.",
+            project: "Μετέτρεψε επαναλαμβανόμενο markup σε reusable component.",
+            skills: ["components", "@apply", "purge"],
+            href: "/lessons/tailwind-reuse-production",
+          },
+        ],
+      },
+      {
+        id: "bootstrap",
+        title: "Bootstrap",
+        description:
+          "Το κυρίαρχο component-first framework, από τα foundations μέχρι customization: το 12-column grid, έτοιμα components, JavaScript components με data-bs-* και theming/accessibility — σε πλήρες βάθος.",
+        lessons: [
+          {
+            id: "bootstrap-foundations",
+            title: "Bootstrap Foundations",
+            description: "Component-first φιλοσοφία, setup (CSS + JS bundle) και πρότυπο χρήσης με semantic component classes.",
+            project: "Πρώτη σελίδα με buttons/alerts/badges από έτοιμες classes.",
+            skills: ["component-first", "setup", "btn/card"],
+            href: "/lessons/bootstrap-foundations",
+          },
+          {
+            id: "bootstrap-grid-layout",
+            title: "Grid System & Layout",
+            description: "Το 12-column grid (container/row/col), responsive breakpoints, offsets, gutters και auto-layout.",
+            project: "Responsive layout 3 στηλών που στοιβάζονται σε mobile.",
+            skills: ["12-col grid", "breakpoints", "offsets"],
+            href: "/lessons/bootstrap-grid-layout",
+          },
+          {
+            id: "bootstrap-components",
+            title: "Components",
+            description: "Cards, navbar, forms, alerts, badges, list groups — η δομή markup των έτοιμων components.",
+            project: "Card-based UI με navbar και validated form.",
+            skills: ["cards", "forms", "navbar"],
+            href: "/lessons/bootstrap-components",
+          },
+          {
+            id: "bootstrap-javascript",
+            title: "JavaScript Components",
+            description: "Interactive components με data-bs-*: modal, dropdown, collapse, offcanvas, toast — χωρίς δικό σου JS.",
+            project: "Modal + dropdown + collapsible section με data attributes.",
+            skills: ["modal", "dropdown", "data-bs-*"],
+            href: "/lessons/bootstrap-javascript",
+          },
+          {
+            id: "bootstrap-customization-a11y",
+            title: "Customization & Accessibility",
+            description: "Theming με Sass variables και --bs-* CSS variables, αποφυγή 'generic look' και η built-in προσβασιμότητα.",
+            project: "Customize το brand theme και έλεγξε keyboard/ARIA σε ένα component.",
+            skills: ["Sass variables", "theming", "a11y"],
+            href: "/lessons/bootstrap-customization-a11y",
+          },
+        ],
       },
     ],
   },
@@ -338,6 +476,14 @@ export const curriculum: CurriculumSection[] = [
     title: "Developer Workflow",
     description: "Τα εργαλεία που χρειάζεσαι για να δουλεύεις σαν πραγματικός developer.",
     lessons: [
+      {
+        id: "linux-command-line",
+        title: "Command Line Basics",
+        description: "Terminal vs shell, navigation, χειρισμός αρχείων, pipes/redirection, exit codes και αλυσίδωση εντολών.",
+        project: "Βρες το πιο πρόσφατο error ενός app μόνο μέσω terminal.",
+        skills: ["shell", "pipes", "redirection"],
+        href: "/lessons/linux-command-line",
+      },
       {
         id: "git-github",
         title: "Git & GitHub",
@@ -584,6 +730,15 @@ export const curriculum: CurriculumSection[] = [
     title: "Backend & APIs",
     description: "Φτιάχνεις server-side λογική και endpoints που μιλάνε με το frontend.",
     lessons: [
+      {
+        id: "backend-frameworks-overview",
+        title: "Backend Frameworks: The Shared Mental Model",
+        description:
+          "Το κοινό μοντέλο πίσω από Express, NestJS, Django, Flask, FastAPI και Laravel: routing, request lifecycle, middleware, ORM, validation, auth — και πότε διαλέγεις micro vs full-stack.",
+        project: "Comparison map: το ίδιο concept (routing/middleware/ORM) σε όλα τα frameworks.",
+        skills: ["routing", "middleware", "MVC vs layered"],
+        href: "/lessons/backend-frameworks-overview",
+      },
       {
         id: "node",
         title: "Node.js & Express",
@@ -1176,6 +1331,15 @@ export const curriculum: CurriculumSection[] = [
         skills: ["fetch", "auth headers", "rate limits"],
         href: "/lessons/api-integrations",
       },
+      {
+        id: "ai-llm-integration",
+        title: "AI & LLM Integration",
+        description:
+          "Πώς βάζεις AI feature σε fullstack app: κλήση LLM API, streaming responses στο UI, prompt design, tool use, RAG basics και cost/latency.",
+        project: "Endpoint που καλεί LLM και κάνει stream την απάντηση σε React UI.",
+        skills: ["LLM API", "streaming", "RAG"],
+        href: "/lessons/ai-llm-integration",
+      },
     ],
   },
   {
@@ -1383,18 +1547,10 @@ export const curriculum: CurriculumSection[] = [
     lessons: [
       {
         id: "linux",
-        title: "Linux & Command Line",
+        title: "Linux Server & Operations",
         description:
-          "Το terminal που τρέχει πίσω από κάθε deploy: command line basics, Linux server με SSH, και πώς κρατάς processes/services ζωντανά με logs — η βάση κάθε backend/DevOps δουλειάς.",
+          "Από το command line basics (στο Developer Workflow) στο production server: Linux με SSH, hardened πρόσβαση, και πώς κρατάς processes/services ζωντανά με logs — η βάση κάθε backend/DevOps δουλειάς.",
         lessons: [
-          {
-            id: "linux-command-line",
-            title: "Command Line Basics",
-            description: "Terminal vs shell, navigation, χειρισμός αρχείων, pipes/redirection, exit codes και αλυσίδωση εντολών.",
-            project: "Βρες το πιο πρόσφατο error ενός app μόνο μέσω terminal.",
-            skills: ["shell", "pipes", "redirection"],
-            href: "/lessons/linux-command-line",
-          },
           {
             id: "linux-server-ssh",
             title: "Linux Server & SSH",

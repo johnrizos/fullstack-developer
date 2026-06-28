@@ -1,0 +1,145 @@
+# States, Variants & Dark Mode
+
+Στο κανονικό CSS γράφεις `:hover` blocks και `@media (prefers-color-scheme)`. Στο Tailwind όλα αυτά γίνονται **prefixes** πάνω σε utilities. Αυτό το μάθημα καλύπτει state variants, τις σχέσεις `group`/`peer`, και το dark mode.
+
+## State variants
+
+Με prefix εφαρμόζεις utility υπό κατάσταση, χωρίς να γράψεις `:hover` block:
+
+```html
+<button class="bg-blue-600 hover:bg-blue-700 focus:ring-2 active:scale-95 disabled:opacity-50">
+  Κουμπί
+</button>
+```
+
+- `hover:` → στο hover
+- `focus:` / `focus-visible:` → στο focus (κράτα το για accessibility!)
+- `active:` → στο πάτημα
+- `disabled:` → όταν `disabled`
+
+Κάθε variant ισχύει **μόνο** όταν συμβαίνει η κατάσταση.
+
+## Συνδυασμός variants
+
+Τα variants **στοιβάζονται**: responsive + state μαζί.
+
+```html
+<!-- σκουραίνει στο hover ΜΟΝΟ από md κι άνω -->
+<button class="bg-blue-600 md:hover:bg-blue-700">OK</button>
+```
+
+Η σειρά: `responsive:state:utility` (π.χ. `md:hover:bg-blue-700`).
+
+## group & peer — αντιδράσεις σε «γείτονες»
+
+Συχνά θες ένα παιδί να αλλάζει όταν κάνεις hover στον **γονιό**. Αυτό είναι το `group`:
+
+```html
+<div class="group rounded-lg p-4 hover:bg-gray-100">
+  <h3 class="text-gray-900">Τίτλος</h3>
+  <p class="text-gray-500 group-hover:text-gray-900">Σκουραίνει με hover στην κάρτα</p>
+</div>
+```
+
+Βάζεις `group` στον γονιό, και `group-hover:` στο παιδί. Το `peer` κάνει το ίδιο για **αδέλφια** (π.χ. ένα label που αντιδρά στο focus ενός input):
+
+```html
+<input class="peer" />
+<p class="hidden peer-invalid:block text-red-600">Άκυρο input</p>
+```
+
+<Exercise
+  question="Θες ένα βελάκι μέσα σε μια κάρτα να κινείται όταν κάνεις hover σε ΟΛΗ την κάρτα. Τι χρησιμοποιείς;"
+  options={[
+    "hover: πάνω στο βελάκι.",
+    "group στην κάρτα + group-hover: στο βελάκι.",
+    "Ένα media query."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το hover: στο βελάκι θα ενεργοποιούνταν μόνο με hover ΣΤΟ βελάκι. Με group στον γονιό (κάρτα) και group-hover: στο παιδί (βελάκι), το παιδί αντιδρά στο hover ολόκληρου του γονιού."
+/>
+
+## Dark mode
+
+Το Tailwind δίνει το `dark:` variant. Στρατηγική **class** (η πιο συνηθισμένη): το dark ενεργοποιείται όταν υπάρχει class `dark` στο `<html>`:
+
+```html
+<div class="bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-100">
+  Προσαρμόζεται στο theme
+</div>
+```
+
+```js
+// Toggle: πρόσθεσε/αφαίρεσε την class "dark" στο root
+document.documentElement.classList.toggle("dark");
+```
+
+Κάθε `dark:` utility ισχύει μόνο όταν είναι ενεργό το dark theme. Για να μη γράφεις `dark:` σε κάθε χρώμα, συνδύασέ το με **σημασιολογικά χρώματα** στο config (επόμενο μάθημα) — ώστε το ίδιο όνομα να σημαίνει «φόντο» σε κάθε theme.
+
+<PredictOutput
+  title="Πότε ισχύει το dark: variant;"
+  code={`<p class="text-gray-900 dark:text-gray-100">Κείμενο</p>
+
+Στρατηγική 'class'. Το <html> ΔΕΝ έχει class 'dark'. Τι χρώμα;`}
+  options={["text-gray-100 (ανοιχτό)", "text-gray-900 (σκούρο)", "Και τα δύο"]}
+  correctOptionIndex={1}
+  answer="text-gray-900 (σκούρο)"
+  explanation="Με στρατηγική class, το dark: ενεργοποιείται μόνο όταν υπάρχει class 'dark' στο root. Χωρίς αυτήν, ισχύει η γυμνή utility (text-gray-900). Το toggle προσθέτει/αφαιρεί την class."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you handle interactive states and dark mode in Tailwind?»
+
+> States are variants: `hover:`, `focus:`, `active:`, `disabled:` prefix a utility so it applies only in that state, and they stack with responsive prefixes like `md:hover:`. For relationships I use `group` — put `group` on the parent and `group-hover:` on a child so the child reacts to hovering the whole parent — and `peer` for sibling state. Dark mode is the `dark:` variant: with the class strategy it activates when `<html>` has a `dark` class, which I toggle in JS, and I pair it with semantic colours in the theme config so I'm not writing `dark:` on every element.
+
+<Flashcards
+  title="States & dark mode — drills"
+  cards={[
+    {
+      question: "Πώς εφαρμόζεις στυλ στο hover χωρίς CSS block;",
+      answer: "hover: prefix πάνω στην utility: hover:bg-blue-700. Ομοίως focus:, active:, disabled:. Ισχύει μόνο στην αντίστοιχη κατάσταση."
+    },
+    {
+      question: "Πώς στοιβάζονται responsive + state;",
+      answer: "responsive:state:utility — π.χ. md:hover:bg-blue-700 (σκουραίνει στο hover μόνο από md κι άνω). Τα variants συνδυάζονται."
+    },
+    {
+      question: "Τι κάνουν group / peer;",
+      answer: "group: βάζεις group στον γονιό και group-hover: στο παιδί ώστε το παιδί να αντιδρά σε hover του γονιού. peer: το ίδιο για αδέλφια (π.χ. label που αντιδρά σε input state)."
+    },
+    {
+      question: "Πώς δουλεύει το dark mode (class strategy);",
+      answer: "Το dark: variant ενεργοποιείται όταν υπάρχει class 'dark' στο <html>. Κάνεις toggle την class με JS. Συνδυασμός με σημασιολογικά χρώματα για να μη γράφεις dark: παντού."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Interactive card με states & dark mode"
+  scenario="Φτιάξε μια κάρτα με hover/focus states, ένα group-hover effect, και λειτουργικό dark mode με toggle."
+  outcomes={[
+    "Να εφαρμόζεις state variants (hover/focus/disabled).",
+    "Να χρησιμοποιείς group για αντιδράσεις γονιού→παιδιού.",
+    "Να στήνεις dark mode με class strategy + toggle."
+  ]}
+  steps={[
+    "Πρόσθεσε hover:/focus: states στο κουμπί (κράτα ορατό focus).",
+    "Βάλε group στην κάρτα και group-hover: σε ένα παιδί.",
+    "Πρόσθεσε dark: χρώματα σε bg/text.",
+    "Φτιάξε toggle που αλλάζει την class 'dark' στο root.",
+    "Δοκίμασε keyboard navigation — το focus να φαίνεται."
+  ]}
+  checkpoints={[
+    "Τα states ενεργοποιούνται σωστά (hover/focus/disabled).",
+    "Το group-hover αλλάζει το παιδί όταν κάνεις hover στην κάρτα.",
+    "Dark mode εναλλάσσεται με το toggle.",
+    "Το focus ring δεν χάνεται (accessibility)."
+  ]}
+  mistakes={[
+    "Να αφαιρείς το focus ring (σπάει accessibility).",
+    "hover: στο λάθος element αντί για group-hover:.",
+    "Να ξεχνάς το toggle της class 'dark' στο root."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν φτιάχνεις interactive, dark-mode-ready components μόνο με variants, χωρίς CSS blocks."
+/>

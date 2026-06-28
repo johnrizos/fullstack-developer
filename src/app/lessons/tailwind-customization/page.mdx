@@ -1,0 +1,135 @@
+# Customization & Theming
+
+Το Tailwind δεν είναι «κλειστό»: η παλέτα, η κλίμακα και τα breakpoints ζουν σε ένα **config** που επεκτείνεις. Εκεί ορίζεις τα **design tokens** του project σου — και έτσι αλλάζεις brand/spacing σε ένα σημείο. Αυτό το μάθημα καλύπτει theme config, tokens, arbitrary values και plugins.
+
+## Το theme config
+
+Στο config επεκτείνεις (`extend`) την προεπιλεγμένη παλέτα/κλίμακα με δικές σου τιμές, που γίνονται **utilities**:
+
+```js
+// tailwind config
+export default {
+  content: ["./src/**/*.{js,ts,jsx,tsx}"],
+  theme: {
+    extend: {
+      colors: { brand: "#2563eb", accent: "#f59e0b" }, // → bg-brand, text-accent
+      borderRadius: { card: "12px" },                   // → rounded-card
+      spacing: { 18: "4.5rem" },                        // → p-18, m-18
+      fontFamily: { display: ["Poppins", "sans-serif"] }, // → font-display
+    },
+  },
+};
+```
+
+> `extend` **προσθέτει** στις defaults. Αν δηλώσεις απευθείας μέσα στο `theme` (όχι `extend`), **αντικαθιστάς** όλη την προεπιλογή — σπάνια αυτό που θες.
+
+## Design tokens — μία πηγή αλήθειας
+
+Όταν ορίζεις `brand: "#2563eb"` στο config, το `bg-brand` είναι συνεπές παντού. Αλλάζεις το brand χρώμα **σε ένα σημείο** και ενημερώνεται όλη η εφαρμογή — η ίδια ιδέα design tokens που δουλεύει σε κάθε framework, εδώ ζωντανή στο config.
+
+```html
+<!-- Όλα δείχνουν στο ίδιο token -->
+<button class="bg-brand text-white">Brand button</button>
+<a class="text-brand">Brand link</a>
+```
+
+## Arbitrary values — η «έξοδος διαφυγής»
+
+Όταν χρειάζεσαι μια **εφάπαξ** τιμή εκτός κλίμακας, χρησιμοποίησε arbitrary value σε αγκύλες:
+
+```html
+<div class="top-[117px] bg-[#1da1f2] w-[42vw] grid-cols-[1fr_2fr]">...</div>
+```
+
+Χρήσιμο για one-off cases (π.χ. ένα brand χρώμα τρίτου, μια ακριβής θέση). **Με μέτρο** όμως — αν τα βάζεις παντού, χάνεις τη συνέπεια της κλίμακας. Αν μια τιμή επαναλαμβάνεται, βάλ' την στο config ως token.
+
+## Plugins
+
+Το Tailwind επεκτείνεται με plugins που προσθέτουν utilities/components. Επίσημα plugins (π.χ. forms, typography) δίνουν έτοιμα στυλ:
+
+```js
+// config
+plugins: [require("@tailwindcss/forms"), require("@tailwindcss/typography")],
+```
+
+Το `typography` δίνει την class `prose` για όμορφα στιλιζαρισμένο κείμενο (blog/markdown) — χρήσιμο όταν δεν θες να στυλάρεις κάθε `<p>`/`<h2>` με το χέρι.
+
+<Exercise
+  question="Θες το χρώμα brand σου (#7c3aed) να είναι διαθέσιμο ως bg-brand/text-brand παντού. Πού το βάζεις;"
+  options={[
+    "Σε arbitrary value bg-[#7c3aed] σε κάθε element.",
+    "Στο theme.extend.colors.brand του config — γίνεται utility (bg-brand) και αλλάζει από ένα σημείο.",
+    "Σε ένα global CSS αρχείο με !important."
+  ]}
+  correctOptionIndex={1}
+  explanation="Ορίζοντας brand στο theme.extend.colors, αποκτάς bg-brand/text-brand/border-brand παντού, συνεπή και αλλάξιμα σε ένα σημείο. Το arbitrary bg-[#7c3aed] σε κάθε element σκορπίζει την τιμή (αδύνατο rebrand)."
+/>
+
+<PredictOutput
+  title="extend vs απευθείας theme;"
+  code={`theme: {
+  colors: { brand: "#7c3aed" }   // ΟΧΙ μέσα σε extend
+}
+Τι συμβαίνει με τα bg-blue-600, text-gray-800 κ.λπ.;`}
+  options={["Δουλεύουν κανονικά", "Εξαφανίζονται — έμεινε ΜΟΝΟ το brand", "Γίνονται brand"]}
+  correctOptionIndex={1}
+  answer="Εξαφανίζονται — έμεινε ΜΟΝΟ το brand"
+  explanation="Δηλώνοντας colors απευθείας στο theme (όχι σε extend) ΑΝΤΙΚΑΘΙΣΤΑΣ όλη την προεπιλεγμένη παλέτα — μένει μόνο το brand. Σχεδόν πάντα θες theme.extend για να ΠΡΟΣΘΕΣΕΙΣ στις defaults."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you customise Tailwind for a brand?»
+
+> Tailwind's palette, spacing and breakpoints live in the theme config. I add my design tokens under `theme.extend` — brand colours, custom radii, fonts — and they become utilities like `bg-brand` and `rounded-card`, consistent everywhere and changeable in one place. I use `extend` so I add to the defaults rather than replacing them. For one-off values outside the scale I use arbitrary values like `bg-[#1da1f2]`, but sparingly — anything repeated goes into the config as a token. Plugins like forms and typography give me ready styles where I don't want to hand-style every element.
+
+<Flashcards
+  title="Customization — drills"
+  cards={[
+    {
+      question: "Πού ορίζεις design tokens στο Tailwind;",
+      answer: "Στο theme.extend του config (colors, spacing, borderRadius, fontFamily...). Γίνονται utilities (bg-brand, rounded-card), συνεπή και αλλάξιμα από ένα σημείο."
+    },
+    {
+      question: "extend vs απευθείας theme;",
+      answer: "extend ΠΡΟΣΘΕΤΕΙ στις defaults. Δήλωση απευθείας στο theme ΑΝΤΙΚΑΘΙΣΤΑ όλη την προεπιλογή (χάνεις τις default classes). Σχεδόν πάντα θες extend."
+    },
+    {
+      question: "Τι είναι τα arbitrary values;",
+      answer: "Εφάπαξ τιμές εκτός κλίμακας σε αγκύλες: bg-[#1da1f2], top-[117px], w-[42vw]. Για one-off cases — με μέτρο, αλλιώς χάνεις τη συνέπεια. Επαναλαμβανόμενες → token στο config."
+    },
+    {
+      question: "Τι προσφέρουν τα plugins (forms/typography);",
+      answer: "Έτοιμα utilities/styles. forms: ωραία form controls. typography: η class prose για στιλιζαρισμένο κείμενο (blog/markdown) χωρίς να στυλάρεις κάθε στοιχείο."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Στήσε brand theme με tokens"
+  scenario="Πάρε ένα UI με σκόρπια hex codes και μετέφερε τα brand χρώματα/radii σε design tokens στο config, και χρησιμοποίησέ τα ως utilities."
+  outcomes={[
+    "Να επεκτείνεις το theme με tokens.",
+    "Να διακρίνεις extend από αντικατάσταση.",
+    "Να χρησιμοποιείς arbitrary values σωστά (με μέτρο)."
+  ]}
+  steps={[
+    "Εντόπισε τα brand χρώματα/radii που επαναλαμβάνονται.",
+    "Βάλ' τα στο theme.extend (colors.brand, borderRadius.card).",
+    "Αντικατάστησε τα hex με bg-brand/rounded-card στο markup.",
+    "Άφησε arbitrary value μόνο για ένα γνήσια one-off case.",
+    "Άλλαξε το brand token και δες όλη την app να ενημερώνεται."
+  ]}
+  checkpoints={[
+    "Κανένα επαναλαμβανόμενο hex στο markup.",
+    "Χρήση theme.extend (όχι αντικατάσταση).",
+    "Αλλαγή ενός token ενημερώνει όλη την app.",
+    "Arbitrary values μόνο όπου δικαιολογείται."
+  ]}
+  mistakes={[
+    "Δήλωση colors εκτός extend → χάνεις τις default classes.",
+    "Arbitrary values παντού αντί για tokens.",
+    "Σκόρπια hex αντί για config tokens."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν αλλάζεις ολόκληρο το brand αγγίζοντας μόνο tokens στο config."
+/>

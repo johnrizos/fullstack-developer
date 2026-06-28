@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { allLessons } from "@/lib/curriculum";
 
 const STORAGE_KEY = "completedLessons";
@@ -46,11 +46,16 @@ function writeStoredProgress(ids: string[]) {
 export function useProgress() {
   // Local source of truth, kept reactive across tabs via storage + custom event.
   const stored = useSyncExternalStore(subscribeToProgress, readStoredProgress, () => "[]");
-  const completedLessons = useMemo(() => parseProgress(stored), [stored]);
 
-  // useSyncExternalStore returns the SSR snapshot ("[]") until hydration, so once
-  // we're past the server snapshot the data is ready.
-  const isLoaded = typeof window !== "undefined";
+  // Render server-consistent values μέχρι να γίνει mount. Το `typeof window` θα ήταν
+  // true ήδη στο πρώτο client render (πριν τα effects) και θα προκαλούσε hydration
+  // mismatch με το server HTML. Το mounted state γίνεται true ΜΕΤΑ το mount.
+  const [isLoaded, setIsLoaded] = useState(false);
+  useEffect(() => {
+    setIsLoaded(true);
+  }, []);
+
+  const completedLessons = useMemo(() => (isLoaded ? parseProgress(stored) : []), [isLoaded, stored]);
 
   const markCompleted = useCallback((lessonId: string) => {
     if (typeof window === "undefined") return;

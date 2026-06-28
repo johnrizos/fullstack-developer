@@ -1,0 +1,452 @@
+# Backend Frameworks: The Shared Mental Model
+
+Πρόκειται να μάθεις Express, NestJS, Django, Flask, FastAPI και Laravel. Φαίνονται έξι διαφορετικά πράγματα — στην πραγματικότητα λύνουν **το ίδιο πρόβλημα** με τον ίδιο σκελετό εννοιών. Αυτό το μάθημα κάνει δύο πράγματα: πρώτα σου **εξηγεί τις έννοιες** (τι ακριβώς είναι routing, middleware, ORM, validation, auth) με πραγματικά παραδείγματα, και μετά σου δείχνει **τι είναι κάθε framework ξεχωριστά και σε τι project ταιριάζει**. Έτσι, όταν μπεις στο κάθε track, ξέρεις ήδη τον χάρτη.
+
+## Το κοινό πρόβλημα που λύνουν όλα
+
+Κάθε web framework υπάρχει για να μετατρέπει ένα **HTTP request** σε ένα **HTTP response**, χωρίς να ξαναγράφεις από την αρχή sockets, HTTP parsing και I/O:
+
+```txt
+                       ┌─────────── το framework στήνει αυτή την αλυσίδα ──────────┐
+HTTP request  ──────►  routing  ──►  middleware  ──►  handler  ──►  data layer  ──────►  HTTP response
+  GET /tasks/42        ποιος          auth, logging,    η λογική     βάση δεδομένων        200 OK
+                       handler;       validation        σου           (ORM)               { "data": {...} }
+```
+
+Χωρίς framework θα έγραφες μόνος σου socket handling, parsing του HTTP, URL matching, body parsing. Το framework τα δίνει έτοιμα. Πάμε τώρα να εξηγήσουμε **κάθε κρίκο** αυτής της αλυσίδας — γιατί αυτές οι έννοιες είναι ίδιες σε ΟΛΑ τα frameworks.
+
+## Concept 1 — Routing: «ποιο URL πάει σε ποιον κώδικα»
+
+**Routing** είναι ο μηχανισμός που αντιστοιχίζει ένα εισερχόμενο URL + HTTP method σε μια συγκεκριμένη συνάρτηση που θα το χειριστεί. Σκέψου το σαν τηλεφωνικό κέντρο: «κλήση για `/tasks` → σύνδεσέ την με τον handler των tasks».
+
+```js
+// Express — "όταν έρθει GET στο /tasks/42, τρέξε αυτή τη συνάρτηση"
+app.get("/tasks/:id", (req, res) => {
+  const id = req.params.id;        // το :id είναι "route parameter" → "42"
+  res.json({ data: getTask(id) });
+});
+```
+
+Δύο πράγματα που κάνει πάντα το routing, σε κάθε framework:
+
+- **Method matching:** το `GET /tasks` και το `POST /tasks` πάνε σε **διαφορετικούς** handlers, παρόλο που το URL είναι ίδιο. Το method είναι μέρος της διεύθυνσης.
+- **Route parameters:** το κομμάτι `:id` (ή `<id>`, ή `{id}`) είναι μεταβλητό — πιάνει `/tasks/42`, `/tasks/99` κ.ο.κ. και σου δίνει την τιμή.
+
+Το ίδιο route σε τρεις διαφορετικές «διαλέκτους» — πρόσεξε πόσο όμοιο είναι:
+
+```python
+# Flask
+@app.get("/tasks/<int:id>")
+def show(id):
+    return { "data": get_task(id) }
+```
+
+```php
+// Laravel
+Route::get("/tasks/{id}", fn ($id) => ["data" => Task::find($id)]);
+```
+
+```ts
+// NestJS — το route γράφεται ως decorator πάνω από μια method
+@Get("tasks/:id")
+show(@Param("id") id: string) {
+  return { data: this.tasks.find(id) };
+}
+```
+
+Ίδια ιδέα παντού: *method + path με param → handler*. Αυτό είναι το «routing», και είναι το πρώτο πράγμα που ψάχνεις σε κάθε νέο framework.
+
+<Exercise
+  question="Γιατί το GET /tasks και το POST /tasks μπορούν να έχουν διαφορετικό handler;"
+  options={[
+    "Γιατί έχουν διαφορετικό URL path.",
+    "Γιατί το HTTP method είναι μέρος της διεύθυνσης — το routing ταιριάζει method + path μαζί.",
+    "Γιατί το POST είναι πιο γρήγορο."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το routing δεν κοιτάει μόνο το path αλλά και το method. GET /tasks = 'δώσε λίστα', POST /tasks = 'δημιούργησε νέο'. Ίδιο path, διαφορετικό ρήμα → διαφορετικός handler."
+/>
+
+## Concept 2 — Request & Response: το input και το output
+
+Κάθε handler παίρνει δύο πράγματα: το **request** (τι ζήτησε ο client) και έναν τρόπο να φτιάξει το **response** (τι του απαντάς).
+
+Στο request βρίσκεις πάντα τα ίδια: **params** (από το URL, π.χ. `:id`), **query string** (`?status=open`), **body** (τα δεδομένα ενός POST/PUT, συνήθως JSON), και **headers** (π.χ. το `Authorization` token).
+
+```js
+app.post("/tasks", (req, res) => {
+  const status = req.query.status;    // ?status=open       → query
+  const body   = req.body;            // { "title": "..." } → JSON body
+  const token  = req.headers.authorization;  //              → header
+
+  const task = createTask(body);
+  res.status(201).json({ data: task });   // status code 201 + JSON output
+});
+```
+
+Το **response** έχει τρία μέρη που ελέγχεις: **status code** (201 = created, 404 = not found — τα είδες στο REST APIs μάθημα), **headers**, και **body** (το JSON ή HTML που επιστρέφεις). Όλα τα frameworks σου δίνουν αυτά τα τρία — απλώς με λίγο διαφορετική σύνταξη.
+
+## Concept 3 — Middleware: ο κώδικας «ανάμεσα»
+
+**Middleware** είναι κώδικας που τρέχει **πριν** (ή μετά) τον handler σου, για πράγματα που χρειάζονται **πολλά** endpoints: authentication, logging, validation, CORS, rate limiting. Αντί να γράφεις τον ίδιο έλεγχο σε κάθε route, τον βάζεις μία φορά ως middleware.
+
+Φαντάσου το σαν σειρά από checkpoints που περνά το request πριν φτάσει στον προορισμό του:
+
+```txt
+request ──► [logger] ──► [auth] ──► [validation] ──► handler ──► response
+            "κατέγραψε"  "ποιος     "είναι έγκυρο    "η λογική
+                          είσαι;"    το input;"       σου"
+```
+
+```js
+// Ένα middleware: ελέγχει το token. Αν ΟΚ, καλεί next() → προχωρά.
+// Αν όχι, κόβει την αλυσίδα με 401 και ο handler δεν τρέχει ποτέ.
+function auth(req, res, next) {
+  if (!isValidToken(req.headers.authorization)) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  req.user = decodeToken(req.headers.authorization);   // περνά δεδομένα παρακάτω
+  next();   // "πήγαινε στο επόμενο checkpoint"
+}
+
+// Εφαρμόζεται σε ΟΛΑ τα protected routes — δεν επαναλαμβάνεις τον έλεγχο
+app.get("/tasks", auth, (req, res) => { /* εδώ ξέρεις ότι ο user είναι valid */ });
+```
+
+Η ιδέα είναι παντού ίδια, αλλάζει το όνομα: στο **Django/Laravel/Express** λέγεται *middleware*, στο **NestJS** σπάει σε *guards* (auth), *pipes* (validation) και *interceptors* (logging/transform), στο **Flask** είναι `before_request`. Αλλά πάντα είναι «κώδικας που τρέχει γύρω από τον handler για cross-cutting concerns».
+
+<PredictOutput
+  title="Πού ανήκει ο έλεγχος token;"
+  code={`Θες κάθε protected endpoint να απαιτεί έγκυρο JWT token.
+Πού βάζεις αυτόν τον έλεγχο για να ΜΗΝ τον γράψεις 20 φορές;`}
+  options={["Μέσα σε κάθε handler ξεχωριστά", "Σε ένα middleware/guard", "Στο routing"]}
+  correctOptionIndex={1}
+  answer="Σε ένα middleware/guard"
+  explanation="Auth = cross-cutting concern: το θέλουν πολλά endpoints. Το βάζεις μία φορά ως middleware (Express/Django) ή guard (NestJS) και το εφαρμόζεις σε όλα τα protected routes. Έτσι ο handler μένει καθαρός και ο έλεγχος γράφεται μία φορά."
+/>
+
+## Concept 4 — Data layer / ORM: πώς μιλάς στη βάση
+
+Σχεδόν κάθε backend αποθηκεύει δεδομένα σε βάση. Θα μπορούσες να γράφεις raw SQL, αλλά οι περισσότεροι χρησιμοποιούν **ORM** (Object-Relational Mapper): ένα εργαλείο που σου επιτρέπει να δουλεύεις με αντικείμενα/methods αντί για SQL strings, και μεταφράζει αυτό σε queries.
+
+```js
+// Με ORM (Prisma) — γράφεις κώδικα, όχι SQL
+const task = await db.task.findUnique({ where: { id: 42 } });
+const open = await db.task.findMany({ where: { status: "open" } });
+
+// Χωρίς ORM θα έγραφες: SELECT * FROM tasks WHERE id = 42;
+```
+
+Εδώ είναι μια **μεγάλη διαφορά** ανάμεσα στα frameworks, και πρέπει να την προσέξεις:
+
+- Κάποια frameworks φέρνουν **built-in ORM**: το Django έχει το Django ORM, το Laravel έχει το **Eloquent**. Ανοίγεις το framework και η βάση «είναι ήδη εκεί».
+- Κάποια **δεν** φέρνουν: το Express και το Flask σου αφήνουν να διαλέξεις (Prisma, SQLAlchemy κ.λπ.). Περισσότερη ελευθερία, αλλά εσύ το στήνεις.
+
+Το data layer το δουλεύεις σε βάθος αργότερα (Prisma, SQLAlchemy, Eloquent tracks) — εδώ αρκεί να ξέρεις ότι «ORM = μιλάς στη βάση με κώδικα αντί για SQL» και ότι άλλα frameworks το έχουν έτοιμο, άλλα όχι.
+
+## Concept 5 — Validation: μην εμπιστεύεσαι ποτέ το input
+
+**Validation** σημαίνει: πριν χρησιμοποιήσεις τα δεδομένα που έστειλε ο client, ελέγχεις ότι έχουν τη σωστή μορφή. Ποτέ δεν εμπιστεύεσαι ό,τι έρχεται απ' έξω.
+
+```js
+// Με Zod (Node): ορίζεις το "σχήμα" του έγκυρου input
+const CreateTask = z.object({
+  title: z.string().min(1),          // υποχρεωτικό, μη κενό
+  dueDate: z.string().datetime(),    // πρέπει να είναι έγκυρη ημερομηνία
+});
+
+const result = CreateTask.safeParse(req.body);
+if (!result.success) {
+  return res.status(422).json({ error: result.error.flatten() });  // 422 = invalid data
+}
+// από εδώ και κάτω, το result.data είναι εγγυημένα σωστό
+```
+
+Πάλι, ίδια ιδέα, διαφορετικά εργαλεία: **Zod** (Node), **Pydantic** (FastAPI), **Forms/serializers** (Django), **Form Requests** (Laravel), **ValidationPipe + DTO** (NestJS). Όλα κάνουν το ίδιο: «αυτό το input ταιριάζει με αυτό που περίμενα; αν όχι, 422».
+
+## Concept 6 — Authentication & Authorization
+
+Δύο διαφορετικά πράγματα που συχνά μπερδεύονται:
+
+- **Authentication** = «ποιος είσαι;» (login, token, session). Το είδες ως 401.
+- **Authorization** = «επιτρέπεσαι να το κάνεις αυτό;» (roles, permissions). Το είδες ως 403.
+
+Εδώ ξεχωρίζουν τα full-stack frameworks: Django και Laravel έρχονται με **ολόκληρο auth system** (users, login, permissions) έτοιμο. Express/Flask σου αφήνουν να το χτίσεις (ή να βάλεις βιβλιοθήκη όπως Passport). Αυτό μετράει πολύ στην επιλογή framework, όπως θα δεις παρακάτω.
+
+## MVC vs Layered — δύο ονόματα, μία ιδέα
+
+Θα ακούς συνέχεια **MVC** (Django, Laravel) και **layered/N-tier** (τυπικά Express/NestJS). Και τα δύο λένε το ίδιο: **χώρισε το HTTP από τη business logic από το data access**, ώστε ο κώδικας να τεστάρεται και να αλλάζει χωρίς ρίσκο.
+
+```txt
+MVC                         Layered
+  Controller  ─────────────  Route handler   ← HTTP: parsing, status codes
+  Model       ─────────────  Service + Repo   ← business logic + data access
+  View        ─────────────  template ή JSON serializer
+```
+
+Το βλέπεις σε βάθος στο μάθημα *Layered Architecture* του Node track. Κράτα τώρα: όλα τα frameworks σε σπρώχνουν προς αυτόν τον διαχωρισμό — άλλο πιο αυστηρά (NestJS), άλλο πιο χαλαρά (Express, Flask).
+
+## Ο άξονας που πραγματικά ξεχωρίζει τα frameworks: micro vs full-stack
+
+Πριν δούμε ένα-ένα τα frameworks, κράτα αυτόν τον άξονα — είναι η **κύρια** διαφορά τους. Δεν είναι «καλύτερο vs χειρότερο», είναι *πόσες αποφάσεις παίρνει το framework για σένα*:
+
+```txt
+  MICRO / minimal                              FULL-STACK / batteries-included
+  (εσύ διαλέγεις τα πάντα)                      (convention over configuration)
+  │                                                                          │
+  Express ──── Flask ──── FastAPI ──── NestJS ──── Django ──── Laravel
+  │                                                                          │
+  ✓ ευελιξία, μικρό core            ✓ έτοιμα: ORM, auth, admin, migrations
+  ✗ εσύ στήνεις structure/ORM/auth  ✗ μαθαίνεις τις συμβάσεις του, λιγότερη ευελιξία
+```
+
+Τώρα πάμε ένα-ένα: **τι είναι** το καθένα και **σε τι project ταιριάζει**.
+
+---
+
+## Express (Node.js) — το minimal πρότυπο
+
+**Τι είναι:** Το πιο διαδεδομένο web framework του Node.js. Είναι **micro**: δίνει routing + middleware + request/response, και τίποτα άλλο. ORM, validation, structure, auth — όλα δικές σου επιλογές. Είναι «λεπτό στρώμα πάνω από το HTTP του Node».
+
+```js
+import express from "express";
+const app = express();
+app.use(express.json());
+
+app.get("/tasks", (req, res) => res.json({ data: tasks }));
+app.post("/tasks", (req, res) => {
+  const task = createTask(req.body);
+  res.status(201).json({ data: task });
+});
+
+app.listen(3000);
+```
+
+**Πότε το διαλέγεις:**
+- REST APIs και microservices όπου θες **πλήρη έλεγχο** της δομής.
+- Όταν η ομάδα ξέρει JavaScript/TypeScript και θες το ίδιο language front+back.
+- Lightweight services, proxies, BFF (backend-for-frontend), real-time apps (με Socket.IO).
+- **Λιγότερο ιδανικό** για: μεγάλο, CRUD-heavy app όπου θα ξαναέγραφες auth/admin/ORM που άλλα frameworks δίνουν δωρεάν.
+
+## NestJS (Node.js) — δομή & enterprise patterns
+
+**Τι είναι:** TypeScript-first framework πάνω στο Node (τρέχει Express από κάτω). Φέρνει **opinionated structure**: modules, controllers, providers και **dependency injection** out of the box — η αρχιτεκτονική που θυμίζει Angular/Spring. Σου επιβάλλει *δομή*, αλλά σ' αφήνει να διαλέξεις ORM. Στέκεται στη μέση του άξονα.
+
+```ts
+@Controller("tasks")
+export class TasksController {
+  constructor(private readonly tasksService: TasksService) {}   // DI: το service "ενίεται"
+
+  @Get(":id")
+  findOne(@Param("id") id: string) {
+    return this.tasksService.findOne(id);
+  }
+}
+```
+
+**Πότε το διαλέγεις:**
+- **Enterprise / μεγάλες ομάδες** όπου η συνέπεια δομής μετράει περισσότερο από την ευελιξία.
+- Σύνθετα APIs με πολλά modules, όπου το dependency injection και τα testing utilities βοηθούν.
+- Όταν θες TypeScript σοβαρά και «μια προφανή θέση για το καθετί».
+- **Overkill** για: μικρό script ή απλό API τριών endpoints — εκεί το Express είναι αρκετό.
+
+## Django (Python) — batteries-included, full-stack
+
+**Τι είναι:** Το «batteries-included» Python framework. Έρχεται με **τα πάντα**: built-in ORM, migrations, authentication, forms, templating, και το ξακουστό **auto-generated admin panel**. Ακολουθεί το μοτίβο MVT (Model-View-Template, η εκδοχή του MVC). Convention over configuration: παίζεις «the Django way».
+
+```python
+# models.py — ο ORM είναι built-in
+class Task(models.Model):
+    title = models.CharField(max_length=200)
+    completed = models.BooleanField(default=False)
+
+# views.py
+def task_list(request):
+    return render(request, "tasks.html", { "tasks": Task.objects.all() })
+```
+
+**Πότε το διαλέγεις:**
+- **CRUD-heavy apps, admin panels, content sites, dashboards** — το admin panel σου δίνει διαχείριση δεδομένων χωρίς κώδικα.
+- Όταν θες ταχύτητα ανάπτυξης και «μπαταρίες included»: auth, ORM, migrations έτοιμα από μέρα μηδέν.
+- Με το **Django REST Framework (DRF)** για σοβαρά REST APIs.
+- **Λιγότερο ιδανικό** για: πολύ μικρά services ή όταν θες μέγιστη ελευθερία στην αρχιτεκτονική (το Django έχει «τον δικό του τρόπο»).
+
+## Flask (Python) — το micro της Python
+
+**Τι είναι:** Το minimal micro-framework της Python — το αντίστοιχο του Express στον κόσμο της Python. Δίνει routing + Jinja2 templates και τίποτα παραπάνω. Βάση, forms, structure τα προσθέτεις με extensions (Flask-SQLAlchemy κ.λπ.). Ευελιξία αντί για conventions.
+
+```python
+from flask import Flask
+app = Flask(__name__)
+
+@app.get("/tasks/<int:id>")
+def show(id):
+    return { "data": get_task(id) }
+```
+
+**Πότε το διαλέγεις:**
+- Μικρά έως μεσαία apps και APIs όπου θες **ελάχιστο overhead** και να διαλέγεις εσύ τα κομμάτια.
+- Prototypes, εσωτερικά tools, microservices.
+- Όταν είσαι σε Python ecosystem αλλά το Django είναι «πολύ» για το μέγεθος του project.
+- **Λιγότερο ιδανικό** για: μεγάλο app που θα χρειαστεί admin/auth/ORM — εκεί το Django σου τα δίνει έτοιμα.
+
+## FastAPI (Python) — modern, async, API-first
+
+**Τι είναι:** Μοντέρνο, **async-first** Python framework φτιαγμένο για APIs. Χρησιμοποιεί **Pydantic** για validation και type hints, και παράγει **αυτόματα** interactive API docs (OpenAPI/Swagger). Γρήγορο και αγαπημένο για data/AI services.
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+class Task(BaseModel):     # validation + types μαζί
+    title: str
+    completed: bool = False
+
+app = FastAPI()
+
+@app.post("/tasks")
+async def create(task: Task):    # το input validάρεται αυτόματα από το type
+    return { "data": task }
+```
+
+**Πότε το διαλέγεις:**
+- **JSON/REST APIs**, ειδικά I/O-heavy ή high-concurrency (async).
+- **Data, ML/AI, LLM services** — είναι το de-facto framework για να σερβίρεις Python models πίσω από API.
+- Όταν θες αυτόματο validation + auto-generated docs με ελάχιστο κώδικα.
+- **Λιγότερο ιδανικό** για: server-rendered HTML sites με templates/admin (εκεί ταιριάζει Django).
+
+## Laravel (PHP) — το full-stack της PHP
+
+**Τι είναι:** Το πιο δημοφιλές PHP framework, full-stack και batteries-included σαν το Django. Φέρνει **Eloquent ORM**, migrations, **Blade** templating, validation, auth (Sanctum), queues. MVC με κομψό, εκφραστικό API και τεράστιο ecosystem.
+
+```php
+// routes/web.php
+Route::get("/tasks/{id}", [TaskController::class, "show"]);
+
+// app/Models/Task.php — Eloquent ORM, built-in
+class Task extends Model {}
+Task::find(42);                  // SELECT * FROM tasks WHERE id = 42
+Task::where("completed", false)->get();
+```
+
+**Πότε το διαλέγεις:**
+- **Full-stack web apps, SaaS, e-commerce, admin-heavy products** στο PHP ecosystem.
+- Όταν θες ταχύτητα ανάπτυξης με ORM/auth/queues/templating έτοιμα.
+- Όταν η ομάδα ή το hosting είναι PHP-based (τεράστιο μέρος του web τρέχει PHP).
+- **Λιγότερο ιδανικό** για: μη-PHP περιβάλλον, ή pure microservice όπου ένα micro-framework αρκεί.
+
+---
+
+## Σύνοψη: ποιο για τι
+
+Διάβασέ το σαν «cheat sheet» — μία αράδα ανά framework:
+
+- **Express** · JS/TS · *micro* → REST APIs, microservices, όταν θες πλήρη έλεγχο.
+- **NestJS** · TS · *structured* → enterprise apps, μεγάλες ομάδες, σύνθετα APIs με δομή.
+- **Django** · Python · *full-stack* → CRUD/admin apps, content sites, γρήγορη ανάπτυξη.
+- **Flask** · Python · *micro* → μικρά/μεσαία apps, prototypes, μέγιστη ελευθερία.
+- **FastAPI** · Python · *async/API-first* → JSON APIs, data/AI/ML services, high-concurrency.
+- **Laravel** · PHP · *full-stack* → full-stack SaaS, e-commerce, admin-heavy products.
+
+Ο κανόνας-τσέπη: **micro** (Express, Flask) όταν θες ευελιξία και έλεγχο · **full-stack** (Django, Laravel) όταν θες ταχύτητα με έτοιμα ORM/auth/admin · **FastAPI** για data/AI APIs · **NestJS** για enterprise δομή στο Node.
+
+<Exercise
+  question="Ομάδα 2 ατόμων, CRUD-heavy admin app (χρήστες, ρόλοι, πίνακες διαχείρισης), προθεσμία 3 βδομάδες, Python stack. Τι ταιριάζει καλύτερα;"
+  options={[
+    "Flask — micro, για να στήσεις εσύ τα πάντα.",
+    "Django — το built-in admin, auth και ORM δίνουν τα μισά features χωρίς κώδικα.",
+    "FastAPI — γιατί είναι το πιο γρήγορο."
+  ]}
+  correctOptionIndex={1}
+  explanation="CRUD-heavy + admin + σφιχτή προθεσμία = batteries-included. Το Django auto-admin, auth και ORM κερδίζουν εβδομάδες. Το Flask θα σ' έβαζε να χτίσεις τα πάντα· το FastAPI είναι για JSON APIs, όχι admin-heavy HTML apps."
+/>
+
+<Exercise
+  question="Θες να σερβίρεις ένα ML model πίσω από ένα γρήγορο JSON API, με αυτόματο validation και docs. Τι διαλέγεις;"
+  options={["Laravel", "FastAPI", "Express χωρίς τίποτα άλλο"]}
+  correctOptionIndex={1}
+  explanation="FastAPI: async-first, Pydantic validation από type hints, auto-generated OpenAPI docs, και ζει στο Python ecosystem όπου είναι τα ML libraries. Είναι το de-facto framework για data/AI services."
+/>
+
+## Πώς να διαβάσεις τα επόμενα tracks
+
+Με αυτόν τον χάρτη, κάθε framework track γίνεται στοχευμένο. Σε κάθε `*-foundations` μάθημα, ψάξε ενεργά τα concepts που μόλις έμαθες:
+
+1. **Routing:** πώς δηλώνω «αυτό το URL → αυτός ο handler»;
+2. **Middleware/pipeline:** πού μπαίνει auth/logging/validation πριν τον handler;
+3. **Data layer:** built-in ORM ή φέρνω δικό μου;
+4. **Validation & auth:** έτοιμα ή τα στήνω;
+5. **Δομή:** convention που πρέπει να ακολουθήσω, ή ελευθερία;
+
+Δεν ξαναμαθαίνεις «τι είναι middleware» πέντε φορές — το ξέρεις ήδη, βλέπεις απλώς τη διάλεκτο του κάθε framework.
+
+## Πώς απαντάς στη συνέντευξη
+
+> «You've used Express but we use Django — is that a problem?»
+
+> Not really. Backend frameworks share the same model: routing maps a URL and method to a handler, middleware handles cross-cutting concerns like auth and logging, validation rejects bad input, and a data layer or ORM talks to the database — MVC and layered architecture are just two names for separating HTTP from business logic from data access. What actually differs is whether a framework is minimal like Express or Flask, where I wire up structure, ORM and auth myself, versus batteries-included like Django or Laravel that ship an ORM, migrations, auth and even an admin panel. FastAPI is the async, API-first choice for data and AI services, and NestJS adds enterprise structure on Node. So picking up Django is learning its conventions, not relearning backend development.
+
+<Flashcards
+  title="Backend frameworks — concepts & fit"
+  cards={[
+    {
+      question: "Τι είναι routing;",
+      answer: "Ο μηχανισμός που αντιστοιχίζει HTTP method + URL path σε έναν handler. GET /tasks και POST /tasks πάνε σε διαφορετικούς handlers· τα route params (:id) πιάνουν μεταβλητά κομμάτια του URL."
+    },
+    {
+      question: "Τι είναι middleware και γιατί υπάρχει;",
+      answer: "Κώδικας που τρέχει πριν/μετά τον handler για cross-cutting concerns (auth, logging, validation, CORS). Το γράφεις μία φορά και το εφαρμόζεις σε πολλά routes αντί να επαναλαμβάνεις τον ίδιο έλεγχο."
+    },
+    {
+      question: "Τι είναι ORM;",
+      answer: "Object-Relational Mapper: μιλάς στη βάση με αντικείμενα/methods αντί για raw SQL. db.task.findUnique({where:{id:42}}) αντί για SELECT. Django/Laravel το έχουν built-in· Express/Flask το προσθέτεις."
+    },
+    {
+      question: "Authentication vs Authorization;",
+      answer: "Authentication = 'ποιος είσαι' (login/token, 401 αν αποτύχει). Authorization = 'επιτρέπεσαι να το κάνεις' (roles/permissions, 403 αν όχι)."
+    },
+    {
+      question: "Micro vs full-stack framework;",
+      answer: "Micro (Express, Flask): routing + λίγα, εσύ διαλέγεις ORM/auth/structure — μέγιστη ευελιξία. Full-stack (Django, Laravel): ORM, auth, migrations, admin έτοιμα — ταχύτητα, αλλά παίζεις με τις συμβάσεις τους."
+    },
+    {
+      question: "Πότε Express, πότε Django, πότε FastAPI;",
+      answer: "Express: REST APIs/microservices με full control (JS/TS). Django: CRUD/admin-heavy apps με γρήγορη ανάπτυξη (Python). FastAPI: async JSON APIs και data/AI services με auto validation+docs (Python)."
+    },
+    {
+      question: "Πού στέκεται το NestJS;",
+      answer: "Στη μέση: opinionated structure (modules + dependency injection) πάνω σε Node, αλλά διαλέγεις ORM. Ιδανικό για enterprise apps και μεγάλες ομάδες όπου η συνέπεια δομής μετράει."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Διάλεξε framework ανά project + φτιάξε comparison map"
+  scenario="Χτίσε έναν πίνακα αναφοράς που θα χρησιμοποιείς σε όλη την ενότητα Backend, και εξάσκησε την επιλογή framework από πραγματικές ανάγκες project — όχι από hype."
+  outcomes={[
+    "Να αναγνωρίζεις routing, middleware, ORM, validation, auth σε οποιοδήποτε framework.",
+    "Να τοποθετείς ένα framework στον άξονα micro vs full-stack.",
+    "Να διαλέγεις framework από τις ανάγκες ενός project."
+  ]}
+  steps={[
+    "Πίνακας: γραμμές = routing, middleware, data layer, validation, auth· στήλες = Express, NestJS, Django, Flask, FastAPI, Laravel.",
+    "Για κάθε framework γράψε: micro ή full-stack; γλώσσα; sync ή async;",
+    "Σενάριο A: real-time chat με JS ομάδα. Ποιο και γιατί;",
+    "Σενάριο B: admin-heavy CRUD SaaS, σφιχτή προθεσμία. Ποιο και γιατί;",
+    "Σενάριο C: API που σερβίρει ML model. Ποιο και γιατί;",
+    "Σημείωσε για κάθε framework το ΕΝΑ πράγμα που κάνει διαφορετικά από τα άλλα."
+  ]}
+  checkpoints={[
+    "Μπορείς να δείξεις το ίδιο concept (π.χ. middleware) και στα 6 frameworks.",
+    "Τοποθετείς σωστά κάθε framework στον άξονα micro vs full-stack.",
+    "Κάθε επιλογή framework ανά σενάριο έχει συγκεκριμένο λόγο (admin; async; γλώσσα; control).",
+    "Ξεχωρίζεις πότε full-stack κερδίζει χρόνο και πότε micro δίνει ευελιξία."
+  ]}
+  mistakes={[
+    "Να νομίζεις ότι κάθε framework είναι εντελώς νέα γνώση από το μηδέν.",
+    "Να συγκρίνεις μόνο με benchmarks αντί για philosophy/fit.",
+    "Να διαλέγεις full-stack όταν θες ευελιξία, ή micro όταν θες ταχύτητα ανάπτυξης.",
+    "Να μπερδεύεις τη γλώσσα/σύνταξη με τις core έννοιες (routing/middleware/ORM είναι παντού ίδια)."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν, δοθέντος ενός project, διαλέγεις framework με συγκεκριμένο λόγο, και ανοίγοντας ένα άγνωστο framework εντοπίζεις σε λίγα λεπτά routing/middleware/data access."
+/>

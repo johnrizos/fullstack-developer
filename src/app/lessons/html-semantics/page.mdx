@@ -66,13 +66,89 @@ main {
 
 ### Δομή σελίδας (page layout)
 
-- `header`: η πάνω περιοχή μιας σελίδας ή ενότητας. Συνήθως κρατά logo, τίτλο και το κύριο `nav`. Μπορείς να έχεις πολλά `header` (ένα ανά `article`/`section`).
-- `nav`: ομάδα από links πλοήγησης (κύριο menu, breadcrumbs, table of contents). Δεν τυλίγεις *κάθε* link σε `nav` — μόνο σημαντικά block πλοήγησης.
-- `main`: το μοναδικό, κύριο περιεχόμενο της σελίδας. **Ένα `main` ανά σελίδα** και δεν μπαίνει μέσα σε `header`, `nav`, `article`, `aside` ή `footer`.
-- `section`: θεματική ενότητα του περιεχομένου, που (ιδανικά) έχει δικό της heading.
-- `article`: αυτόνομο περιεχόμενο που στέκεται μόνο του — blog post, news item, σχόλιο, product card. Δοκιμή: «βγάζει νόημα αν το βγάλεις από τη σελίδα;».
-- `aside`: περιεχόμενο δευτερεύον/πλάγιο σε σχέση με τα γύρω — sidebar, σχετικά links, διαφήμιση, callout box.
-- `footer`: η κάτω περιοχή σελίδας ή ενότητας — copyright, links, στοιχεία επικοινωνίας, συγγραφέας/ημερομηνία ενός `article`.
+Τα περισσότερα από αυτά δέχονται *flow content* (σχεδόν οποιοδήποτε element), οπότε οι κανόνες φωλιάσματος είναι κυρίως λίγες **σημαντικές απαγορεύσεις**. Για κάθε element: τι κάνει, πού επιτρέπεται να μπει (**parent**), τι λογικά περιέχει (**children**) και πού **δεν** μπαίνει.
+
+> **Λεζάντα μοναδικότητας:** το badge `★ μοναδικό` = ακριβώς **ένα ανά σελίδα**. Το badge `1 στο top level` = ένα για όλη τη σελίδα, αλλά **επαναλαμβάνεται** μέσα σε `article`/`section`. Όσα **δεν** έχουν badge μπαίνουν **όσες φορές** χρειάζεται.
+
+- **`header`** `1 στο top level` — η πάνω περιοχή σελίδας ή ενότητας (logo, τίτλος, κύριο `nav`). Ένα banner στην κορυφή, αλλά μπορείς να έχεις κι άλλα (ένα ανά `article`/`section`).
+  - *Parent:* `body`, ή μέσα σε `main`, `article`, `section`, `aside`, `nav`.
+  - *Children:* headings `h1`–`h6`, `nav`, `p`, logo `img`, search form — flow content.
+  - *ΟΧΙ:* μέσα σε άλλο `header`, σε `footer` ή σε `address`· και **δεν** περιέχει `main`, ούτε άλλο `header`/`footer`.
+- **`nav`** — ομάδα από links πλοήγησης (menu, breadcrumbs, table of contents). Μόνο για *σημαντικά* block πλοήγησης, όχι για κάθε link.
+  - *Parent:* σχεδόν παντού — `body`, `header`, `main`, `section`, `article`, `aside`, `footer`.
+  - *Children:* συνήθως λίστα links (`ul > li > a`), ή heading + links.
+  - *ΟΧΙ:* μέσα σε `address`.
+- **`main`** `★ μοναδικό` — το μοναδικό, κύριο περιεχόμενο της σελίδας. **Ένα ορατό `main` ανά σελίδα.**
+  - *Parent:* ιδανικά απευθείας στο `body` (ή σε `div`/`form` wrapper για layout).
+  - *Children:* οτιδήποτε — όλο το κύριο περιεχόμενο.
+  - *ΟΧΙ:* **ποτέ** μέσα σε `header`, `nav`, `article`, `aside` ή `footer`.
+- **`section`** — θεματική ενότητα περιεχομένου, που (ιδανικά) έχει δικό της heading.
+  - *Parent:* `body`, `main`, `article`, `aside`, ή άλλο `section`.
+  - *Children:* flow content + heading· μπορεί να περιέχει `article` ή εμφωλευμένα `section`.
+  - *ΟΧΙ:* δεν είναι generic wrapper — αν δεν υπάρχει θεματικό heading, βάλε `div`.
+- **`article`** — αυτόνομο περιεχόμενο που στέκεται μόνο του (blog post, news item, σχόλιο, product card). Δοκιμή: «βγάζει νόημα αν το βγάλεις από τη σελίδα;».
+  - *Parent:* `body`, `main`, `section`, `aside`, ή άλλο `article` (π.χ. σχόλια μέσα σε post).
+  - *Children:* δικό του `header`/`footer`, `section`, εμφωλευμένα `article` — flow content.
+  - *ΟΧΙ:* μέσα σε `address`.
+- **`aside`** — περιεχόμενο δευτερεύον/πλάγιο (sidebar, σχετικά links, διαφήμιση, callout box).
+  - *Parent:* `body`, `main`, `article`, `section`.
+  - *Children:* flow content — heading, related `nav`, callout.
+  - *ΟΧΙ:* μέσα σε `address`· **δεν** περιέχει `main`.
+- **`footer`** `1 στο top level` — η κάτω περιοχή σελίδας ή ενότητας (copyright, links, στοιχεία επικοινωνίας, συγγραφέας/ημερομηνία `article`).
+  - *Parent:* `body`, `main`, `article`, `section`, `aside`, `nav`.
+  - *Children:* `nav`, `address`, copyright, links — flow content.
+  - *ΟΧΙ:* μέσα σε άλλο `footer`, σε `header` ή σε `address`· και **δεν** περιέχει `main`, `header` ή άλλο `footer`.
+
+**Χρυσοί κανόνες φωλιάσματος** (αν θυμηθείς μόνο αυτά, καλύπτεις το 90%):
+
+1. `main` → ποτέ μέσα σε `header`/`nav`/`article`/`aside`/`footer`, και ένα ανά σελίδα.
+2. `header` & `footer` → δεν φωλιάζουν μέσα στον εαυτό τους ή το ένα μέσα στο άλλο, και δεν περιέχουν `main`.
+3. `address` → μόνο contact info· **όχι** sectioning elements (`article`/`section`/`nav`/`aside`), όχι headings, όχι `header`/`footer`.
+4. `section`, `article`, `aside`, `nav` → φωλιάζουν ελεύθερα μέσα σε flow content· ο ρόλος τους εξαρτάται από το **πού** μπαίνουν.
+
+### Δέντρο: τι μπαίνει μέσα σε τι
+
+Έτσι φαίνεται μια τυπική σελίδα ως δέντρο. Δίπλα σε κάθε element, το «→ περιέχει:» δείχνει τι μπαίνει συνήθως **μέσα** του:
+
+```text
+<body>
+│
+├─ <header>  [1 στο top level]  → περιέχει: h1, nav, (logo) img
+│   ├─ <h1>
+│   └─ <nav>          → περιέχει: ul > li > a  (links πλοήγησης)
+│
+├─ <main>  [★ μοναδικό]  → περιέχει: article, section, aside, headings…
+│   │
+│   ├─ <article>      → περιέχει: header, section, footer, nested article
+│   │   ├─ <header>   → h1–h6, <time>  (τίτλος + ημερομηνία του article)
+│   │   ├─ <section>  → περιέχει: heading + p, figure, details…
+│   │   │   ├─ <h2>
+│   │   │   ├─ <p>
+│   │   │   └─ <figure> → <img> + <figcaption>
+│   │   ├─ <article>  → nested (π.χ. σχόλια κάτω από το post)
+│   │   └─ <footer>   → <address>  (συγγραφέας/ημερομηνία του article)
+│   │
+│   └─ <aside>        → περιέχει: heading, nav, p  (callout / σχετικά)
+│       ├─ <h2>
+│       └─ <nav>      → related links
+│
+└─ <footer>  [1 στο top level]  → περιέχει: nav, address, p  (copyright)
+    ├─ <nav>          → footer links
+    └─ <address>      → στοιχεία επικοινωνίας
+```
+
+Πρόσεξε δύο πράγματα: (1) το `<main>` κάθεται **δίπλα** στα `header`/`footer`, ποτέ μέσα τους· (2) τα `header`, `footer`, `nav` εμφανίζονται σε **δύο επίπεδα** — ένα για όλη τη σελίδα και ένα μέσα στο `article` — και ο ρόλος τους αλλάζει ανάλογα με το πού φωλιάζουν.
+
+<Exercise
+  question="Ποιο από τα παρακάτω φωλιάσματα είναι ΛΑΘΟΣ;"
+  options={[
+    "<article> με δικό του <header> και <footer> μέσα.",
+    "<aside> μέσα σε <article>.",
+    "<main> μέσα σε <article>."
+  ]}
+  correctOptionIndex={2}
+  explanation="Το main δεν μπαίνει ποτέ μέσα σε article (ούτε σε header/nav/aside/footer) και πρέπει να είναι ένα ανά σελίδα. Αντίθετα, ένα article ΜΠΟΡΕΙ να έχει δικό του header/footer, και ένα aside μπορεί να φωλιάζει μέσα σε article ως πλάγιο περιεχόμενο."
+/>
 
 ### Κείμενο & περιεχόμενο (content semantics)
 
@@ -81,7 +157,10 @@ main {
 - `figure` + `figcaption`: εικόνα/διάγραμμα/κώδικας μαζί με τη λεζάντα του.
 - `time`: ημερομηνία ή ώρα σε μηχαναγνώσιμη μορφή με το attribute `datetime`, π.χ. `<time datetime="2026-06-27">27 Ιουν 2026</time>`.
 - `mark`: τονισμένο/highlighted κομμάτι κειμένου (π.χ. αποτέλεσμα αναζήτησης).
-- `address`: στοιχεία επικοινωνίας για τον κοντινότερο `article` ή για όλη τη σελίδα.
+- `address`: **στοιχεία επικοινωνίας** (όνομα, email, τηλέφωνο, social) του συγγραφέα του κοντινότερου `article` ή όλης της σελίδας. **Όχι** για οποιαδήποτε ταχυδρομική διεύθυνση μέσα στο κείμενο — μόνο contact info.
+  - *Parent:* συνήθως μέσα σε `footer` (του `article` ή της σελίδας).
+  - *Children:* μόνο απλό inline περιεχόμενο — κείμενο και links (`a`, `mailto:`, `tel:`).
+  - *ΟΧΙ:* headings `h1`–`h6`, sectioning elements (`article`/`section`/`nav`/`aside`), `header`/`footer`, ή άλλο `address`.
 - `blockquote` / `cite`: παράθεση και αναφορά πηγής.
 - `details` + `summary`: αναδιπλούμενο (collapsible) περιεχόμενο — accordion χωρίς JavaScript.
 - `abbr`: συντομογραφία με επεξήγηση στο `title`, π.χ. `<abbr title="Cascading Style Sheets">CSS</abbr>`.

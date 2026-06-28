@@ -1,0 +1,149 @@
+# Grid System & Layout
+
+Το πιο διάσημο κομμάτι του Bootstrap είναι το **12-column grid**: responsive layout χωρίς να γράψεις media queries. Αυτό το μάθημα το καλύπτει σε βάθος — containers, rows, columns, breakpoints, offsets, gutters και auto-layout — μαζί με τα layout utilities.
+
+## container → row → col
+
+Το grid στήνεται σε τρία επίπεδα, και κάθε `row` χωρίζεται σε **12 στήλες**:
+
+```html
+<div class="container">
+  <div class="row">
+    <div class="col-12 col-md-6 col-lg-4">Στήλη A</div>
+    <div class="col-12 col-md-6 col-lg-4">Στήλη B</div>
+    <div class="col-12 col-md-6 col-lg-4">Στήλη C</div>
+  </div>
+</div>
+```
+
+- `col-12` → όλο το πλάτος (12/12) σε mobile → οι στήλες **στοιβάζονται**.
+- `col-md-6` → μισό (6/12) από tablet → 2 ανά γραμμή.
+- `col-lg-4` → τρίτο (4/12) σε desktop → 3 ανά γραμμή.
+
+**Κανόνας:** το άθροισμα των στηλών ανά row είναι **12**. Αν ξεπεράσει, τυλίγονται στην επόμενη γραμμή.
+
+## Breakpoints
+
+Τα responsive suffixes του Bootstrap:
+
+| Suffix | Από πλάτος | Συσκευή |
+|---|---|---|
+| (καμία) | < 576 | extra small (mobile) |
+| `sm` | ≥ 576px | small |
+| `md` | ≥ 768px | tablet |
+| `lg` | ≥ 992px | desktop |
+| `xl` | ≥ 1200px | large |
+| `xxl` | ≥ 1400px | extra large |
+
+Όπως το Tailwind, είναι **mobile-first**: το `col-md-6` ισχύει από `md` **κι άνω**.
+
+## Containers
+
+- `.container` → fixed-width, με max-width ανά breakpoint (κεντραρισμένο περιεχόμενο).
+- `.container-fluid` → 100% πλάτος πάντα.
+- `.container-md` → fluid μέχρι το `md`, μετά fixed.
+
+## Auto-layout, offsets & gutters
+
+```html
+<!-- auto-layout: ίσες στήλες χωρίς αριθμό -->
+<div class="row"><div class="col">A</div><div class="col">B</div></div>
+
+<!-- offset: άφησε κενό αριστερά (2 στήλες) -->
+<div class="col-md-4 offset-md-2">Μετατοπισμένη</div>
+
+<!-- gutters: έλεγχος κενού μεταξύ στηλών -->
+<div class="row g-4">...</div>   <!-- g-4 = μεγαλύτερο gap -->
+```
+
+`col` (χωρίς αριθμό) μοιράζει ίσα τον χώρο· `offset-*` αφήνει κενό· `g-*` ελέγχει το gutter (κενό) ανάμεσα στις στήλες.
+
+## Layout utilities
+
+Πέρα από το grid, το Bootstrap έχει utilities για γρήγορες προσαρμογές:
+
+```html
+<div class="d-flex justify-content-between align-items-center">...</div>
+<div class="d-none d-md-block">Κρυφό σε mobile, ορατό από md</div>
+```
+
+`d-flex` (display flex), `justify-content-*`, `align-items-*`, `d-none`/`d-block` (display, responsive) — συμπληρώνουν το grid για fine-tuning.
+
+<Exercise
+  question="Σε ένα row βάζεις 4 στήλες με 'col-md-4'. Τι συμβαίνει από το md κι άνω;"
+  options={[
+    "Και οι 4 σε μία γραμμή.",
+    "3 στήλες χωράνε στη γραμμή (4+4+4=12) και η 4η τυλίγεται στην επόμενη γραμμή.",
+    "Σπάει το layout εντελώς."
+  ]}
+  correctOptionIndex={1}
+  explanation="col-md-4 = 4/12. Τρεις στήλες γεμίζουν τη γραμμή (12), οπότε η 4η δεν χωράει και τυλίγεται κάτω. Το grid κρατά το όριο των 12 ανά γραμμή και κάνει wrap το υπόλοιπο."
+/>
+
+<PredictOutput
+  title="Πόσες στήλες ανά γραμμή;"
+  code={`<div class="row">
+  6 στήλες, η καθεμία class="col-12 col-md-6 col-xl-3"
+</div>
+Σε οθόνη 1300px (≥ xl=1200), πόσες ανά γραμμή;`}
+  options={["2 (col-md-6)", "4 (col-xl-3)", "6 σε μία γραμμή"]}
+  correctOptionIndex={1}
+  answer="4 (col-xl-3)"
+  explanation="Στα 1300px ισχύει το xl (≥1200): col-xl-3 = 3/12, άρα 4 στήλες ανά γραμμή (4×3=12). Mobile-first: ισχύει το μεγαλύτερο breakpoint που έχει περαστεί (xl υπερισχύει του md εδώ)."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «Explain Bootstrap's grid.»
+
+> It's a 12-column responsive grid built as `container → row → col`. Each row is divided into 12 units, and I assign widths per breakpoint with classes like `col-12 col-md-6 col-lg-4` — full width and stacked on mobile, half from 768px, a third from 992px. The columns in a row should sum to 12; anything over wraps to the next line. It's mobile-first, so `col-md-6` applies from `md` up. I can use bare `col` for equal auto-layout columns, `offset-*` to push columns over, and `g-*` to control gutters — all without writing a single media query.
+
+<Flashcards
+  title="Grid system — drills"
+  cards={[
+    {
+      question: "Πώς δομείται το Bootstrap grid;",
+      answer: "container → row → col, με κάθε row σε 12 στήλες. col-12 = όλο το πλάτος, col-md-6 = μισό από md, col-lg-4 = τρίτο σε lg. Το άθροισμα ανά row είναι 12."
+    },
+    {
+      question: "Τι γίνεται αν οι στήλες ξεπεράσουν το 12;",
+      answer: "Τυλίγονται (wrap) στην επόμενη γραμμή. Π.χ. 4 × col-md-4 → 3 στη γραμμή (12) και η 4η κάτω."
+    },
+    {
+      question: "container vs container-fluid;",
+      answer: "container: fixed-width με max-width ανά breakpoint (κεντραρισμένο). container-fluid: 100% πλάτος πάντα. container-{bp}: fluid μέχρι το breakpoint, μετά fixed."
+    },
+    {
+      question: "Τι κάνουν col (χωρίς αριθμό), offset, g-*;",
+      answer: "col: ίσες auto-layout στήλες. offset-md-2: κενό 2 στηλών αριστερά. g-4: μεγαλύτερο gutter (κενό μεταξύ στηλών)."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Responsive dashboard layout"
+  scenario="Στήσε ένα layout: ένα header full-width και ένα grid 3 καρτών που στοιβάζονται σε mobile, 2 σε tablet, 3 σε desktop — μόνο με το grid."
+  outcomes={[
+    "Να στήνεις container/row/col σωστά.",
+    "Να ορίζεις responsive πλάτη ανά breakpoint.",
+    "Να χρησιμοποιείς offsets/gutters/auto-layout."
+  ]}
+  steps={[
+    "Τύλιξε σε container → row.",
+    "Κάρτες: col-12 col-md-6 col-lg-4 (1→2→3 στήλες).",
+    "Πρόσθεσε gutter (g-4) για κενό μεταξύ καρτών.",
+    "Δοκίμασε ένα offset σε μία στήλη και ένα bare col για auto-layout.",
+    "Δοκίμασε διάφορα πλάτη — επιβεβαίωσε στήλες ανά breakpoint."
+  ]}
+  checkpoints={[
+    "Το άθροισμα στηλών ανά row = 12.",
+    "Σωστές στήλες ανά breakpoint (1/2/3).",
+    "Gutters/offsets λειτουργούν όπως περιμένεις."
+  ]}
+  mistakes={[
+    "Άθροισμα ≠ 12 (απρόσμενο wrap).",
+    "col χωρίς row, ή row χωρίς container.",
+    "Να ξεκινάς από desktop αντί mobile-first."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν στήνεις responsive layouts μόνο με το 12-column grid και προβλέπεις τις στήλες ανά πλάτος."
+/>

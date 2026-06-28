@@ -4,14 +4,18 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { allLessons, formatDuration, totalEstimatedMinutes } from "@/lib/curriculum";
 import { useProgress } from "@/hooks/useProgress";
+import { useSheetSync } from "@/hooks/useSheetSync";
 import { ThemeToggle } from "./ThemeToggle";
 import { FontSizeControl } from "./FontSizeControl";
+import { SheetSyncControl } from "./SheetSyncControl";
 import { SearchModal } from "./SearchModal";
 
 export function SiteHeader() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { isCompleted, isLoaded, resetProgress, studiedMinutes } = useProgress();
+  // Always-mounted: το auto-sync τρέχει ανεξάρτητα από το αν είναι ανοιχτό το dropdown.
+  const sync = useSheetSync();
 
   const completedCount = isLoaded ? allLessons.filter((lesson) => isCompleted(lesson.id)).length : 0;
   const progressPercent = Math.round((completedCount / allLessons.length) * 100);
@@ -102,6 +106,16 @@ export function SiteHeader() {
                   </p>
                 </div>
                 <FontSizeControl />
+                <SheetSyncControl
+                  configured={sync.configured}
+                  email={sync.email}
+                  status={sync.status}
+                  lastSyncedAt={sync.lastSyncedAt}
+                  completedCount={sync.completedCount}
+                  onConnect={sync.connect}
+                  onDisconnect={sync.disconnect}
+                  onSyncNow={sync.syncNow}
+                />
                 <div className="p-2">
                   <button
                     type="button"

@@ -1,0 +1,122 @@
+# Bootstrap Foundations
+
+Το **Bootstrap** είναι το πιο γνωστό component-first CSS framework — τρέχει πίσω από τεράστιο μέρος του web, ειδικά admin panels, dashboards, εσωτερικά tools και prototypes. Αυτό το πρώτο μάθημα χτίζει το θεμέλιο: τη **φιλοσοφία** component-first, το setup (CSS + JS), και το πρότυπο χρήσης με semantic component classes.
+
+## Component-first — η φιλοσοφία
+
+Αντί για μικρά utilities που συναρμολογείς (Tailwind), το Bootstrap σου δίνει **έτοιμα, στιλιζαρισμένα components**. Δεν ορίζεις εσύ padding/χρώμα/radius — βάζεις την «επώνυμη» class και παίρνεις έτοιμο στυλ:
+
+```html
+<!-- Tailwind: px-4 py-2 bg-blue-600 text-white rounded ... -->
+<!-- Bootstrap: λες "είναι ένα primary button" -->
+<button class="btn btn-primary">Αποθήκευση</button>
+```
+
+Το `.btn` δίνει τη βάση (padding, border, cursor), το `.btn-primary` το χρώμα variant. Core trade-off: **ταχύτητα & συνέπεια** έναντι **ελευθερίας**. Παίρνεις γρήγορα ένα ολοκληρωμένο, συνεπές UI «out of the box», αλλά παίζεις με τα components του.
+
+## Setup: CSS + JavaScript
+
+Δύο τρόποι: **CDN** (γρήγορα, για prototype) ή **npm** (για build). Το Bootstrap έχει **δύο** κομμάτια:
+
+```html
+<!-- CSS: όλα τα styles των components + grid (υποχρεωτικό) -->
+<link href="bootstrap.min.css" rel="stylesheet" />
+
+<!-- ...το markup σου... -->
+
+<!-- JS bundle: για interactive components (modal, dropdown). Προαιρετικό -->
+<script src="bootstrap.bundle.min.js"></script>
+```
+
+Το **CSS** αρκεί για τα στατικά components (buttons, cards, alerts, grid). Το **JavaScript** χρειάζεται μόνο για τα interactive (modals, dropdowns — τα βλέπεις σε ξεχωριστό μάθημα).
+
+## Το πρότυπο: variant classes
+
+Πολλά components ακολουθούν το μοτίβο **base class + variant**:
+
+```html
+<button class="btn btn-primary">Primary</button>
+<button class="btn btn-outline-secondary">Outline</button>
+<button class="btn btn-danger btn-lg">Large danger</button>
+
+<div class="alert alert-success">Επιτυχία!</div>
+<div class="alert alert-warning">Προσοχή!</div>
+
+<span class="badge bg-danger">3</span>
+```
+
+Τα contextual χρώματα (`primary`, `secondary`, `success`, `danger`, `warning`, `info`) επαναλαμβάνονται σε όλα τα components — μαθαίνεις το λεξιλόγιο μία φορά.
+
+<Exercise
+  question="Ποια είναι η βασική διαφορά φιλοσοφίας Bootstrap vs Tailwind;"
+  options={[
+    "Το Bootstrap δεν χρησιμοποιεί καθόλου CSS classes.",
+    "Bootstrap = component-first (έτοιμες classes components, π.χ. btn btn-primary)· Tailwind = utility-first (συναρμολογείς από μικρά utilities).",
+    "Είναι ακριβώς το ίδιο με διαφορετικά ονόματα."
+  ]}
+  correctOptionIndex={1}
+  explanation="Bootstrap σου δίνει έτοιμα components (λες 'είναι primary button')· Tailwind σου δίνει τουβλάκια (px-4 bg-blue-600... — χτίζεις το κουμπί). Αντίθετες φιλοσοφίες: ταχύτητα/συνέπεια vs έλεγχος/custom design."
+/>
+
+## Πότε λάμπει το Bootstrap
+
+- **Admin panels, dashboards, εσωτερικά tools** — standard UI χωρίς custom design.
+- **Prototypes** — από ιδέα σε λειτουργικό UI σε λεπτά.
+- Ομάδες χωρίς dedicated designer που θέλουν συνεπές, προσβάσιμο αποτέλεσμα.
+
+Λιγότερο ιδανικό όταν θες **μοναδικό, custom design** — εκεί ταιριάζει το Tailwind.
+
+## Πώς απαντάς στη συνέντευξη
+
+> «What is Bootstrap and when would you use it?»
+
+> Bootstrap is a component-first framework: instead of composing utilities, I use prebuilt, styled, accessible components like `btn btn-primary`, `card`, and `alert`, plus a responsive grid. It ships CSS for the static components and an optional JavaScript bundle for interactive ones like modals. Components follow a base-plus-variant pattern — `btn` plus `btn-primary` — and contextual colours repeat across components, so I learn the vocabulary once. It's the fastest way to ship a consistent, functional UI without designing from scratch, so I reach for it on admin panels, dashboards, internal tools and prototypes; for a unique custom design I'd pick Tailwind.
+
+<Flashcards
+  title="Bootstrap foundations — drills"
+  cards={[
+    {
+      question: "Τι σημαίνει component-first;",
+      answer: "Χρησιμοποιείς έτοιμες classes components (btn btn-primary, card, alert) αντί να συνθέτεις από utilities. Το framework φέρνει το styling· εσύ ακολουθείς τη σύμβαση. Ταχύτητα & συνέπεια vs ελευθερία."
+    },
+    {
+      question: "Ποια δύο κομμάτια έχει το Bootstrap;",
+      answer: "CSS (όλα τα component styles + grid, υποχρεωτικό) και JavaScript bundle (για interactive components: modal/dropdown/collapse — προαιρετικό αν δεν τα χρειάζεσαι)."
+    },
+    {
+      question: "Τι είναι το μοτίβο base + variant;",
+      answer: "Πολλά components: base class + variant. btn + btn-primary, alert + alert-success, badge + bg-danger. Τα contextual χρώματα (primary/success/danger...) επαναλαμβάνονται παντού."
+    },
+    {
+      question: "Πότε διαλέγεις Bootstrap;",
+      answer: "Admin panels, dashboards, internal tools, prototypes — standard UI γρήγορα, συνεπές & προσβάσιμο, χωρίς custom design. Για μοναδικό custom design → Tailwind."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Πρώτη σελίδα με Bootstrap components"
+  scenario="Στήσε μια σελίδα με buttons (variants), alerts και badges μόνο με έτοιμες Bootstrap classes — χωρίς να γράψεις CSS."
+  outcomes={[
+    "Να στήνεις Bootstrap (CSS + JS) σε μια σελίδα.",
+    "Να χρησιμοποιείς το μοτίβο base + variant.",
+    "Να εξηγείς component-first vs utility-first."
+  ]}
+  steps={[
+    "Σύνδεσε το Bootstrap CSS (και JS bundle).",
+    "Φτιάξε κουμπιά με διάφορα variants (primary/outline/danger/lg).",
+    "Πρόσθεσε alerts (success/warning) και badges.",
+    "Επιβεβαίωσε ότι δεν έγραψες δικό σου CSS."
+  ]}
+  checkpoints={[
+    "Τα components εμφανίζονται στιλιζαρισμένα χωρίς custom CSS.",
+    "Χρησιμοποιείς σωστά base + variant classes.",
+    "Εξηγείς τη διαφορά component-first vs utility-first."
+  ]}
+  mistakes={[
+    "Να γράφεις custom CSS αντί να χρησιμοποιείς τις classes.",
+    "Να ξεχνάς το base class (btn) και να βάζεις μόνο variant.",
+    "Να περιμένεις interactive (modal) χωρίς το JS bundle."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν στήνεις γρήγορα στιλιζαρισμένα components μόνο με Bootstrap classes και εξηγείς τη φιλοσοφία του."
+/>

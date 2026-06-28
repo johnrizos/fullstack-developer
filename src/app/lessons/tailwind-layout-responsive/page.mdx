@@ -1,0 +1,138 @@
+# Layout & Responsive
+
+Τα flexbox και grid που έμαθες σε καθαρό CSS υπάρχουν στο Tailwind ως **utilities** — και το responsive γίνεται με **prefixes** αντί για media queries. Αυτό το μάθημα δείχνει πώς στήνεις layouts και πώς τα κάνεις responsive διαβάζοντας τη συμπεριφορά «σε μία γραμμή».
+
+## Flexbox utilities
+
+Οι ίδιες έννοιες (`display:flex`, `align-items`, `justify-content`) ως classes:
+
+```html
+<div class="flex items-center justify-between gap-4">
+  <span>Αριστερά</span>
+  <span>Δεξιά</span>
+</div>
+```
+
+- `flex` → `display: flex`
+- `items-center` / `items-start` → `align-items`
+- `justify-between` / `justify-center` → `justify-content`
+- `gap-4` → κενό μεταξύ items (από την κλίμακα)
+- `flex-col` → κάθετη διεύθυνση· `flex-wrap` → wrapping
+
+## Grid utilities
+
+```html
+<!-- 3 ίσες στήλες με κενό -->
+<div class="grid grid-cols-3 gap-4">
+  <div>A</div><div>B</div><div>C</div>
+</div>
+```
+
+- `grid` → `display: grid`
+- `grid-cols-3` → 3 ίσες στήλες (`repeat(3, 1fr)`)
+- `col-span-2` → ένα item πιάνει 2 στήλες
+- `gap-4` → κενό γραμμών/στηλών
+
+## Sizing
+
+```html
+<div class="w-full max-w-md h-12 min-h-screen">...</div>
+```
+
+`w-full` (100%), `max-w-md` (μέγιστο πλάτος container), `h-12` (ύψος από κλίμακα), `min-h-screen` (≥ ύψος οθόνης). Συνδυάζονται με flex/grid για ολοκληρωμένα layouts.
+
+## Responsive — mobile-first με prefixes
+
+Το Tailwind είναι **mobile-first**: η γυμνή class ισχύει **παντού**, και ένα **breakpoint prefix** την αλλάζει από ένα πλάτος κι άνω.
+
+```html
+<!-- 1 στήλη σε mobile, 2 από md (768px), 3 από lg (1024px) -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">...</div>
+```
+
+| Prefix | Από πλάτος |
+|---|---|
+| (καμία) | όλα (mobile) |
+| `sm:` | ≥ 640px |
+| `md:` | ≥ 768px |
+| `lg:` | ≥ 1024px |
+| `xl:` / `2xl:` | ≥ 1280 / 1536px |
+
+Το κλειδί του mobile-first: ξεκινάς από τη **μικρή** οθόνη (γυμνή class) και **προσθέτεις** για μεγαλύτερες με prefixes. Διαβάζεις όλο το responsive behavior σε μία γραμμή — χωρίς media query blocks αλλού.
+
+<Exercise
+  question="Τι κάνει το 'flex flex-col md:flex-row';"
+  options={[
+    "Πάντα οριζόντια διάταξη.",
+    "Κάθετη στοίβα σε mobile (flex-col), και οριζόντια διάταξη από md (≥768px) κι άνω.",
+    "Δύο flexbox ταυτόχρονα."
+  ]}
+  correctOptionIndex={1}
+  explanation="Mobile-first: flex-col ισχύει παντού (στοίβα σε mobile), το md:flex-row το αλλάζει σε οριζόντιο από ≥768px. Κλασικό μοτίβο: στοιβάζεις σε κινητό, βάζεις δίπλα-δίπλα σε desktop."
+/>
+
+<PredictOutput
+  title="Πόσες στήλες ανά πλάτος;"
+  code={`<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+
+Σε οθόνη πλάτους 800px (μεταξύ sm=640 και lg=1024), πόσες στήλες;`}
+  options={["1 στήλη", "2 στήλες", "4 στήλες"]}
+  correctOptionIndex={1}
+  answer="2 στήλες"
+  explanation="Στα 800px: το sm: (≥640) ενεργό → 2 στήλες· το lg: (≥1024) ΟΧΙ ακόμα. Mobile-first: ισχύει το μεγαλύτερο breakpoint που έχει περαστεί. Άρα grid-cols-2."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How does responsive design work in Tailwind?»
+
+> Tailwind is mobile-first: the bare utility applies everywhere, and a breakpoint prefix overrides it from that width up. So `grid-cols-1 md:grid-cols-2 lg:grid-cols-3` means one column on mobile, two from 768px, three from 1024px — the whole responsive behaviour reads in a single class string instead of separate media-query blocks. Flexbox and grid are just utilities — `flex items-center justify-between`, `grid grid-cols-3 gap-4` — so I get the layout power of CSS with inline, scannable responsive variants.
+
+<Flashcards
+  title="Layout & responsive — drills"
+  cards={[
+    {
+      question: "Πώς κάνεις flex layout στο Tailwind;",
+      answer: "flex (display:flex) + items-* (align-items) + justify-* (justify-content) + gap-* (κενό). flex-col για κάθετα, flex-wrap για wrapping. Ίδιες έννοιες με CSS, ως utilities."
+    },
+    {
+      question: "Πώς ορίζεις grid με 3 στήλες;",
+      answer: "grid grid-cols-3 gap-4. Το grid-cols-N δίνει N ίσες στήλες· col-span-2 για item που πιάνει 2 στήλες."
+    },
+    {
+      question: "Τι σημαίνει mobile-first στα prefixes;",
+      answer: "Η γυμνή class ισχύει παντού (mobile). Τα prefixes (md:, lg:) προσθέτουν συμπεριφορά από ένα breakpoint κι άνω. Ξεκινάς από μικρή οθόνη και επεκτείνεις προς τα πάνω."
+    },
+    {
+      question: "Ποιο breakpoint ισχύει στα 800px για 'sm:x lg:y';",
+      answer: "Το sm: (≥640) — γιατί έχει περαστεί ενώ το lg: (≥1024) όχι. Ισχύει το μεγαλύτερο breakpoint που έχεις ξεπεράσει."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Responsive layout με flex & grid"
+  scenario="Φτιάξε ένα layout: header με flex (logo αριστερά, nav δεξιά) και μια λίστα καρτών σε responsive grid (1→2→3→4 στήλες ανά breakpoint)."
+  outcomes={[
+    "Να στήνεις flex/grid layouts με utilities.",
+    "Να εφαρμόζεις mobile-first responsive με prefixes.",
+    "Να διαβάζεις responsive behavior από το class string."
+  ]}
+  steps={[
+    "Header: flex items-center justify-between για logo/nav.",
+    "Κάρτες: grid grid-cols-1 με gap.",
+    "Πρόσθεσε sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4.",
+    "Δοκίμασε σε διάφορα πλάτη — επιβεβαίωσε τις στήλες ανά breakpoint."
+  ]}
+  checkpoints={[
+    "Το header παραμένει σωστά στοιχισμένο.",
+    "Οι κάρτες αλλάζουν στήλες στα σωστά breakpoints.",
+    "Διαβάζεις το layout από το class string χωρίς να τρέξεις."
+  ]}
+  mistakes={[
+    "Να ξεκινάς από desktop αντί για mobile-first.",
+    "Να ξεχνάς το gap → κολλημένα items.",
+    "Να βάζεις media queries στο χέρι αντί για prefixes."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν στήνεις responsive layouts μόνο με flex/grid utilities και prefixes, και προβλέπεις τις στήλες ανά πλάτος."
+/>

@@ -1,0 +1,142 @@
+# Components
+
+Εδώ κερδίζεις χρόνο με το Bootstrap: δομημένα, στιλιζαρισμένα, προσβάσιμα **components** που στήνεις με σύμβαση markup. Αυτό το μάθημα καλύπτει τα πιο χρήσιμα — cards, navbar, forms, alerts, badges, list groups.
+
+## Cards
+
+Το card είναι ένα ευέλικτο container με προαιρετικά header/body/footer:
+
+```html
+<div class="card" style="width: 18rem;">
+  <img src="..." class="card-img-top" alt="..." />
+  <div class="card-body">
+    <h5 class="card-title">Τίτλος</h5>
+    <p class="card-text">Λίγο περιεχόμενο για την κάρτα.</p>
+    <a href="#" class="btn btn-primary">Δράση</a>
+  </div>
+</div>
+```
+
+`card`, `card-body`, `card-title`, `card-text`, `card-img-top`, `card-header`/`card-footer` — μαθαίνεις τη δομή μία φορά.
+
+## Forms
+
+Το Bootstrap στυλάρει form controls με συγκεκριμένη σύμβαση:
+
+```html
+<form>
+  <div class="mb-3">
+    <label for="email" class="form-label">Email</label>
+    <input type="email" id="email" class="form-control" />
+  </div>
+  <div class="mb-3">
+    <label for="role" class="form-label">Ρόλος</label>
+    <select id="role" class="form-select">
+      <option>Admin</option><option>User</option>
+    </select>
+  </div>
+  <div class="form-check mb-3">
+    <input type="checkbox" id="ok" class="form-check-input" />
+    <label for="ok" class="form-check-label">Συμφωνώ</label>
+  </div>
+  <button class="btn btn-primary">Υποβολή</button>
+</form>
+```
+
+`form-control` (inputs), `form-select` (dropdowns), `form-label`, `form-check`/`form-check-input` (checkboxes/radios). Για validation, οι classes `is-valid`/`is-invalid` + `invalid-feedback` δείχνουν την κατάσταση.
+
+## Navbar
+
+```html
+<nav class="navbar navbar-expand-lg bg-light">
+  <div class="container">
+    <a class="navbar-brand" href="#">Logo</a>
+    <ul class="navbar-nav">
+      <li class="nav-item"><a class="nav-link active" href="#">Αρχική</a></li>
+      <li class="nav-item"><a class="nav-link" href="#">Σχετικά</a></li>
+    </ul>
+  </div>
+</nav>
+```
+
+Το `navbar-expand-lg` κάνει το menu οριζόντιο από `lg` κι άνω και collapsible σε μικρότερες οθόνες (με το JS — επόμενο μάθημα).
+
+## Alerts, badges, list groups
+
+```html
+<div class="alert alert-success" role="alert">Αποθηκεύτηκε!</div>
+
+<button class="btn btn-primary">Inbox <span class="badge bg-light text-dark">4</span></button>
+
+<ul class="list-group">
+  <li class="list-group-item">Πρώτο</li>
+  <li class="list-group-item active">Ενεργό</li>
+</ul>
+```
+
+<Exercise
+  question="Ποιες classes χρειάζεται ένα standard text input στο Bootstrap;"
+  options={[
+    "Καμία — αρκεί το <input>.",
+    "form-control στο input, και ένα συνδεδεμένο <label class='form-label'> (με for/id).",
+    "btn btn-primary."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το form-control στυλάρει το input (πλάτος, border, focus). Το form-label το label, και το for/id τα συνδέει (accessibility). Η σύμβαση markup των forms είναι σταθερή — τη μαθαίνεις μία φορά."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «Walk me through Bootstrap components.»
+
+> Bootstrap ships structured, styled, accessible components I assemble by following a markup convention. A card is `card` with `card-body`, `card-title`, `card-text`; forms use `form-control` on inputs, `form-select` on dropdowns, and `form-label` with `for`/`id` for accessibility, plus `is-invalid`/`invalid-feedback` for validation state; a navbar uses `navbar navbar-expand-lg` so it goes horizontal from a breakpoint and collapses below it. Alerts, badges and list groups follow the same base-plus-variant pattern. I learn each component's structure once and reuse it, getting a consistent look without writing CSS.
+
+<Flashcards
+  title="Components — drills"
+  cards={[
+    {
+      question: "Ποια είναι η δομή ενός card;",
+      answer: "card (container) → card-body → card-title / card-text, προαιρετικά card-img-top, card-header, card-footer. Ευέλικτο container με σύμβαση markup."
+    },
+    {
+      question: "Πώς στυλάρεις ένα form input;",
+      answer: "form-control στο input, form-select στα dropdowns, form-label στο label (με for/id για σύνδεση). form-check για checkboxes/radios. Validation με is-valid/is-invalid + invalid-feedback."
+    },
+    {
+      question: "Τι κάνει το navbar-expand-lg;",
+      answer: "Το menu γίνεται οριζόντιο από lg κι άνω, και collapsible (hamburger) σε μικρότερες οθόνες — η αναδίπλωση θέλει το Bootstrap JS."
+    },
+    {
+      question: "Ποιο μοτίβο ακολουθούν alerts/badges/buttons;",
+      answer: "base + contextual variant: alert alert-success, badge bg-danger, btn btn-primary. Τα ίδια χρώματα (primary/success/danger...) επαναλαμβάνονται σε όλα τα components."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Card-based UI με navbar & form"
+  scenario="Φτιάξε μια σελίδα με navbar, μια ενότητα από cards, και μια validated φόρμα — μόνο με Bootstrap components."
+  outcomes={[
+    "Να στήνεις cards με τη σωστή δομή.",
+    "Να φτιάχνεις προσβάσιμες φόρμες (form-control/label).",
+    "Να συναρμολογείς navbar και alerts/badges."
+  ]}
+  steps={[
+    "Navbar με brand και nav-links (navbar-expand-lg).",
+    "Grid με 3 cards (card → card-body → title/text/button).",
+    "Φόρμα με form-control inputs, form-label, form-check.",
+    "Πρόσθεσε ένα alert επιτυχίας και ένα badge counter.",
+    "Σύνδεσε labels με inputs (for/id) για accessibility."
+  ]}
+  checkpoints={[
+    "Τα cards έχουν σωστή δομή body/title/text.",
+    "Τα inputs έχουν form-control και συνδεδεμένα labels.",
+    "Το navbar και τα alerts/badges εμφανίζονται σωστά."
+  ]}
+  mistakes={[
+    "input χωρίς form-control ή label χωρίς for/id.",
+    "card-title/card-text εκτός card-body.",
+    "Να περιμένεις το collapsible navbar χωρίς το JS bundle."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν στήνεις γρήγορα ένα card-based UI με navbar και προσβάσιμη φόρμα, μόνο με component classes."
+/>

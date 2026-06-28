@@ -1,0 +1,182 @@
+# Accessibility (a11y)
+
+Accessibility σημαίνει: η εφαρμογή σου δουλεύει για **όλους** — όσους χρησιμοποιούν screen reader, πλοηγούνται μόνο με πληκτρολόγιο, έχουν χαμηλή όραση ή κινητικές δυσκολίες. Δεν είναι «extra»: είναι ποιότητα, συχνά **νομική απαίτηση** (WCAG/EU Accessibility Act), και ερώτηση που ξεχωρίζει σοβαρούς frontend developers. Το καλό νέο: το 90% κερδίζεται με σωστό HTML.
+
+## Το θεμέλιο: semantic HTML κάνει τη μισή δουλειά
+
+Πριν αγγίξεις ARIA, θυμήσου ότι τα semantic elements (που είδες στο semantics μάθημα) είναι **εγγενώς προσβάσιμα**:
+
+```html
+<!-- ❌ "div soup": ο screen reader δεν ξέρει ότι είναι κουμπί -->
+<div onclick="submit()">Αποθήκευση</div>
+
+<!-- ✅ native button: focusable, λειτουργεί με Enter/Space, ανακοινώνεται ως "button" -->
+<button onclick="submit()">Αποθήκευση</button>
+```
+
+Ένα native `<button>`, `<a>`, `<input>`, `<nav>` σου δίνει **δωρεάν**: keyboard focus, σωστό role, states, και τις σωστές αλληλεπιδράσεις. Ο πρώτος κανόνας του ARIA είναι: «**μη χρησιμοποιείς ARIA** αν υπάρχει native element που το κάνει».
+
+## Keyboard navigation — δοκίμασέ το χωρίς ποντίκι
+
+Πολλοί χρήστες δεν χρησιμοποιούν ποντίκι. Όλα τα interactive πρέπει να δουλεύουν με πληκτρολόγιο:
+
+- **`Tab`** / `Shift+Tab` → μετακίνηση μεταξύ focusable elements.
+- **`Enter` / `Space`** → ενεργοποίηση (links/buttons).
+- **`Esc`** → κλείσιμο modal/menu.
+- **βελάκια** → μέσα σε menus, tabs, radio groups.
+
+Το **tab order** ακολουθεί τη σειρά του DOM. Native elements (`button`, `a[href]`, `input`) είναι focusable αυτόματα. Ένα `<div>` που έκανες «κουμπί» **δεν** είναι — γι' αυτό προτιμάς native.
+
+> Γρήγορο test: κλείσε το ποντίκι. Μπορείς να κάνεις τα πάντα με Tab/Enter/Esc; Βλέπεις πάντα **πού** είσαι (focus ring); Αν όχι, η σελίδα δεν είναι προσβάσιμη.
+
+Ποτέ μην κάνεις `outline: none` χωρίς αντικατάσταση — αφαιρείς τον focus indicator, που είναι ζωτικός:
+
+```css
+/* ❌ αφαιρεί το focus ring — ο keyboard χρήστης χάνεται */
+button:focus { outline: none; }
+
+/* ✅ custom αλλά ορατό focus */
+button:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+```
+
+## ARIA — όταν το HTML δεν φτάνει
+
+**ARIA** (Accessible Rich Internet Applications) είναι attributes που δίνουν σημασία/κατάσταση σε στοιχεία όταν δεν υπάρχει native element. Τρεις κατηγορίες:
+
+- **Roles** — τι είναι κάτι: `role="dialog"`, `role="alert"`, `role="tab"`.
+- **Properties** — σχέσεις/ιδιότητες: `aria-label`, `aria-labelledby`, `aria-describedby`.
+- **States** — δυναμική κατάσταση: `aria-expanded`, `aria-checked`, `aria-hidden`, `aria-busy`.
+
+```html
+<!-- Icon button χωρίς ορατό κείμενο: δώσε accessible name -->
+<button aria-label="Κλείσιμο">✕</button>
+
+<!-- Dropdown: ανακοίνωσε αν είναι ανοιχτό -->
+<button aria-expanded="false" aria-controls="menu">Μενού</button>
+<ul id="menu" hidden>...</ul>
+```
+
+**Χρυσός κανόνας:** το ARIA **δεν** προσθέτει συμπεριφορά — μόνο πληροφορία. Το `role="button"` σε `<div>` δεν το κάνει focusable ούτε να δουλεύει με Enter· πρέπει να τα προσθέσεις μόνος σου (`tabindex="0"`, key handlers). Γι' αυτό native > ARIA.
+
+## Focus management — το κλειδί για modals/menus
+
+Όταν ανοίγει ένα modal, ο focus πρέπει να **πάει μέσα** του και να **παγιδεύεται** (focus trap) — αλλιώς ο keyboard χρήστης συνεχίζει να «ταμπάρει» πίσω στη σελίδα από κάτω. Όταν κλείνει, ο focus επιστρέφει στο κουμπί που το άνοιξε.
+
+```txt
+Άνοιγμα modal:
+  1. αποθήκευσε ποιο element είχε focus (το trigger)
+  2. μετακίνησε focus στο modal (ή στο πρώτο focusable μέσα)
+  3. Tab μέσα στο modal κυκλικά (trap) — Esc κλείνει
+Κλείσιμο:
+  4. επίστρεψε focus στο trigger
+```
+
+Αυτό το pattern είναι ο νο1 λόγος που τα custom dropdowns/modals «σπάνε» για χρήστες πληκτρολογίου.
+
+<Exercise
+  question="Φτιάχνεις ένα clickable 'κουμπί' με <div onclick>. Τι πρόβλημα accessibility έχει;"
+  options={[
+    "Κανένα, το onclick αρκεί.",
+    "Δεν είναι focusable με Tab, δεν λειτουργεί με Enter/Space, και δεν ανακοινώνεται ως button. Ένα native <button> τα δίνει όλα δωρεάν.",
+    "Είναι πολύ αργό."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το div δεν έχει role, δεν μπαίνει στο tab order, δεν αντιδρά σε keyboard. Θα χρειαζόσουν tabindex=0, role=button ΚΑΙ key handlers για να το μιμηθείς. Γι' αυτό: native <button> πάντα όταν γίνεται."
+/>
+
+## Άλλα essentials
+
+- **Alt text:** κάθε ουσιαστική `<img>` θέλει `alt` που περιγράφει το νόημα. Διακοσμητική εικόνα → `alt=""` (την αγνοεί ο screen reader).
+- **Labels:** κάθε input με `<label>` συνδεδεμένο (`for`/`id`) — το είδες στο forms μάθημα.
+- **Color contrast:** το κείμενο χρειάζεται αρκετή αντίθεση (WCAG AA: 4.5:1 για normal text). Μην βασίζεσαι **μόνο** στο χρώμα για να μεταφέρεις πληροφορία (π.χ. «κόκκινο = error» + εικονίδιο/κείμενο).
+- **Headings hierarchy:** σωστά `h1→h2→h3` — οι screen readers πλοηγούνται από heading σε heading.
+- **`aria-live`:** για δυναμικά μηνύματα (toast, validation) ώστε ο screen reader να τα ανακοινώνει χωρίς να αλλάξει focus.
+
+## WCAG — το πρότυπο σε 4 λέξεις: POUR
+
+Το **WCAG** οργανώνει την προσβασιμότητα σε 4 αρχές (**POUR**):
+
+- **Perceivable** — μπορείς να το αντιληφθείς (alt text, contrast, captions).
+- **Operable** — μπορείς να το χειριστείς (keyboard, αρκετός χρόνος, όχι flashing).
+- **Understandable** — είναι κατανοητό (συνεπές, καθαρά errors).
+- **Robust** — δουλεύει με assistive tech (valid HTML, σωστά ARIA).
+
+Επίπεδα συμμόρφωσης: A → **AA** (ο συνήθης στόχος, νομική βάση) → AAA.
+
+<PredictOutput
+  title="Πώς κάνεις προσβάσιμο ένα icon-only button;"
+  code={`<button>🗑️</button>
+
+Ο screen reader διαβάζει μόνο "wastebasket emoji".
+Τι προσθέτεις ώστε να ανακοινώνεται ο σκοπός;`}
+  options={['aria-label="Διαγραφή"', "title='delete'", "Τίποτα, το emoji αρκεί"]}
+  correctOptionIndex={0}
+  answer='aria-label="Διαγραφή"'
+  explanation="Το aria-label δίνει accessible name που ανακοινώνεται ως 'Διαγραφή, button'. Το title είναι αναξιόπιστο (δεν το διαβάζουν σταθερά οι screen readers, εμφανίζεται μόνο σε hover). Εναλλακτικά: ορατό κείμενο + visually-hidden."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you make a web app accessible?»
+
+> I start with semantic HTML — native button, a, input, nav give focus, roles and keyboard behaviour for free, so I avoid div soup. I make sure everything works with the keyboard alone: logical tab order, visible focus with focus-visible, Enter/Space/Esc, and focus trapping in modals with focus returned to the trigger on close. I add ARIA only when there's no native equivalent — roles, aria-label for icon buttons, aria-expanded for disclosure, aria-live for dynamic messages — knowing ARIA describes but doesn't add behaviour. Then the essentials: alt text, associated labels, AA colour contrast, heading hierarchy, and I test with keyboard, a screen reader and an axe/Lighthouse audit against WCAG.
+
+<Flashcards
+  title="Accessibility — interview drills"
+  cards={[
+    {
+      question: "Ποιος είναι ο πρώτος κανόνας του ARIA;",
+      answer: "Μην χρησιμοποιείς ARIA αν υπάρχει native HTML element που το κάνει. Το <button> είναι προσβάσιμο εξ ορισμού· το <div role='button'> θέλει tabindex, key handlers και ARIA για να το μιμηθεί ατελώς."
+    },
+    {
+      question: "Τι κάνει (και τι ΔΕΝ κάνει) το ARIA;",
+      answer: "Δίνει σημασία/ρόλο/κατάσταση σε στοιχεία (roles, properties, states) για assistive tech. ΔΕΝ προσθέτει συμπεριφορά — focus, keyboard handling πρέπει να τα γράψεις εσύ."
+    },
+    {
+      question: "Γιατί ποτέ outline: none χωρίς αντικατάσταση;",
+      answer: "Αφαιρεί τον focus indicator, οπότε ο χρήστης πληκτρολογίου δεν βλέπει πού βρίσκεται. Χρησιμοποίησε :focus-visible με ορατό custom outline αντί να το σβήσεις."
+    },
+    {
+      question: "Τι είναι focus trap και πότε το χρειάζεσαι;",
+      answer: "Σε modal/dialog: ο focus παγιδεύεται μέσα (Tab κυκλικά), Esc κλείνει, και στο κλείσιμο επιστρέφει στο trigger. Αλλιώς ο keyboard χρήστης 'ταμπάρει' πίσω στη σελίδα κάτω από το modal."
+    },
+    {
+      question: "Οι 4 αρχές του WCAG (POUR);",
+      answer: "Perceivable (alt, contrast, captions), Operable (keyboard, χρόνος), Understandable (συνεπές, καθαρά errors), Robust (valid HTML/ARIA για assistive tech). Στόχος συμμόρφωσης: επίπεδο AA."
+    },
+    {
+      question: "Πώς δίνεις accessible name σε icon-only button;",
+      answer: "aria-label='...' (ή visually-hidden κείμενο). Όχι title — αναξιόπιστο και μόνο σε hover. Έτσι ανακοινώνεται 'Διαγραφή, button' αντί για το emoji."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Κάνε ένα modal πλήρως προσβάσιμο"
+  scenario="Πάρε ένα custom modal/dropdown και κάν' το προσβάσιμο: keyboard, focus management, ARIA και contrast. Δοκίμασέ το χωρίς ποντίκι και με screen reader."
+  outcomes={[
+    "Να χτίζεις interactive components που δουλεύουν με πληκτρολόγιο.",
+    "Να εφαρμόζεις focus trap και επιστροφή focus.",
+    "Να προσθέτεις σωστά roles/states με ARIA."
+  ]}
+  steps={[
+    "Κάνε όλα τα interactive native (<button>) ή πρόσθεσε tabindex + key handlers.",
+    "Στο άνοιγμα modal: μετέφερε focus μέσα και παγίδεψέ το (Tab κυκλικά).",
+    "Esc κλείνει· στο κλείσιμο γύρνα focus στο trigger.",
+    "Πρόσθεσε role='dialog', aria-modal, aria-labelledby στον τίτλο.",
+    "Έλεγξε contrast και focus-visible· δοκίμασε ΜΟΝΟ με πληκτρολόγιο και με screen reader."
+  ]}
+  checkpoints={[
+    "Όλα δουλεύουν χωρίς ποντίκι, με ορατό focus.",
+    "Ο focus παγιδεύεται στο modal και επιστρέφει στο trigger.",
+    "Icon buttons έχουν accessible name.",
+    "Το κείμενο περνά AA contrast."
+  ]}
+  mistakes={[
+    "div/span ως κουμπιά χωρίς role/tabindex/keyboard.",
+    "outline: none χωρίς εναλλακτικό focus indicator.",
+    "Modal που δεν διαχειρίζεται focus → keyboard χρήστης χάνεται.",
+    "Πληροφορία μόνο με χρώμα (χωρίς εικονίδιο/κείμενο)."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μπορείς να πλοηγηθείς και να χρησιμοποιήσεις όλη τη σελίδα χωρίς ποντίκι, και ένα audit (axe/Lighthouse) δεν βγάζει critical errors."
+/>

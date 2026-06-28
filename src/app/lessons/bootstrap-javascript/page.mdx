@@ -1,0 +1,148 @@
+# JavaScript Components
+
+Κάποια components του Bootstrap είναι **interactive** — ανοίγουν, κλείνουν, αναδιπλώνονται. Αυτά χρειάζονται το **Bootstrap JavaScript** και τα ενεργοποιείς **δηλωτικά** με `data-bs-*` attributes, χωρίς να γράψεις δικό σου JS. Αυτό το μάθημα τα καλύπτει — και την παγίδα με το React.
+
+## Προϋπόθεση: το JS bundle
+
+Τα interactive components δεν δουλεύουν με μόνο το CSS. Πρέπει να φορτώσεις το Bootstrap JavaScript bundle:
+
+```html
+<script src="bootstrap.bundle.min.js"></script>
+```
+
+Χωρίς αυτό, τα `data-bs-*` attributes **δεν κάνουν τίποτα** — το πιο συχνό «γιατί δεν ανοίγει το modal μου;».
+
+## Modal
+
+```html
+<button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#myModal">
+  Άνοιξε modal
+</button>
+
+<div class="modal fade" id="myModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Τίτλος</h5>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">Περιεχόμενο.</div>
+    </div>
+  </div>
+</div>
+```
+
+`data-bs-toggle="modal"` + `data-bs-target="#id"` ανοίγουν το modal· `data-bs-dismiss="modal"` το κλείνει. Το Bootstrap JS χειρίζεται backdrop, **focus management** και Esc.
+
+## Dropdown, collapse, offcanvas, toast
+
+```html
+<!-- Dropdown -->
+<button class="btn btn-secondary dropdown-toggle" data-bs-toggle="dropdown">Menu</button>
+<ul class="dropdown-menu">
+  <li><a class="dropdown-item" href="#">Επιλογή 1</a></li>
+</ul>
+
+<!-- Collapse (accordion-style) -->
+<button data-bs-toggle="collapse" data-bs-target="#more">Δες περισσότερα</button>
+<div class="collapse" id="more">Κρυμμένο περιεχόμενο.</div>
+
+<!-- Offcanvas (side panel) -->
+<button data-bs-toggle="offcanvas" data-bs-target="#panel">Άνοιξε panel</button>
+```
+
+Όλα ακολουθούν το ίδιο μοτίβο: `data-bs-toggle="<τύπος>"` + `data-bs-target="#id"`. **Παίρνεις interactive συμπεριφορά χωρίς γραμμή JavaScript** — τεράστιο όφελος σε non-React projects.
+
+<PredictOutput
+  title="Γιατί δεν ανοίγει το modal;"
+  code={`Έβαλες σωστά το markup με data-bs-toggle="modal"
+και data-bs-target. Κλικάρεις — τίποτα. Τι λείπει;`}
+  options={["Ένα onClick handler", "Το bootstrap.bundle.min.js δεν έχει φορτωθεί", "Λάθος χρώμα κουμπιού"]}
+  correctOptionIndex={1}
+  answer="Το bootstrap.bundle.min.js δεν έχει φορτωθεί"
+  explanation="Τα interactive components διαβάζουν τα data-bs-* attributes μέσω του Bootstrap JS. Με μόνο το CSS, τα attributes είναι αδρανή. Φόρτωσε το JS bundle (ή χρησιμοποίησε React-Bootstrap σε React)."
+/>
+
+## Η παγίδα με το React
+
+Σε **React** (και άλλα frameworks που διαχειρίζονται το DOM), τα `data-bs-*` του Bootstrap πειράζουν το DOM **απευθείας** — δύο συστήματα που μάχονται για το ίδιο DOM. Αυτό προκαλεί bugs (π.χ. το modal δεν ξανανοίγει μετά από re-render).
+
+**Λύση:** χρησιμοποίησε **React-Bootstrap** — βιβλιοθήκη που τυλίγει τα components ως κανονικά React components με state/props, αντί για data attributes:
+
+```jsx
+import { Modal, Button } from "react-bootstrap";
+
+const [show, setShow] = useState(false);
+<Button onClick={() => setShow(true)}>Άνοιξε</Button>
+<Modal show={show} onHide={() => setShow(false)}>...</Modal>
+```
+
+Έτσι το React κρατά τον έλεγχο του DOM και το modal είναι κανονικό controlled component.
+
+<Exercise
+  question="Χρησιμοποιείς React και τα data-bs-* modals σου κάνουν περίεργα bugs μετά από re-renders. Καλύτερη λύση;"
+  options={[
+    "Πρόσθεσε περισσότερα data-bs-* attributes.",
+    "Χρησιμοποίησε React-Bootstrap — components με state/props, ώστε το React να ελέγχει το DOM αντί για τα data attributes.",
+    "Σταμάτα να χρησιμοποιείς modals."
+  ]}
+  correctOptionIndex={1}
+  explanation="Τα data-bs-* πειράζουν το DOM απευθείας, συγκρούονται με τον React reconciler. Το React-Bootstrap τυλίγει τα components ως controlled React components (show/onHide), οπότε το React κρατά τον έλεγχο — μηδέν σύγκρουση."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do Bootstrap's interactive components work?»
+
+> Components like modals, dropdowns, collapse and offcanvas need the Bootstrap JavaScript bundle, and I trigger them declaratively with `data-bs-*` attributes — `data-bs-toggle="modal"` with `data-bs-target`, for example — so I get open/close, backdrop, focus management and Esc handling without writing any JavaScript. That's a big win in plain or server-rendered projects. In React I avoid the raw data attributes because they mutate the DOM directly and fight React's reconciler; instead I use React-Bootstrap, which exposes the same components as controlled React components with `show`/`onHide` props, so React stays in control of the DOM.
+
+<Flashcards
+  title="JavaScript components — drills"
+  cards={[
+    {
+      question: "Τι χρειάζονται τα interactive components;",
+      answer: "Το Bootstrap JavaScript bundle. Χωρίς αυτό, τα data-bs-* attributes είναι αδρανή. Το πιο συχνό 'γιατί δεν ανοίγει το modal'."
+    },
+    {
+      question: "Πώς ενεργοποιείς ένα modal δηλωτικά;",
+      answer: "data-bs-toggle='modal' + data-bs-target='#id' στο trigger· data-bs-dismiss='modal' στο κλείσιμο. Το JS χειρίζεται backdrop, focus, Esc. Μηδέν δικός σου JavaScript."
+    },
+    {
+      question: "Ποιο μοτίβο ακολουθούν τα JS components;",
+      answer: "data-bs-toggle='<τύπος>' + data-bs-target='#id'. Ίδιο για modal/dropdown/collapse/offcanvas. Δηλωτική ενεργοποίηση μέσω attributes."
+    },
+    {
+      question: "Γιατί προτιμάς React-Bootstrap σε React;",
+      answer: "Τα data-bs-* πειράζουν το DOM απευθείας και συγκρούονται με τον React reconciler (bugs μετά re-render). Το React-Bootstrap δίνει controlled components (show/onHide) — το React ελέγχει το DOM."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Interactive UI με data-bs-*"
+  scenario="Πρόσθεσε ένα modal, ένα dropdown και ένα collapsible section σε μια σελίδα — μόνο με data attributes — και μετά εξήγησε πώς θα το έκανες σε React."
+  outcomes={[
+    "Να ενεργοποιείς interactive components με data-bs-*.",
+    "Να φορτώνεις σωστά το JS bundle.",
+    "Να ξέρεις πότε/πώς χρησιμοποιείς React-Bootstrap."
+  ]}
+  steps={[
+    "Φόρτωσε το bootstrap.bundle.min.js.",
+    "Φτιάξε modal με trigger (data-bs-toggle/target) και close (data-bs-dismiss).",
+    "Πρόσθεσε ένα dropdown και ένα collapse με το ίδιο μοτίβο.",
+    "Έλεγξε keyboard (Esc κλείνει, focus μέσα στο modal).",
+    "Γράψε με λόγια πώς θα γινόταν το modal σε React-Bootstrap."
+  ]}
+  checkpoints={[
+    "Το modal ανοίγει/κλείνει (JS bundle φορτωμένο).",
+    "Dropdown/collapse λειτουργούν με data-bs-*.",
+    "Esc/focus δουλεύουν στο modal.",
+    "Εξηγείς τη React-Bootstrap προσέγγιση."
+  ]}
+  mistakes={[
+    "Να ξεχνάς το JS bundle → νεκρά components.",
+    "Σε React: data-bs-* + React στο ίδιο DOM (bugs).",
+    "Λάθος data-bs-target (δεν ταιριάζει το #id)."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν στήνεις interactive components με data-bs-* και ξέρεις να περνάς σε React-Bootstrap όταν δουλεύεις σε React."
+/>

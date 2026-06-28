@@ -1,0 +1,145 @@
+# Components, Reuse & Production
+
+Η νο1 ένσταση στο Tailwind είναι «γεμίζει classes το markup και τις κάνω copy-paste». Αυτό το μάθημα δείχνει τη σωστή λύση (reuse με components), πότε χρησιμοποιείς `@apply`, πώς βγαίνει μικρό production bundle, και πότε *δεν* είναι το Tailwind η σωστή επιλογή.
+
+## Reuse: components, ΟΧΙ copy-paste
+
+Το πρόβλημα δεν είναι το Tailwind — είναι το copy-paste. Όταν ένα κουμπί επαναλαμβάνεται, γράφεις το utility string **μία** φορά σε ένα component:
+
+```jsx
+function Button({ children }) {
+  return (
+    <button className="px-4 py-2 bg-brand text-white rounded-lg hover:bg-blue-700">
+      {children}
+    </button>
+  );
+}
+
+// Χρήση παντού — μηδέν επανάληψη
+<Button>Αποθήκευση</Button>
+```
+
+Σε component-based frameworks (React/Vue/Svelte), αυτή είναι **η** απάντηση: το «φλύαρο» markup ζει σε ένα σημείο, και το χρησιμοποιείς ως καθαρό `<Button>`.
+
+## @apply — και πότε ΟΧΙ
+
+Το `@apply` ομαδοποιεί utilities σε μια κανονική CSS class:
+
+```css
+.btn { @apply px-4 py-2 bg-brand text-white rounded-lg hover:bg-blue-700; }
+```
+
+Χρήσιμο σε **non-component** περιβάλλοντα (π.χ. plain HTML, server-rendered templates χωρίς components) ή για μερικά global elements. **Αλλά με μέτρο:** αν βάζεις τα πάντα σε `@apply`, ξαναφτιάχνεις «κανονικό CSS με ονόματα» — ακριβώς αυτό που το Tailwind ήρθε να αποφύγει. Σε React, σχεδόν πάντα προτίμησε component αντί για `@apply`.
+
+```txt
+Επανάληψη σε React;        → component (το <Button>)
+Plain HTML / templates;     → @apply, με μέτρο
+Όλα μέσα σε @apply;         → anti-pattern (γύρισες στο "κανονικό CSS")
+```
+
+<Exercise
+  question="Σε React app, ένα κουμπί με 6 utility classes επαναλαμβάνεται 30 φορές. Καλύτερη λύση;"
+  options={[
+    "Copy-paste το class string και στις 30.",
+    "Φτιάξε ένα <Button> component με το class string μία φορά.",
+    "@apply για κάθε παραλλαγή του κουμπιού."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σε component framework, η επανάληψη λύνεται με component: γράφεις το utility string μία φορά στο <Button> και το χρησιμοποιείς παντού. Το copy-paste είναι ασυντήρητο· το @apply εδώ είναι λιγότερο ιδανικό από component."
+/>
+
+## Production: γιατί το bundle είναι μικρό
+
+Στο build, το JIT engine σκανάρει το `content` (τα αρχεία σου) και κρατά **μόνο** τις classes που εμφανίζονται. Μια app με χιλιάδες διαθέσιμες utilities βγάζει συχνά λίγα KB CSS, γιατί χρησιμοποιείς μικρό υποσύνολο.
+
+**Η μεγάλη παγίδα:** classes που φτιάχνονται **δυναμικά** ως strings δεν εντοπίζονται από τον scanner:
+
+```jsx
+// ❌ Ο scanner ΔΕΝ βλέπει το "bg-red-600" — δεν υπάρχει αυτούσιο στον κώδικα
+<div className={`bg-${color}-600`} />
+
+// ✅ Πλήρη ονόματα ώστε να εντοπιστούν
+<div className={color === "red" ? "bg-red-600" : "bg-blue-600"} />
+```
+
+Αν πρέπει να είναι δυναμικό, χρησιμοποίησε **safelist** στο config ή πλήρη class names σε map.
+
+<PredictOutput
+  title="Γιατί δεν εμφανίζεται το χρώμα;"
+  code={`const color = "red";
+<div className={\`bg-\${color}-500\`}>...</div>
+
+Το CSS του bg-red-500 ΛΕΙΠΕΙ από το production. Γιατί;`}
+  options={["Bug του Tailwind", "Ο JIT scanner δεν βλέπει το 'bg-red-500' ως ολόκληρο string στον κώδικα → δεν το παράγει", "Λάθος breakpoint"]}
+  correctOptionIndex={1}
+  answer="Ο JIT scanner δεν βλέπει ολόκληρο το string"
+  explanation="Το purge/JIT βρίσκει classes ψάχνοντας αυτούσια strings στον κώδικα. Το `bg-${color}-500` δεν υπάρχει ως 'bg-red-500' πουθενά, οπότε δεν παράγεται. Λύση: πλήρη class names (conditional/map) ή safelist."
+/>
+
+## Πότε ΔΕΝ είναι ιδανικό το Tailwind
+
+- Όταν θες **γρήγορα έτοιμα interactive components** (navbar, modal, dropdown) χωρίς custom design — εκεί ταιριάζει component framework (Bootstrap). Το Tailwind δίνει utilities, όχι έτοιμα components (μπορείς να φέρεις Headless UI/Radix για τη συμπεριφορά).
+- Όταν η ομάδα προτιμά **κανονικό CSS** με scope — CSS Modules.
+- Για πολύ μικρά/στατικά projects όπου το setup δεν αξίζει.
+
+## Πώς απαντάς στη συνέντευξη
+
+> «Doesn't Tailwind make the markup messy?»
+
+> Only if you copy-paste. In a component framework the fix is a component: the utility string lives once in a `<Button>` and I use it cleanly everywhere — the verbose markup is centralised, not repeated. `@apply` exists for non-component contexts like plain templates, but I use it sparingly, because applying everything recreates the named-CSS problem Tailwind avoids. In production the JIT build scans my files and emits only the classes I actually use, so the bundle stays small — the one gotcha is dynamic class strings like `bg-${x}-500`, which the scanner can't see, so I use full class names or a safelist. And when I just need ready-made interactive components fast, I'd reach for Bootstrap instead.
+
+<Flashcards
+  title="Reuse & production — drills"
+  cards={[
+    {
+      question: "Πώς λύνεις την επανάληψη classes σωστά;",
+      answer: "Σε component framework: component (το <Button> με το class string μία φορά). Όχι copy-paste. Το @apply είναι για non-component contexts, με μέτρο."
+    },
+    {
+      question: "Πότε @apply και πότε ΟΧΙ;",
+      answer: "@apply: plain HTML/templates χωρίς components, για λίγα global elements. ΟΧΙ για τα πάντα — ξαναφτιάχνεις 'κανονικό CSS με ονόματα'. Σε React προτίμησε component."
+    },
+    {
+      question: "Γιατί είναι μικρό το production CSS;",
+      answer: "JIT/purge: σκανάρει το content και παράγει CSS μόνο για classes που εμφανίζονται αυτούσιες. Χιλιάδες διαθέσιμες → λίγα KB στο τελικό bundle."
+    },
+    {
+      question: "Ποια είναι η παγίδα με δυναμικές classes;",
+      answer: "Το `bg-${color}-500` δεν υπάρχει ως ολόκληρο string, οπότε ο scanner δεν το βλέπει και δεν παράγεται. Λύση: πλήρη class names (conditional/map) ή safelist στο config."
+    },
+    {
+      question: "Πότε ΔΕΝ διαλέγεις Tailwind;",
+      answer: "Όταν θες έτοιμα interactive components γρήγορα χωρίς custom design (→ Bootstrap), ή κανονικό CSS με scope (→ CSS Modules). Το Tailwind δίνει utilities, όχι έτοιμα components."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Από copy-paste σε components + έλεγχος bundle"
+  scenario="Πάρε ένα UI με επαναλαμβανόμενα utility strings και ένα δυναμικό class bug. Κάν' το reusable και διόρθωσε το production bundle."
+  outcomes={[
+    "Να εξάγεις επαναλαμβανόμενο markup σε component.",
+    "Να διορθώνεις δυναμικά class strings.",
+    "Να εξηγείς το JIT/purge και πότε να μην επιλέγεις Tailwind."
+  ]}
+  steps={[
+    "Βρες το επαναλαμβανόμενο utility string και κάν' το <Button>/<Card> component.",
+    "Εντόπισε ένα `bg-${x}` δυναμικό class που 'εξαφανίζεται'.",
+    "Αντικατάστησέ το με conditional/map πλήρων class names (ή safelist).",
+    "Επιβεβαίωσε ότι το χρώμα εμφανίζεται στο production build.",
+    "Σημείωσε ένα σενάριο όπου θα διάλεγες Bootstrap αντί Tailwind."
+  ]}
+  checkpoints={[
+    "Μηδέν copy-paste — η επανάληψη έγινε component.",
+    "Το δυναμικό χρώμα εμφανίζεται σωστά στο build.",
+    "Εξηγείς το JIT/purge και την παγίδα δυναμικών classes.",
+    "Δικαιολογείς πότε Tailwind vs Bootstrap."
+  ]}
+  mistakes={[
+    "Copy-paste utility strings αντί για component.",
+    "@apply για τα πάντα.",
+    "Δυναμικά class strings που ο purge δεν εντοπίζει.",
+    "Να επιμένεις σε Tailwind όταν θες έτοιμα components γρήγορα."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν κρατάς καθαρό markup με components, αποφεύγεις την παγίδα δυναμικών classes, και διαλέγεις σωστά Tailwind vs εναλλακτικές."
+/>

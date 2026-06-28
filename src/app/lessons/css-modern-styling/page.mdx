@@ -1,0 +1,179 @@
+# Styling at Scale
+
+Ξέρεις box model, flexbox και grid — αλλά σε πραγματικό project δεν γράφεις CSS «όπως-όπως» σε ένα τεράστιο `styles.css`. Οι ομάδες χρειάζονται styling που **κλιμακώνεται**: να μην συγκρούεται, να είναι συνεπές, να αλλάζει θέμα με μια μεταβλητή. Αυτό το μάθημα είναι ο χάρτης: το πρόβλημα του CSS at scale, οι **δύο φιλοσοφίες** frameworks (utility-first vs component-first), και τα cross-cutting εργαλεία — CSS Modules, design tokens, dark mode. Τα δύο frameworks τα δουλεύεις σε βάθος στα επόμενα μαθήματα (Tailwind, Bootstrap).
+
+## Το πρόβλημα: CSS at scale
+
+Το «κανονικό» CSS έχει δύο πόνους σε μεγάλα projects:
+
+- **Global scope:** κάθε class είναι global. Ένα `.card` σε δύο αρχεία συγκρούεται· αλλάζεις κάτι εδώ, σπάει κάτι αλλού. Φόβος να σβήσεις CSS («μήπως το χρησιμοποιεί κάτι;»).
+- **Naming fatigue:** ξοδεύεις χρόνο σε ονόματα (`.user-card__header--active`) και πηγαινοέρχεσαι ανάμεσα σε HTML και CSS αρχείο.
+
+Υπάρχουν τρεις οικογένειες λύσεων: **CSS frameworks** (Tailwind, Bootstrap), **scoped CSS** (CSS Modules / CSS-in-JS), και ο συνδυασμός τους με **design tokens**.
+
+## Οι δύο φιλοσοφίες των frameworks
+
+Τα δύο κυρίαρχα CSS frameworks λύνουν το ίδιο πρόβλημα με **αντίθετο** τρόπο:
+
+```txt
+Utility-first (Tailwind)            Component-first (Bootstrap)
+────────────────────────            ───────────────────────────
+μικρά "τουβλάκια" → χτίζεις          έτοιμα components → συναρμολογείς
+px-4 py-2 bg-blue-600 rounded-lg     btn btn-primary
+custom design, πλήρης έλεγχος        γρήγορο, συνεπές, "έτοιμο"
+```
+
+```html
+<!-- Tailwind: συνθέτεις το κουμπί από utilities -->
+<button class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">OK</button>
+
+<!-- Bootstrap: λες "είναι ένα primary button" -->
+<button class="btn btn-primary">OK</button>
+```
+
+Κανένα δεν είναι «καλύτερο» — είναι **fit**: Tailwind όταν θες μοναδικό, custom design με έλεγχο· Bootstrap όταν θες να βγάλεις γρήγορα ένα λειτουργικό, συνεπές UI χωρίς custom design. Το καθένα έχει το δικό του πλήρες μάθημα παρακάτω.
+
+## Scoped CSS: CSS Modules
+
+Η τρίτη προσέγγιση, ανεξάρτητη από framework: γράφεις **κανονικό CSS**, αλλά οι classes γίνονται **τοπικές** σε ένα component — μηδέν συγκρούσεις.
+
+```css
+/* Button.module.css */
+.button { padding: 8px 16px; background: #2563eb; color: white; border-radius: 8px; }
+```
+
+```jsx
+import styles from "./Button.module.css";
+// το styles.button γίνεται κάτι σαν "Button_button__x7f9" — εγγυημένα μοναδικό
+<button className={styles.button}>Αποθήκευση</button>
+```
+
+Πλεονέκτημα: κρατάς γνωστό CSS και πλήρη ελευθερία, με scope ασφάλεια. Μειονέκτημα: ξανά naming + δύο αρχεία. Υπάρχει και **CSS-in-JS** (styled-components/Emotion) με παρόμοια ιδέα, αλλά τα tradeoffs (runtime cost) έχουν στρέψει πολλούς προς Tailwind ή zero-runtime λύσεις.
+
+<Exercise
+  question="Ποιο πρόβλημα του global CSS λύνουν οι CSS Modules;"
+  options={[
+    "Κάνουν το CSS να φορτώνει πιο γρήγορα.",
+    "Δίνουν αυτόματο local scope: η κάθε class γίνεται μοναδική, οπότε δεν συγκρούεται με ίδιο όνομα αλλού.",
+    "Αφαιρούν την ανάγκη για HTML."
+  ]}
+  correctOptionIndex={1}
+  explanation="CSS Modules μετατρέπουν το .button σε κάτι μοναδικό (Button_button__x7f9) ανά component. Λύνουν το global-scope πρόβλημα (συγκρούσεις, φόβος να σβήσεις CSS) κρατώντας κανονικό CSS — αλλά εξακολουθείς να ονομάζεις classes."
+/>
+
+## Design tokens: μία πηγή αλήθειας για το design
+
+**Design tokens** είναι named μεταβλητές για χρώματα, spacing, typography — η «γλώσσα» του design system σου. Δουλεύουν με **όλες** τις παραπάνω προσεγγίσεις. Αντί για σκόρπια hex codes, ορίζεις σημασιολογικά ονόματα μία φορά:
+
+```css
+:root {
+  --color-primary: #2563eb;
+  --color-bg: #ffffff;
+  --color-text: #111827;
+  --space-md: 16px;
+  --radius: 8px;
+}
+
+.button { background: var(--color-primary); border-radius: var(--radius); }
+```
+
+Όφελος: αλλάζεις το brand χρώμα **σε ένα σημείο** και ενημερώνεται όλη η εφαρμογή. Στο Tailwind τα tokens ζουν στο `theme` config· στο Bootstrap σε Sass/CSS variables — αλλά η ιδέα είναι ίδια παντού.
+
+## Dark mode — η killer εφαρμογή των tokens
+
+Επειδή τα χρώματα είναι μεταβλητές, το dark mode γίνεται **αλλαγή τιμών**, όχι ξαναγράψιμο:
+
+```css
+:root            { --color-bg: #ffffff; --color-text: #111827; }
+[data-theme="dark"] { --color-bg: #0b0f19; --color-text: #e5e7eb; }
+
+body { background: var(--color-bg); color: var(--color-text); }
+```
+
+```js
+// Toggle: άλλαξε ένα attribute, όλα τα tokens αλλάζουν μαζί
+document.documentElement.setAttribute("data-theme", "dark");
+```
+
+Το μυστικό: **σημασιολογικά tokens** (`--color-bg`, όχι `--white`) ώστε το ίδιο όνομα να σημαίνει «φόντο» σε κάθε theme.
+
+<PredictOutput
+  title="Πού αλλάζεις το brand χρώμα σε όλη την app;"
+  code={`Έχεις 40 components που χρησιμοποιούν το ίδιο μπλε.
+Το brand αλλάζει χρώμα. Με σωστό setup, πόσα σημεία αγγίζεις;`}
+  options={["Και στα 40 components", "Σε 1 σημείο (design token / theme config)", "Σε κάθε CSS αρχείο"]}
+  correctOptionIndex={1}
+  answer="Σε 1 σημείο (design token / theme config)"
+  explanation="Με design tokens (CSS variable --color-primary ή Tailwind/Bootstrap theme config), το χρώμα ορίζεται μία φορά και όλα τα components το αναφέρουν με σημασιολογικό όνομα. Αλλάζεις την τιμή σε ένα σημείο → ενημερώνεται παντού."
+/>
+
+## Πρακτικός κανόνας επιλογής
+
+```txt
+Custom, μοναδικό design με πλήρη έλεγχο      → Tailwind (δες το επόμενο μάθημα)
+Γρήγορο admin/prototype/internal tool         → Bootstrap (δες το μάθημα του)
+Θέλω κανονικό CSS με scope ασφάλεια           → CSS Modules
+Component library με dynamic theming           → CSS-in-JS ή Tailwind
+Σε ΟΛΑ: design tokens + σημασιολογικά ονόματα για theming/dark mode
+```
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you handle styling in a large app?»
+
+> I avoid global CSS sprawl. The two dominant frameworks take opposite approaches: utility-first with Tailwind, where styling lives in the markup composed from a fixed design scale, best for a custom design with full control; and component-first with Bootstrap, prebuilt components and a grid that ship a consistent UI fast, best for admin panels and prototypes. When a team prefers writing real CSS, CSS Modules give local scoping so classes never collide. Whatever the approach, I drive everything from design tokens — semantic variables like `--color-bg` or theme config — so rebranding or adding dark mode is changing values in one place, not editing every component.
+
+<Flashcards
+  title="Styling at scale — interview drills"
+  cards={[
+    {
+      question: "Ποιο πρόβλημα του global CSS λύνουν οι μοντέρνες προσεγγίσεις;",
+      answer: "Global scope (συγκρούσεις class names, φόβος να σβήσεις CSS) και naming fatigue. CSS Modules δίνουν local scope· τα frameworks (Tailwind/Bootstrap) δίνουν έτοιμο, συνεπές σύστημα."
+    },
+    {
+      question: "Utility-first vs component-first;",
+      answer: "Utility-first (Tailwind): χτίζεις από μικρά τουβλάκια (px-4 bg-blue-600), custom design, πλήρης έλεγχος. Component-first (Bootstrap): έτοιμα components (btn btn-primary), ταχύτητα & συνέπεια, λιγότερη ελευθερία. Fit, όχι καλύτερο/χειρότερο."
+    },
+    {
+      question: "Πώς δουλεύουν τα CSS Modules;",
+      answer: "Κανονικό CSS με αυτόματο local scoping: η class γίνεται μοναδική ανά component (Button_button__x7f9), καμία σύγκρουση. Μειονέκτημα: ακόμα ονομάζεις classes + δύο αρχεία."
+    },
+    {
+      question: "Τι είναι design tokens;",
+      answer: "Named μεταβλητές για χρώματα/spacing/typography (--color-primary, --space-md) — μία πηγή αλήθειας. Αλλάζεις brand/spacing σε ένα σημείο και ενημερώνεται όλη η app. Βάση για theming, δουλεύουν με κάθε προσέγγιση."
+    },
+    {
+      question: "Πώς υλοποιείς dark mode καθαρά;",
+      answer: "Σημασιολογικά tokens (--color-bg, --color-text) και override των τιμών σε [data-theme='dark']. Toggle = αλλαγή ενός attribute· όλα τα tokens αλλάζουν μαζί, χωρίς να ξαναγράψεις styles."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Ξαναέντυσε ένα component με tokens + dark mode"
+  scenario="Πάρε ένα component με σκόρπια hex codes και inline στυλ και ξαναέντυσέ το με design tokens, με λειτουργικό light/dark — ανεξάρτητα από framework."
+  outcomes={[
+    "Να εξάγεις χρώματα/spacing σε design tokens.",
+    "Να υλοποιείς dark mode μέσω token override.",
+    "Να διαλέγεις approach (framework vs CSS Modules) από τις ανάγκες."
+  ]}
+  steps={[
+    "Εντόπισε όλα τα hardcoded χρώματα/spacing στο component.",
+    "Όρισέ τα ως σημασιολογικά tokens (CSS variables).",
+    "Ξαναέντυσε το component χρησιμοποιώντας τα tokens (όχι hex).",
+    "Πρόσθεσε dark theme κάνοντας override μόνο των τιμών των tokens.",
+    "Κάνε ένα toggle που αλλάζει data-theme στο root."
+  ]}
+  checkpoints={[
+    "Κανένα hardcoded hex μέσα στο component.",
+    "Αλλαγή ενός token ενημερώνει όλο το component.",
+    "Dark mode δουλεύει χωρίς να ξαναγράψεις styles."
+  ]}
+  mistakes={[
+    "Σκόρπια hex codes αντί για tokens (αδύνατο rebrand/theming).",
+    "Μη-σημασιολογικά token ονόματα (--white αντί --color-bg).",
+    "Global class names που συγκρούονται.",
+    "outline/focus styles που χάνονται — κράτα accessibility."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μπορείς να αλλάξεις ολόκληρο το theme (ή να προσθέσεις dark mode) αγγίζοντας μόνο tokens, και να δικαιολογήσεις την επιλογή framework/approach."
+/>

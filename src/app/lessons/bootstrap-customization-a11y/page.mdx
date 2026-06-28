@@ -1,0 +1,126 @@
+# Customization & Accessibility
+
+Δύο πράγματα ξεχωρίζουν ένα σοβαρό Bootstrap project από ένα ερασιτεχνικό: το **customization** (ώστε να μη μοιάζει «generic Bootstrap») και η **accessibility** (που, ευτυχώς, έρχεται σε μεγάλο βαθμό δωρεάν). Αυτό το τελευταίο μάθημα τα καλύπτει και κλείνει με τη σύγκριση Bootstrap vs Tailwind.
+
+## Το πρόβλημα: «generic Bootstrap look»
+
+Το default Bootstrap έχει αναγνωρίσιμο στυλ — το γνωστό μπλε, συγκεκριμένα radii. Αν δεν το προσαρμόσεις, η app σου φαίνεται «σαν όλες τις άλλες». Η λύση είναι **theming** μέσω μεταβλητών — η ίδια ιδέα design tokens.
+
+## Sass variables — ο σωστός τρόπος
+
+Το Bootstrap είναι γραμμένο σε Sass. Κάνεις override τις variables **πριν** το import, και το framework compile-άρεται με τις δικές σου τιμές:
+
+```scss
+// custom.scss
+$primary: #6b21a8;        // άλλαξε το brand χρώμα
+$border-radius: 0.75rem;  // πιο στρογγυλεμένα
+$font-family-base: "Poppins", sans-serif;
+
+@import "bootstrap/scss/bootstrap";
+```
+
+Έτσι **όλα** τα components (`btn-primary`, links, focus rings) παίρνουν το νέο brand — αλλάζεις σε **ένα σημείο**. Μπορείς ακόμα να επιλέξεις ποια μέρη του Bootstrap να συμπεριλάβεις (για μικρότερο bundle).
+
+## CSS variables (--bs-*)
+
+Το Bootstrap 5 εκθέτει και **CSS variables** που αλλάζεις runtime, χωρίς recompile:
+
+```css
+:root { --bs-primary: #6b21a8; }
+```
+
+Χρήσιμο για γρήγορα tweaks ή dynamic theming (π.χ. dark mode toggle). Τα Sass variables είναι πιο ισχυρά (compile-time, επηρεάζουν τα πάντα), τα CSS variables πιο ευέλικτα runtime.
+
+<Exercise
+  question="Θες ΟΛΑ τα primary components να γίνουν μωβ αντί για μπλε, από ένα σημείο. Τι κάνεις;"
+  options={[
+    "Override κάθε .btn-primary, .text-primary κ.λπ. με δικό σου CSS και !important.",
+    "Override τη Sass variable $primary πριν το @import bootstrap (ή --bs-primary για runtime).",
+    "Αλλάζεις το χρώμα σε κάθε κουμπί χειροκίνητα."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το $primary είναι το token από το οποίο παράγονται όλα τα primary styles. Override το πριν το import και όλα τα primary components αλλάζουν μαζί — design tokens. Το !important σε κάθε class είναι anti-pattern."
+/>
+
+## Accessibility — έρχεται μαζί
+
+Μεγάλο, συχνά παραγνωρισμένο όφελος: τα components του Bootstrap έρχονται με **σωστά ARIA attributes, roles και keyboard handling** ενσωματωμένα:
+
+- Τα **modals** κάνουν focus trap και κλείνουν με Esc.
+- Τα **dropdowns** έχουν `aria-expanded` και keyboard navigation.
+- Τα **alerts** έχουν `role="alert"` ώστε οι screen readers να τα ανακοινώνουν.
+- Τα form controls δένονται με labels (αρκεί να βάλεις `for`/`id`).
+
+Παίρνεις δωρεάν μεγάλο μέρος της προσβασιμότητας που αλλιώς θα έγραφες μόνος σου — **αρκεί να ακολουθείς τη συνιστώμενη δομή markup** και να μη σπας τα attributes. (Δες και το αφιερωμένο μάθημα Accessibility για τα θεμέλια.)
+
+## Bootstrap vs Tailwind — σύνοψη
+
+```txt
+Bootstrap (component-first)            Tailwind (utility-first)
+──────────────────────────            ────────────────────────
+γρήγορο admin/dashboard/prototype      custom, μοναδικό design
+έτοιμα components + JS + a11y           πλήρης έλεγχος, δικά σου components
+συνεπές "έτοιμο" look                   ό,τι σχεδιάσεις
+customization: Sass/--bs-*              customization: theme config
+ρίσκο generic look                      ρίσκο φλύαρου markup
+```
+
+Διάλεξε **Bootstrap** για γρήγορο, λειτουργικό, προσβάσιμο UI χωρίς custom design· **Tailwind** για μοναδικό design με έλεγχο. Πολλές ομάδες ξεκινούν με Bootstrap (ταχύτητα) και μεταναστεύουν σε Tailwind όταν θέλουν ξεχωριστή ταυτότητα.
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you customise Bootstrap and is it accessible?»
+
+> I customise through variables, not by overriding every class. Bootstrap is written in Sass, so I override variables like `$primary` and `$border-radius` before importing it, and every component recompiles with my brand from one place; for runtime tweaks I use the `--bs-*` CSS variables. That avoids the generic Bootstrap look. On accessibility, a lot comes for free: modals trap focus and close on Esc, dropdowns expose `aria-expanded` and keyboard navigation, alerts have `role="alert"`, and form controls pair with labels — as long as I follow the recommended markup. The trade-off versus Tailwind is less design freedom and a bigger default bundle, so for a unique custom design I'd choose Tailwind.
+
+<Flashcards
+  title="Customization & a11y — drills"
+  cards={[
+    {
+      question: "Πώς αποφεύγεις το 'generic Bootstrap look';",
+      answer: "Theming μέσω μεταβλητών: override Sass variables ($primary, $border-radius, $font-family-base) πριν το @import, ή --bs-* CSS variables runtime. Αλλάζεις brand από ένα σημείο."
+    },
+    {
+      question: "Sass variables vs CSS variables (--bs-*);",
+      answer: "Sass: compile-time, πιο ισχυρά (επηρεάζουν τα πάντα, μπορείς να μειώσεις bundle). CSS (--bs-*): runtime, πιο ευέλικτα για dynamic theming/tweaks χωρίς recompile."
+    },
+    {
+      question: "Ποια accessibility δίνει δωρεάν το Bootstrap;",
+      answer: "ARIA roles/attributes & keyboard handling ενσωματωμένα: focus trap + Esc στα modals, aria-expanded + keyboard nav στα dropdowns, role='alert' στα alerts, label binding στα forms. Αρκεί να ακολουθείς τη δομή markup."
+    },
+    {
+      question: "Bootstrap vs Tailwind — τελική σύνοψη;",
+      answer: "Bootstrap: component-first, γρήγορο/συνεπές/προσβάσιμο UI, λιγότερη ελευθερία, μεγαλύτερο bundle, ρίσκο generic look. Tailwind: utility-first, custom design, πλήρης έλεγχος, φλύαρο markup. Fit κατά περίπτωση."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Customize το brand & έλεγξε accessibility"
+  scenario="Πάρε ένα default Bootstrap UI, customize το brand μέσω variables ώστε να μη φαίνεται generic, και έλεγξε την προσβασιμότητα ενός interactive component."
+  outcomes={[
+    "Να κάνεις theming με Sass/CSS variables.",
+    "Να αλλάζεις brand από ένα σημείο.",
+    "Να επαληθεύεις την built-in accessibility."
+  ]}
+  steps={[
+    "Override $primary, $border-radius, $font-family-base πριν το import (ή --bs-primary).",
+    "Επιβεβαίωσε ότι όλα τα primary components άλλαξαν μαζί.",
+    "Άνοιξε ένα modal και δοκίμασε keyboard: Esc κλείνει, focus παγιδεύεται.",
+    "Έλεγξε ότι τα form labels συνδέονται (for/id) και τα alerts έχουν role.",
+    "Σημείωσε αν θα διάλεγες Tailwind αντί Bootstrap για το project — γιατί."
+  ]}
+  checkpoints={[
+    "Το brand άλλαξε από ένα σημείο (όχι ανά class).",
+    "Δεν φαίνεται 'generic Bootstrap'.",
+    "Το modal είναι keyboard-accessible (Esc/focus).",
+    "Δικαιολογείς Bootstrap vs Tailwind για το context."
+  ]}
+  mistakes={[
+    "Override κάθε class με !important αντί για variables.",
+    "Καθόλου customization → generic look.",
+    "Να σπας τα ARIA attributes των components.",
+    "Να αγνοείς το μέγεθος bundle σε production."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν customize-άρεις το Bootstrap μέσω tokens ώστε να έχει δική του ταυτότητα, επιβεβαιώνεις την accessibility, και διαλέγεις σωστά Bootstrap vs Tailwind."
+/>

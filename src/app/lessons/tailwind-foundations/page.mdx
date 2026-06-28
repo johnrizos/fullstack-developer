@@ -1,0 +1,122 @@
+# Tailwind Foundations
+
+Το **Tailwind** είναι το πιο διαδεδομένο utility-first framework — θα το δεις σε Next.js, React και αμέτρητα σύγχρονα projects. Αυτό το πρώτο μάθημα χτίζει το θεμέλιο: *γιατί* υπάρχει το utility-first, πώς στήνεται, ποιο είναι το «λεξιλόγιο» των utilities, και — το πιο υποτιμημένο — η **σταθερή κλίμακα** που σου χαρίζει συνέπεια δωρεάν.
+
+## Το πρόβλημα που λύνει
+
+Στο κανονικό CSS ξοδεύεις χρόνο σε **ονόματα** (`.user-card__header--active`), πηγαινοέρχεσαι ανάμεσα σε HTML και CSS αρχείο, και συσσωρεύεις dead CSS που φοβάσαι να σβήσεις. Το Tailwind εξαφανίζει και τα τρία: συνθέτεις το styling **μέσα στο markup** από μικρές classes, η κάθε μία κάνει **ένα** πράγμα.
+
+```html
+<button class="px-4 py-2 bg-blue-600 text-white rounded-lg">Αποθήκευση</button>
+```
+
+- **Καθόλου naming, καθόλου context-switch** — μένεις στο markup.
+- **Συνέπεια by default** — όλα από σταθερή κλίμακα, όχι τυχαία hex/px.
+- **Dead-code free** — το build κρατά μόνο όσες classes χρησιμοποιείς.
+
+## Setup & το JIT engine
+
+Εγκαθιστάς το Tailwind, του λες ποια αρχεία να σκανάρει (`content`), και βάζεις τα directives στο global CSS:
+
+```css
+/* globals.css */
+@tailwind base;        /* resets/normalize */
+@tailwind components;  /* component classes */
+@tailwind utilities;   /* όλες οι utility classes */
+```
+
+Στο build, ο **JIT** (Just-In-Time) scanner διαβάζει το markup και παράγει **μόνο** το CSS των classes που όντως εμφανίζονται. Γι' αυτό μια app με χιλιάδες διαθέσιμες utilities βγάζει λίγα KB CSS.
+
+## Το λεξιλόγιο: οι κατηγορίες utilities
+
+Δεν τις απομνημονεύεις — τις αναγνωρίζεις από μοτίβα. Οι βασικές οικογένειες:
+
+| Σκοπός | Παραδείγματα | Σημαίνει |
+|---|---|---|
+| Spacing | `p-4`, `px-2`, `mt-6`, `gap-3` | padding / margin / gap |
+| Χρώμα | `bg-blue-600`, `text-gray-800`, `border-red-500` | background / text / border |
+| Typography | `text-lg`, `font-bold`, `leading-tight`, `text-center` | μέγεθος / βάρος / line-height / στοίχιση |
+| Sizing | `w-full`, `max-w-md`, `h-12` | πλάτος / ύψος |
+| Effects | `rounded-lg`, `shadow-md`, `opacity-50` | radius / σκιά / διαφάνεια |
+
+(Τα layout utilities — flex/grid — τα βλέπεις στο επόμενο μάθημα.)
+
+## Η κλίμακα: ένα design system «μέσα στο κουτί»
+
+Το κρυφό πλεονέκτημα: οι αριθμοί **δεν** είναι τυχαίοι. Το spacing ακολουθεί κλίμακα όπου **`4` = `1rem` (16px)**:
+
+```txt
+p-1 = 4px   p-2 = 8px   p-3 = 12px   p-4 = 16px   p-6 = 24px   p-8 = 32px
+```
+
+Τα χρώματα έρχονται με αποχρώσεις 50→950 (`blue-50` ανοιχτό → `blue-900` σκούρο). Επειδή όλοι στην ομάδα διαλέγουν από την **ίδια** κλίμακα/παλέτα, δεν καταλήγεις με 14 διαφορετικά μπλε ή 9 τυχαία paddings — η συνέπεια έρχεται δωρεάν, χωρίς design system meeting.
+
+<Exercise
+  question="Τι σημαίνει το 'p-4' και γιατί προτιμάται από το 'padding: 17px';"
+  options={[
+    "Padding 4px — και είναι το ίδιο με 17px.",
+    "Padding από τη σταθερή κλίμακα (4 = 1rem = 16px) — κρατά τα spacings συνεπή σε όλη την app, αντί για τυχαίες τιμές.",
+    "4 paddings ταυτόχρονα."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το p-4 = 16px από την κλίμακα του Tailwind. Επειδή όλοι διαλέγουν από την ίδια κλίμακα (4/6/8...), τα spacings μένουν συνεπή. Το padding:17px είναι αυθαίρετο — οδηγεί σε ασυνέπεια."
+/>
+
+## Γιατί δεν είναι «inline styles»
+
+Συχνή παρανόηση: «utilities = inline styles». Όχι. Τα inline styles (`style="padding:16px"`) δεν έχουν κλίμακα, δεν υποστηρίζουν `:hover`/media queries, και δεν είναι reusable. Οι utilities έρχονται από **σχεδιασμένο σύστημα** με κλίμακα, υποστηρίζουν states/responsive (επόμενα μαθήματα), και το build τις βελτιστοποιεί.
+
+## Πώς απαντάς στη συνέντευξη
+
+> «What is utility-first and why use it?»
+
+> Utility-first means composing styling directly in the markup from small single-purpose classes — padding, colour, radius — instead of writing CSS in separate files with invented class names. The values come from a fixed scale, so spacing and colours stay consistent across a team without anyone reinventing them. The JIT build scans the markup and emits CSS only for classes I actually use, so the bundle stays tiny. It's not inline styles: utilities support states, responsive variants, and a design scale that inline styles can't.
+
+<Flashcards
+  title="Tailwind foundations — drills"
+  cards={[
+    {
+      question: "Τι είναι utility-first;",
+      answer: "Συνθέτεις styling μέσα στο markup από μικρές classes που κάνουν ένα πράγμα (p-4, bg-blue-600), αντί για CSS σε ξεχωριστά αρχεία με ονόματα. Οι τιμές από σταθερή κλίμακα."
+    },
+    {
+      question: "Τι κάνει το JIT engine;",
+      answer: "Σκανάρει το content (markup) στο build και παράγει CSS μόνο για τις classes που εμφανίζονται. Αποτέλεσμα: μικρό production bundle παρά τις χιλιάδες διαθέσιμες utilities."
+    },
+    {
+      question: "Τι σημαίνει η κλίμακα (π.χ. p-4);",
+      answer: "Σταθερό σύστημα τιμών: 4 = 1rem = 16px. Όλοι διαλέγουν από την ίδια κλίμακα spacing/colors, οπότε η συνέπεια έρχεται δωρεάν χωρίς αυθαίρετα px/hex."
+    },
+    {
+      question: "Utilities vs inline styles;",
+      answer: "Τα utilities έρχονται από σχεδιασμένη κλίμακα, υποστηρίζουν states/responsive και βελτιστοποιούνται στο build. Τα inline styles δεν έχουν κλίμακα, ούτε :hover/media queries, ούτε reuse."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Πρώτα βήματα με utilities"
+  scenario="Πάρε ένα κουμπί και μια κάρτα με σκόρπιο CSS και ξαναέντυσέ τα μόνο με Tailwind utilities από την κλίμακα."
+  outcomes={[
+    "Να αναγνωρίζεις τις κατηγορίες utilities.",
+    "Να χρησιμοποιείς την κλίμακα spacing/colors.",
+    "Να εξηγείς γιατί utility-first ≠ inline styles."
+  ]}
+  steps={[
+    "Αντικατάστησε padding/margin με spacing utilities (p-/m-/gap-).",
+    "Αντικατάστησε χρώματα με bg-/text-/border- από την παλέτα.",
+    "Πρόσθεσε rounded-/shadow-/font- για typography & effects.",
+    "Επιβεβαίωσε ότι όλες οι τιμές έρχονται από την κλίμακα, όχι αυθαίρετες."
+  ]}
+  checkpoints={[
+    "Καμία αυθαίρετη τιμή — όλα από την κλίμακα.",
+    "Μπορείς να ονομάσεις την κατηγορία κάθε utility.",
+    "Εξηγείς το JIT/purge με δικά σου λόγια."
+  ]}
+  mistakes={[
+    "Να μπερδεύεις utilities με inline styles.",
+    "Αυθαίρετες τιμές παντού αντί για την κλίμακα.",
+    "Να νομίζεις ότι μπαίνουν ΟΛΕΣ οι classes στο bundle."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν χτίζεις βασικά UI μόνο με utilities από την κλίμακα και εξηγείς το utility-first μοντέλο."
+/>

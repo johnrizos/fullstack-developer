@@ -1,0 +1,198 @@
+# How the Web Really Works
+
+Όταν γράφεις `https://example.com` και πατάς Enter, συμβαίνουν δεκάδες πράγματα πριν δεις τη σελίδα. Οι developers που ξέρουν *τι* ακριβώς, ξεμπλοκάρουν μόνοι τους CORS errors, καταλαβαίνουν γιατί ένα deploy «δεν φρεσκάρει» (caching), και απαντούν με σιγουριά στο κλασικό interview opener: «what happens when you type a URL and hit Enter?».
+
+## Το ταξίδι ενός request — η μεγάλη εικόνα
+
+```txt
+1. DNS      example.com ──────────► 93.184.216.34   (όνομα → IP)
+2. TCP      «άνοιξε σύνδεση στο 93.184.216.34:443»
+3. TLS      handshake → κρυπτογραφημένο κανάλι (το "s" στο https)
+4. HTTP     GET / HTTP/2  +  headers ──────────► server
+5. Response 200 OK + headers + HTML body ◄────── server
+6. Render   browser: parse HTML → CSS → JS → ζητά εικόνες/fonts (πάλι 1-5)
+```
+
+Κάθε βήμα είναι ένα concept που θα δούμε. Κράτα ότι **ένα URL = πολλά requests**: το HTML φέρνει references σε CSS, JS, images — το καθένα ξεκινά νέο ταξίδι.
+
+## DNS — το τηλεφωνικό κατάλογος του internet
+
+Οι υπολογιστές μιλάνε με **IP addresses** (`93.184.216.34`), όχι ονόματα. Το **DNS** (Domain Name System) μεταφράζει `example.com` → IP. Γίνεται με αλυσίδα από caches:
+
+```txt
+browser cache → OS cache → router → ISP resolver → root → TLD (.com) → authoritative
+```
+
+Το πρώτο που έχει την απάντηση τη δίνει — γι' αυτό η δεύτερη επίσκεψη είναι ταχύτερη. Το DNS έχει **TTL**: πόση ώρα επιτρέπεται να μείνει cached. Γι' αυτό μια αλλαγή DNS «αργεί να φανεί» — κάποιοι resolvers κρατούν την παλιά τιμή μέχρι να λήξει το TTL.
+
+## TCP & TLS — σύνδεση και ασφάλεια
+
+Μετά το IP, ο browser ανοίγει **TCP** σύνδεση (αξιόπιστο κανάλι). Σε `https`, ακολουθεί **TLS handshake**: ανταλλαγή certificate και κλειδιών ώστε τα δεδομένα να είναι **κρυπτογραφημένα**. Το certificate αποδεικνύει ότι ο server είναι όντως ο `example.com` (υπογεγραμμένο από Certificate Authority).
+
+> Γι' αυτό το `https` δεν είναι «απλώς ένα λουκέτο»: εμποδίζει κάποιον στο ίδιο WiFi να διαβάσει ή να αλλοιώσει το traffic σου. Ποτέ login form σε `http`.
+
+## HTTP — το πρωτόκολλο request/response
+
+Το **HTTP** είναι το «λεξιλόγιο». Ένα request έχει method, path, headers (και ίσως body):
+
+```http
+GET /tasks HTTP/2
+Host: example.com
+Authorization: Bearer eyJ...
+Accept: application/json
+```
+
+Η απάντηση έχει status code, headers, body:
+
+```http
+HTTP/2 200 OK
+Content-Type: application/json
+Cache-Control: max-age=3600
+Set-Cookie: session=abc; HttpOnly; Secure
+
+{ "data": [...] }
+```
+
+Τα **methods** (GET/POST/PUT/PATCH/DELETE) και τα **status codes** (200/404/500…) τα είδες στο REST APIs μάθημα. Εδώ εστιάζουμε στα **headers** — εκεί κρύβεται το 80% της μαγείας: caching, auth, cookies, content negotiation.
+
+## Caching headers — γιατί κάτι «δεν φρεσκάρει»
+
+Ο browser (και τα CDNs) αποθηκεύουν responses για να μην τα ξανακατεβάζουν. Το ελέγχουν headers:
+
+- **`Cache-Control: max-age=3600`** → «κράτησέ το φρέσκο για 1 ώρα, μη με ξαναρωτήσεις».
+- **`Cache-Control: no-store`** → ποτέ cache (π.χ. τραπεζικά δεδομένα).
+- **`ETag` / `If-None-Match`** → ο browser ρωτά «άλλαξε;» και ο server απαντά **304 Not Modified** χωρίς να ξαναστείλει το body (εξοικονόμηση bandwidth).
+
+```txt
+Πρώτο request:   GET /logo.png  → 200 OK + ETag: "v3"  (κατεβαίνει)
+Επόμενο request: GET /logo.png  + If-None-Match: "v3"
+                                → 304 Not Modified      (δεν ξανακατεβαίνει)
+```
+
+Το κλασικό μυστήριο «έκανα deploy αλλά βλέπω την παλιά έκδοση» = aggressive caching. Λύση: **cache busting** — το build δίνει νέο όνομα αρχείου (`app.4f9a.js`) ώστε να θεωρηθεί νέο resource.
+
+## CDN — φέρε το περιεχόμενο κοντά στον χρήστη
+
+Ένα **CDN** (Content Delivery Network) είναι δίκτυο από servers σε όλο τον κόσμο που κρατούν cached αντίγραφα των στατικών σου αρχείων. Ο χρήστης στην Αθήνα τα παίρνει από edge server στην Ευρώπη αντί από το origin στην Αμερική → πολύ μικρότερο latency. Γι' αυτό deploy σε Vercel/Cloudflare = αυτόματο CDN για assets.
+
+## Cookies & sessions — πώς ο server «σε θυμάται»
+
+Το HTTP είναι **stateless** — κάθε request ξεκινά από το μηδέν. Πώς τότε μένεις logged in; Με **cookies**: ο server στέλνει `Set-Cookie`, ο browser το στέλνει πίσω σε κάθε επόμενο request.
+
+```http
+Set-Cookie: session=abc123; HttpOnly; Secure; SameSite=Lax
+```
+
+Τα flags είναι **security-critical**:
+- **`HttpOnly`** → το cookie δεν διαβάζεται από JavaScript (προστασία από XSS token theft).
+- **`Secure`** → στέλνεται μόνο σε https.
+- **`SameSite`** → περιορίζει αποστολή σε cross-site requests (προστασία από CSRF).
+
+<Exercise
+  question="Έκανες deploy νέα έκδοση του app.js αλλά οι χρήστες βλέπουν την παλιά. Πιο πιθανή αιτία;"
+  options={[
+    "Έπεσε το DNS.",
+    "Caching — ο browser/CDN κρατά την παλιά έκδοση μέχρι να λήξει το max-age ή χωρίς cache busting.",
+    "Λάθος HTTP method."
+  ]}
+  correctOptionIndex={1}
+  explanation="Aggressive caching. Ο browser βλέπει ίδιο URL με μη-ληγμένο Cache-Control και σερβίρει το cached. Λύση: cache busting (hashed filenames) ώστε το νέο build να έχει νέο URL → θεωρείται νέο resource."
+/>
+
+## CORS — το πιο παρεξηγημένο error
+
+Από ασφάλεια, ο browser εφαρμόζει **Same-Origin Policy**: JavaScript στο `app.com` δεν μπορεί να διαβάσει απαντήσεις από `api.other.com` (διαφορετικό origin), εκτός αν ο server το **επιτρέψει ρητά** με **CORS** headers.
+
+```http
+# Response από api.other.com που επιτρέπει το app.com:
+Access-Control-Allow-Origin: https://app.com
+Access-Control-Allow-Methods: GET, POST
+Access-Control-Allow-Headers: Authorization, Content-Type
+```
+
+Κρίσιμη παρανόηση: το CORS **δεν** είναι περιορισμός του server σου — είναι κανόνας που επιβάλλει ο **browser**. Γι' αυτό:
+
+- Το `curl` ή Postman δεν δίνουν ποτέ CORS error (δεν είναι browsers).
+- Το CORS error δεν διορθώνεται στο frontend — διορθώνεται προσθέτοντας τα σωστά **headers στον server**.
+
+```txt
+❌ "CORS error" → ΔΕΝ φταίει ο fetch σου
+✅ Ο server (api.other.com) πρέπει να στείλει Access-Control-Allow-Origin
+```
+
+<PredictOutput
+  title="Πού διορθώνεται ένα CORS error;"
+  code={`Το React app σου (localhost:3000) καλεί το API σου (localhost:8080)
+και ο browser ρίχνει: "blocked by CORS policy".
+Πού κάνεις την αλλαγή;`}
+  options={["Στο fetch() του frontend", "Στα response headers του backend", "Στο DNS"]}
+  correctOptionIndex={1}
+  answer="Στα response headers του backend"
+  explanation="Το CORS το επιβάλλει ο browser αλλά το ΕΠΙΤΡΕΠΕΙ ο server. Προσθέτεις Access-Control-Allow-Origin (π.χ. http://localhost:3000) στο backend. Καμία αλλαγή στο fetch δεν διορθώνει CORS — το request φτάνει στον server, απλώς ο browser μπλοκάρει την ανάγνωση της απάντησης."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «What happens when you type a URL and press Enter?»
+
+> The browser resolves the domain to an IP via DNS, opens a TCP connection, and for HTTPS performs a TLS handshake to get an encrypted channel and verify the server's certificate. It sends an HTTP request with method, path and headers; the server responds with a status code, headers and a body. The browser parses the HTML and fires more requests for CSS, JS, images and fonts — often served from a CDN edge close to the user and cached via Cache-Control and ETags. Cookies with HttpOnly, Secure and SameSite flags keep the otherwise stateless session, and cross-origin calls only succeed if the server returns the right CORS headers.
+
+<Flashcards
+  title="How the web works — interview drills"
+  cards={[
+    {
+      question: "Τι κάνει το DNS και γιατί μια αλλαγή 'αργεί';",
+      answer: "Μεταφράζει domain → IP μέσω αλυσίδας caches. Κάθε record έχει TTL· οι resolvers κρατούν την παλιά τιμή μέχρι να λήξει, γι' αυτό μια αλλαγή DNS διαδίδεται με καθυστέρηση (propagation)."
+    },
+    {
+      question: "Τι προσθέτει το TLS (το 's' στο https);",
+      answer: "Κρυπτογράφηση (κανείς στο δίκτυο δεν διαβάζει/αλλοιώνει το traffic) και authentication μέσω certificate (ο server είναι όντως αυτός που λέει, υπογεγραμμένο από CA)."
+    },
+    {
+      question: "ETag / 304 Not Modified — τι λύνουν;",
+      answer: "Ο browser στέλνει If-None-Match με το ETag του cached. Αν δεν άλλαξε, ο server απαντά 304 χωρίς body → εξοικονόμηση bandwidth. Validation caching αντί για επανακατέβασμα."
+    },
+    {
+      question: "Γιατί ένα νέο deploy δείχνει παλιά έκδοση;",
+      answer: "Caching: ίδιο URL με μη-ληγμένο Cache-Control σερβίρεται από browser/CDN cache. Λύση: cache busting — hashed filenames (app.4f9a.js) ώστε το νέο build να έχει νέο URL."
+    },
+    {
+      question: "HttpOnly, Secure, SameSite σε ένα cookie;",
+      answer: "HttpOnly: άγνωστο στη JS (anti-XSS theft). Secure: μόνο https. SameSite: περιορίζει cross-site αποστολή (anti-CSRF). Κρίσιμα για ασφαλή sessions."
+    },
+    {
+      question: "Πού διορθώνεται ένα CORS error και γιατί;",
+      answer: "Στον server, με Access-Control-Allow-Origin headers. Το CORS το επιβάλλει ο browser (όχι το curl/Postman) αλλά το επιτρέπει ο server. Καμία αλλαγή στο frontend fetch δεν το λύνει."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Χαρτογράφησε ένα πραγματικό request"
+  scenario="Πάρε μια σελίδα που χρησιμοποιείς και χαρτογράφησε όλη τη διαδρομή ενός request, με τα headers που μετράνε. Άνοιξε το DevTools → Network tab για πραγματικά δεδομένα."
+  outcomes={[
+    "Να εξηγείς DNS → TCP → TLS → HTTP → render με σειρά.",
+    "Να διαβάζεις caching/auth/CORS headers σε πραγματικά responses.",
+    "Να εντοπίζεις πού οφείλεται ένα caching ή CORS πρόβλημα."
+  ]}
+  steps={[
+    "Άνοιξε DevTools → Network και φόρτωσε μια σελίδα. Μέτρα πόσα requests γίνονται.",
+    "Διάλεξε το document request: δες status, Cache-Control, Set-Cookie, Content-Type.",
+    "Βρες ένα στατικό asset (js/css/img): έχει ETag; Στο reload γίνεται 304;",
+    "Εντόπισε ένα request προς άλλο origin: τι CORS headers επιστρέφει;",
+    "Σχεδίασε το διάγραμμα DNS→TLS→HTTP→response με δικά σου λόγια."
+  ]}
+  checkpoints={[
+    "Εξηγείς γιατί ένα URL προκαλεί πολλά requests.",
+    "Διαβάζεις σωστά Cache-Control και καταλαβαίνεις το 304.",
+    "Ξέρεις ότι το CORS διορθώνεται στον server, όχι στο fetch.",
+    "Αναγνωρίζεις τα security flags ενός cookie."
+  ]}
+  mistakes={[
+    "Να νομίζεις ότι CORS διορθώνεται στο frontend.",
+    "Να βάζεις ευαίσθητα δεδομένα σε http ή σε cookie χωρίς HttpOnly/Secure.",
+    "Να μπερδεύεις caching (browser/CDN) με DNS propagation.",
+    "Να αγνοείς ότι το https κάνει και authentication, όχι μόνο encryption."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μπορείς να εξηγήσεις βήμα-βήμα τι συμβαίνει από το Enter μέχρι το render, και να διαγνώσεις caching/CORS προβλήματα από τα headers."
+/>
