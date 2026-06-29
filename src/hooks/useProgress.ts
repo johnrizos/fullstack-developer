@@ -79,6 +79,19 @@ export function useProgress() {
     );
   }, []);
 
+  /** Συγχωνεύει (union) μια λίστα ολοκληρωμένων μαθημάτων με το τοπικό state.
+   *  Χρησιμοποιείται από το cross-browser sync ώστε να μη χάνεται πρόοδος από
+   *  καμία πλευρά. Επιστρέφει true αν προστέθηκε κάτι νέο. */
+  const mergeCompleted = useCallback((lessonIds: string[]) => {
+    if (typeof window === "undefined") return false;
+    const current = parseProgress(readStoredProgress());
+    const incoming = lessonIds.filter((id) => typeof id === "string" && id.trim());
+    const merged = Array.from(new Set([...current, ...incoming]));
+    if (merged.length === current.length) return false;
+    writeStoredProgress(merged);
+    return true;
+  }, []);
+
   const resetProgress = useCallback(() => {
     if (typeof window === "undefined") return;
     window.localStorage.removeItem(STORAGE_KEY);
@@ -92,5 +105,5 @@ export function useProgress() {
     0,
   );
 
-  return { completedLessons, markCompleted, markIncomplete, toggleCompleted, resetProgress, isCompleted, studiedMinutes, isLoaded };
+  return { completedLessons, markCompleted, markIncomplete, toggleCompleted, mergeCompleted, resetProgress, isCompleted, studiedMinutes, isLoaded };
 }

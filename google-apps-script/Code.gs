@@ -38,9 +38,38 @@ function doPost(e) {
   }
 }
 
-// Βολικό για να ελέγξεις ότι ζει το deployment (άνοιξέ το στον browser).
-function doGet() {
-  return jsonOutput({ ok: true, message: "Lesson progress sync endpoint is alive." });
+/**
+ * GET:
+ *   - χωρίς params      → health check (έλεγξε ότι ζει το deployment στον browser).
+ *   - ?email=foo@bar    → επιστρέφει { ok, email, completed: string[], count } για
+ *                          cross-browser restore. Αν δεν υπάρχει γραμμή: completed: [].
+ */
+function doGet(e) {
+  const email = String((e && e.parameter && e.parameter.email) || "").trim().toLowerCase();
+  if (!email) {
+    return jsonOutput({ ok: true, message: "Lesson progress sync endpoint is alive." });
+  }
+
+  const completed = readCompleted(email);
+  return jsonOutput({ ok: true, email: email, completed: completed, count: completed.length });
+}
+
+function readCompleted(email) {
+  const sheet = getSheet();
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return [];
+
+  // Στήλες: A=Email, B=Count, C=Completed Lessons (comma-separated), D=Updated At.
+  const rows = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][0]).trim().toLowerCase() === email) {
+      return String(rows[i][2] || "")
+        .split(",")
+        .map(function (s) { return s.trim(); })
+        .filter(function (s) { return s.length > 0; });
+    }
+  }
+  return [];
 }
 
 function getSheet() {

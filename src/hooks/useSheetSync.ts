@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useProgress } from "./useProgress";
 import {
   clearSyncEmail,
+  fetchProgressFromSheet,
   getSyncEmail,
   isSyncConfigured,
   setSyncEmail,
@@ -24,7 +25,7 @@ const DEBOUNCE_MS = 1200;
  * ώστε το auto-sync να τρέχει ανεξάρτητα από το αν είναι ανοιχτό το UI.
  */
 export function useSheetSync() {
-  const { completedLessons } = useProgress();
+  const { completedLessons, mergeCompleted } = useProgress();
   const [email, setEmailState] = useState<string | null>(null);
   const [status, setStatus] = useState<SyncStatus>("idle");
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
@@ -44,8 +45,11 @@ export function useSheetSync() {
   }, []);
 
   // Auto-sync: όταν αλλάζει η λίστα (ή μόλις οριστεί email), στείλε με debounce.
+  // Guard: ΠΟΤΕ μην κάνεις push άδεια λίστα — ένας φρέσκος browser (count 0) δεν
+  // πρέπει να σβήσει το backup. Το restore γίνεται στο connect (pull + merge).
   useEffect(() => {
     if (!email || !isSyncConfigured()) return;
+    if (completedLessons.length === 0) return;
 
     const payload = JSON.stringify(completedLessons);
     if (payload === lastSentRef.current) return;
@@ -58,13 +62,31 @@ export function useSheetSync() {
     return () => window.clearTimeout(id);
   }, [email, completedLessons, push]);
 
-  const connect = useCallback((value: string) => {
-    const clean = value.trim();
-    if (!clean) return;
-    setSyncEmail(clean);
-    setEmailState(clean);
-    lastSentRef.current = ""; // ανάγκασε resync με τη νέα ταυτότητα
-  }, []);
+  // Login: κατέβασε την πρόοδο του email από το sheet και ΣΥΓΧΩΝΕΥΣΕ με το τοπικό
+  // ΠΡΙΝ οριστεί το email — έτσι το auto-push που ακολουθεί στέλνει το ενωμένο
+  // superset (κανείς δεν χάνει πρόοδο, και ο άδειος browser δεν σβήνει το backup).
+  const connect = useCallback(
+    async (value: string) => {
+      const clean = value.trim();
+      if (!clean) return;
+
+      if (isSyncConfigured()) {
+        setStatus("syncing");
+        const remote = await fetchProgressFromSheet(clean);
+        if (remote === null) {
+          // Το fetch απέτυχε — μην προχωρήσεις σιωπηλά σαν να μην υπάρχει πρόοδος.
+          setStatus("error");
+          return;
+        }
+        if (remote.length) mergeCompleted(remote);
+      }
+
+      setSyncEmail(clean);
+      setEmailState(clean);
+      lastSentRef.current = ""; // ανάγκασε resync με τη νέα ταυτότητα
+    },
+    [mergeCompleted],
+  );
 
   const disconnect = useCallback(() => {
     clearSyncEmail();
@@ -76,6 +98,7 @@ export function useSheetSync() {
 
   const syncNow = useCallback(() => {
     if (!email) return;
+    if (completedLessons.length === 0) return; // μην σβήσεις το backup με άδεια λίστα
     lastSentRef.current = JSON.stringify(completedLessons);
     push(email, completedLessons);
   }, [email, completedLessons, push]);

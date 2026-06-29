@@ -108,7 +108,8 @@ export function SheetSyncControl({
           className="space-y-2"
         >
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            Βάλε το email σου για να αποθηκεύεται η πρόοδος στο Google Sheet.
+            Βάλε το email σου για να συγχρονίζεται η πρόοδος σε όλους τους browsers/συσκευές.
+            Στη σύνδεση κατεβαίνει η αποθηκευμένη πρόοδος και ενώνεται με την τοπική.
           </p>
           <input
             type="email"

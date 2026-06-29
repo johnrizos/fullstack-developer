@@ -47,18 +47,29 @@ NEXT_PUBLIC_SHEET_SYNC_URL=https://script.google.com/macros/s/AKfy.../exec
 
 1. Άνοιξε τις **Ρυθμίσεις** (γρανάζι πάνω δεξιά) → ενότητα **Google Sheet sync**.
 2. Βάλε το email σου και πάτα **Σύνδεση & αποθήκευση**.
-3. Από εκεί και πέρα, κάθε φορά που ολοκληρώνεις/αναιρείς μάθημα, η λίστα στέλνεται
+3. **Στη σύνδεση** η εφαρμογή κατεβάζει την αποθηκευμένη πρόοδο αυτού του email από
+   το sheet και την **ενώνει (merge)** με την τοπική — έτσι σε νέο browser/συσκευή
+   εμφανίζονται τα μαθήματα που είχες ολοκληρώσει αλλού.
+4. Από εκεί και πέρα, κάθε φορά που ολοκληρώνεις/αναιρείς μάθημα, η λίστα στέλνεται
    αυτόματα (debounced) στο sheet. Υπάρχει και κουμπί **Sync τώρα**.
 
 Στο sheet θα δεις μία γραμμή ανά email: `Email | Completed Count | Completed Lessons | Updated At`.
 
+> ⚠️ **Αν έχεις ήδη deploy-άρει παλιότερη έκδοση**, πρέπει να κάνεις **Manage deployments →
+> Edit → New version** ώστε να ενεργοποιηθεί το νέο read endpoint (`doGet?email=`).
+> Χωρίς αυτό, το cross-browser restore δεν θα δουλεύει (το παλιό `doGet` έκανε μόνο health check).
+
 ## Πώς δουλεύει (τεχνικά)
 
-- Ο client στέλνει `POST` με `Content-Type: text/plain` — έτσι ο browser **δεν** κάνει
-  CORS preflight, που το Apps Script δεν υποστηρίζει. Το body είναι JSON string.
-- Το `doPost` διαβάζει `e.postData.contents`, κάνει parse και **upsert** ανά email.
-- Το email κρατιέται τοπικά (localStorage, κλειδί `syncEmail`)· η πηγή αλήθειας για την
-  πρόοδο παραμένει το localStorage — το sheet είναι αντίγραφο/backup.
+- **Write:** ο client στέλνει `POST` με `Content-Type: text/plain` — έτσι ο browser **δεν**
+  κάνει CORS preflight, που το Apps Script δεν υποστηρίζει. Το `doPost` κάνει **upsert** ανά email.
+- **Read (restore):** ο client κάνει `GET ?email=...` (simple request, αναγνώσιμο response).
+  Το `doGet` επιστρέφει `{ ok, email, completed: [...], count }` για αυτό το email.
+- Στο login ο client κάνει pull + **union merge** πριν από οποιοδήποτε push, ώστε να μη
+  χάνεται πρόοδος από καμία πλευρά. Ένας φρέσκος browser (κενή λίστα) **δεν** κάνει ποτέ
+  push count 0, οπότε δεν σβήνει το backup.
+- Το email κρατιέται τοπικά (localStorage, κλειδί `syncEmail`). Το sheet είναι πλέον
+  αμφίδρομος χώρος συγχρονισμού, όχι μόνο backup.
 
 ## Προαιρετικά: shared secret
 
