@@ -84,13 +84,47 @@ button:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
   explanation="Το div δεν έχει role, δεν μπαίνει στο tab order, δεν αντιδρά σε keyboard. Θα χρειαζόσουν tabindex=0, role=button ΚΑΙ key handlers για να το μιμηθείς. Γι' αυτό: native <button> πάντα όταν γίνεται."
 />
 
+## Forms accessibility — όπου χάνονται τα περισσότερα
+
+Οι φόρμες είναι το #1 σημείο όπου σπάει η προσβασιμότητα. Τέσσερα πράγματα που πρέπει να κάνεις σωστά:
+
+**1. Κάθε input με συνδεδεμένο `<label>`** — ο screen reader διαβάζει το label όταν ο χρήστης φτάνει στο πεδίο. Το placeholder **δεν** αντικαθιστά το label (εξαφανίζεται μόλις γράψεις, δεν ανακοινώνεται αξιόπιστα):
+
+```html
+<!-- ❌ μόνο placeholder: κανένα accessible name -->
+<input type="email" placeholder="Email" />
+
+<!-- ✅ συνδεδεμένο label (for ↔ id) -->
+<label for="email">Email</label>
+<input id="email" type="email" />
+```
+
+**2. Σύνδεσε το error με το input** — αλλιώς ο screen reader χρήστης ακούει «invalid» χωρίς να ξέρει γιατί ή πού. Χρησιμοποίησε `aria-describedby` (δείχνει στο μήνυμα) + `aria-invalid`:
+
+```html
+<label for="pwd">Κωδικός</label>
+<input id="pwd" type="password" aria-invalid="true" aria-describedby="pwd-err" />
+<p id="pwd-err">Ο κωδικός θέλει τουλάχιστον 8 χαρακτήρες.</p>
+```
+
+**3. Ομαδοποίησε σχετικά πεδία με `fieldset` + `legend`** — π.χ. radio buttons «Τρόπος πληρωμής»: το `legend` δίνει κοινό context σε όλη την ομάδα.
+
+**4. Ανακοίνωσε errors δυναμικά** — βάλε το error summary σε `aria-live="assertive"` (ή `role="alert"`) ώστε να ακουστεί μόλις αποτύχει το submit, χωρίς να μετακινηθεί ο focus απότομα.
+
 ## Άλλα essentials
 
 - **Alt text:** κάθε ουσιαστική `<img>` θέλει `alt` που περιγράφει το νόημα. Διακοσμητική εικόνα → `alt=""` (την αγνοεί ο screen reader).
-- **Labels:** κάθε input με `<label>` συνδεδεμένο (`for`/`id`) — το είδες στο forms μάθημα.
 - **Color contrast:** το κείμενο χρειάζεται αρκετή αντίθεση (WCAG AA: 4.5:1 για normal text). Μην βασίζεσαι **μόνο** στο χρώμα για να μεταφέρεις πληροφορία (π.χ. «κόκκινο = error» + εικονίδιο/κείμενο).
 - **Headings hierarchy:** σωστά `h1→h2→h3` — οι screen readers πλοηγούνται από heading σε heading.
 - **`aria-live`:** για δυναμικά μηνύματα (toast, validation) ώστε ο screen reader να τα ανακοινώνει χωρίς να αλλάξει focus.
+- **Skip link & landmarks:** ένα «Skip to content» link (πρώτο focusable, ορατό σε focus) επιτρέπει στον keyboard χρήστη να προσπεράσει το nav. Τα landmark elements (`header`, `nav`, `main`, `footer`) δίνουν στους screen readers γρήγορη πλοήγηση ανά περιοχή.
+- **`prefers-reduced-motion`:** σεβάσου τους χρήστες που έχουν ζητήσει λιγότερη κίνηση (vestibular disorders) — μείωσε/απενεργοποίησε animations σε αυτό το media query (το είδες στο transitions/animations μάθημα).
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+```
 
 ## WCAG — το πρότυπο σε 4 λέξεις: POUR
 
@@ -119,7 +153,7 @@ button:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
 
 > «How do you make a web app accessible?»
 
-> I start with semantic HTML — native button, a, input, nav give focus, roles and keyboard behaviour for free, so I avoid div soup. I make sure everything works with the keyboard alone: logical tab order, visible focus with focus-visible, Enter/Space/Esc, and focus trapping in modals with focus returned to the trigger on close. I add ARIA only when there's no native equivalent — roles, aria-label for icon buttons, aria-expanded for disclosure, aria-live for dynamic messages — knowing ARIA describes but doesn't add behaviour. Then the essentials: alt text, associated labels, AA colour contrast, heading hierarchy, and I test with keyboard, a screen reader and an axe/Lighthouse audit against WCAG.
+> I start with semantic HTML — native button, a, input, nav give focus, roles and keyboard behaviour for free, so I avoid div soup. I make sure everything works with the keyboard alone: logical tab order, visible focus with focus-visible, Enter/Space/Esc, and focus trapping in modals with focus returned to the trigger on close. I add ARIA only when there's no native equivalent — roles, aria-label for icon buttons, aria-expanded for disclosure, aria-live for dynamic messages — knowing ARIA describes but doesn't add behaviour. Forms get special care: associated labels, errors tied to the input with aria-describedby and aria-invalid, and groups in fieldset/legend. Then the essentials: alt text, AA colour contrast, heading hierarchy, a skip link with landmarks, and respecting prefers-reduced-motion — and I test with keyboard, a screen reader and an axe/Lighthouse audit against WCAG.
 
 <Flashcards
   title="Accessibility — interview drills"
@@ -147,6 +181,14 @@ button:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
     {
       question: "Πώς δίνεις accessible name σε icon-only button;",
       answer: "aria-label='...' (ή visually-hidden κείμενο). Όχι title — αναξιόπιστο και μόνο σε hover. Έτσι ανακοινώνεται 'Διαγραφή, button' αντί για το emoji."
+    },
+    {
+      question: "Πώς κάνεις προσβάσιμο ένα form error;",
+      answer: "Σύνδεσε το μήνυμα με το input μέσω aria-describedby + βάλε aria-invalid='true'. Έτσι ο screen reader ακούει ΓΙΑΤΙ είναι invalid, όχι μόνο ότι είναι. Το error summary σε aria-live/role='alert' για να ανακοινωθεί στο submit. Placeholder ΔΕΝ αντικαθιστά label."
+    },
+    {
+      question: "Τι κάνεις για prefers-reduced-motion & skip links;",
+      answer: "prefers-reduced-motion: media query — μείωσε/σβήσε animations για χρήστες με vestibular disorders. Skip link: πρώτο focusable 'Skip to content' (ορατό σε focus) για να προσπερνά ο keyboard χρήστης το nav· landmarks (header/nav/main/footer) για γρήγορη πλοήγηση."
     }
   ]}
 />
