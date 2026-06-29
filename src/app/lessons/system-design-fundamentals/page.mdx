@@ -1,0 +1,137 @@
+# System Design Fundamentals
+
+Το system-design interview δεν ελέγχει αν ξέρεις ένα framework — ελέγχει αν μπορείς να σχεδιάσεις ένα σύστημα που **κλιμακώνεται, αντέχει σε βλάβες, και κάνει σωστά tradeoffs**. Αυτό το μάθημα δίνει το **framework** που ακολουθείς σε κάθε τέτοια ερώτηση, τα δομικά «τούβλα» ενός συστήματος, και τις θεμελιώδεις έννοιες (scaling, statelessness, single point of failure) πάνω στις οποίες χτίζουν τα επόμενα μαθήματα (scaling, caching, async, walkthrough).
+
+## Το framework: πώς απαντάς σε κάθε system-design ερώτηση
+
+Μη βουτάς κατευθείαν σε βάσεις και servers. Ακολούθησε βήματα — οι interviewers βαθμολογούν τη **διαδικασία**:
+
+1. **Διευκρίνισε requirements** — functional (τι κάνει) + non-functional (πόσοι χρήστες, reads vs writes, latency, availability). Ρώτα, μη μαντεύεις.
+2. **Estimation (back-of-envelope)** — τάξη μεγέθους: QPS (queries/sec), storage, bandwidth. Δείχνει ότι σκέφτεσαι την κλίμακα.
+3. **API & data model** — βασικά endpoints + βασικές οντότητες/σχέσεις.
+4. **High-level design** — σχεδίασε τα κουτιά: client → load balancer → app servers → cache → database (+ queue/CDN όπου χρειάζεται).
+5. **Deep dive & bottlenecks** — πού «σπάει» στην κλίμακα; Σκάλωσε εκεί (caching, sharding, replication, async).
+6. **Tradeoffs** — κάθε επιλογή έχει κόστος· δικαιολόγησέ την. Δεν υπάρχει «σωστή» αρχιτεκτονική, μόνο κατάλληλη.
+
+## Functional vs non-functional requirements
+
+- **Functional**: «ο χρήστης ανεβάζει φωτογραφία», «βλέπει feed». Το *τι*.
+- **Non-functional**: scalability, availability, latency, consistency, durability. Το *πόσο καλά* — και εδώ κρίνεται το design. Πάντα ρώτα: **πόσοι χρήστες; read-heavy ή write-heavy; πόσο latency ανέχεται; πόσο κρίσιμο είναι το downtime;**
+
+## Vertical vs horizontal scaling
+
+Όταν ένας server δεν φτάνει:
+
+- **Vertical (scale up)** — μεγαλύτερο μηχάνημα (CPU/RAM). Απλό, αλλά έχει **όριο** και είναι single point of failure.
+- **Horizontal (scale out)** — **περισσότερα** μηχανήματα παράλληλα. Ουσιαστικά απεριόριστο, ανθεκτικό — αλλά απαιτεί load balancing και **stateless** services.
+
+Το horizontal scaling είναι ο δρόμος για μεγάλη κλίμακα — γι' αυτό σχεδόν κάθε system-design συζήτηση το προϋποθέτει.
+
+## Stateless services — η προϋπόθεση του scaling
+
+Ένα **stateless** service δεν κρατά δεδομένα session στη μνήμη του — κάθε request μπορεί να πάει σε **οποιονδήποτε** server με το ίδιο αποτέλεσμα. Έτσι:
+
+- Προσθέτεις/αφαιρείς servers ελεύθερα (auto-scaling).
+- Ένας server που πέφτει δεν χάνει «κατάσταση» χρηστών.
+
+Πού πάει το state τότε; Σε **shared store** έξω από τα app servers — database, ή cache (π.χ. Redis) για sessions. Κανόνας: **κράτα τα app servers stateless, βάλε το state σε shared layer**.
+
+## Single point of failure (SPOF) & availability
+
+Ένα **SPOF** είναι ένα component που, αν πέσει, ρίχνει όλο το σύστημα (ένας database server, ένας load balancer). Η availability («πόσο χρόνο είναι up», π.χ. 99.9%) χτίζεται με **redundancy**: πολλαπλά instances, replication, failover. Κάθε κρίσιμο component θέλει εφεδρεία.
+
+## Latency vs throughput
+
+- **Latency** — πόσο αργεί **ένα** request (ms).
+- **Throughput** — πόσα requests/sec αντέχει το σύστημα συνολικά.
+
+Δεν είναι το ίδιο: ένα σύστημα μπορεί να έχει υψηλό throughput αλλά κακή latency (π.χ. batching). Στο design ξεκαθάρισε ποιο βελτιστοποιείς.
+
+<PredictOutput
+  title="Scaling drill"
+  code={`Η εφαρμογή σου κρατά τα user sessions στη μνήμη κάθε app server.
+Προσθέτεις δεύτερο server πίσω από load balancer.
+Τι πρόβλημα εμφανίζεται;`}
+  options={[
+    "Κανένα — το load balancing το λύνει",
+    "Χρήστες 'αποσυνδέονται' τυχαία όταν τα requests πάνε σε άλλον server",
+    "Διπλασιάζεται το latency",
+    "Η βάση κλειδώνει"
+  ]}
+  correctOptionIndex={1}
+  answer="Χρήστες 'αποσυνδέονται' όταν τα requests πάνε σε άλλον server"
+  explanation="Το service είναι stateful — το session ζει στη μνήμη ενός συγκεκριμένου server. Όταν ο load balancer στείλει το επόμενο request στον άλλο server, το session δεν υπάρχει εκεί. Λύση: κάνε τα services stateless και βάλε τα sessions σε shared store (π.χ. Redis). Stateless = προϋπόθεση horizontal scaling."
+/>
+
+<Exercise
+  question="Ποιο είναι το πρώτο βήμα σε ένα system-design interview;"
+  options={[
+    "Να διαλέξεις αμέσως βάση δεδομένων και framework.",
+    "Να διευκρινίσεις functional & non-functional requirements (κλίμακα, read/write, latency).",
+    "Να σχεδιάσεις το σχήμα της βάσης."
+  ]}
+  correctOptionIndex={1}
+  explanation="Πρώτα requirements: τι κάνει το σύστημα και — κυρίως — σε ποια κλίμακα, read-heavy ή write-heavy, τι latency/availability. Χωρίς αυτά, κάθε τεχνική επιλογή είναι στον αέρα. Οι interviewers βαθμολογούν τη διαδικασία, όχι την 'έτοιμη' απάντηση."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you approach a system design question?»
+
+> I follow a structured process because the interview grades the process. First I clarify requirements — functional, but especially non-functional: how many users, read-heavy or write-heavy, latency and availability targets. Then a quick back-of-the-envelope estimate of QPS and storage to anchor the scale. I sketch the API and data model, then a high-level design — client, load balancer, stateless app servers, cache, database, adding a queue or CDN where it helps. Then I look for bottlenecks at scale and go deep where it breaks. Throughout I state tradeoffs, because there's no single correct architecture, only an appropriate one. The two foundations I lean on: scale horizontally with stateless services so any request can hit any server, and remove single points of failure with redundancy.
+
+<Flashcards
+  title="System design fundamentals — interview drills"
+  cards={[
+    {
+      question: "Ποια τα βήματα σε system-design ερώτηση;",
+      answer: "1) Requirements (functional + non-functional/κλίμακα). 2) Estimation (QPS/storage). 3) API & data model. 4) High-level design. 5) Deep dive/bottlenecks. 6) Tradeoffs. Η διαδικασία βαθμολογείται, όχι μια 'έτοιμη' απάντηση."
+    },
+    {
+      question: "Vertical vs horizontal scaling;",
+      answer: "Vertical (scale up): μεγαλύτερο μηχάνημα — απλό αλλά με όριο & SPOF. Horizontal (scale out): περισσότερα μηχανήματα — ~απεριόριστο & ανθεκτικό, απαιτεί load balancing + stateless services."
+    },
+    {
+      question: "Γιατί stateless services;",
+      answer: "Κανένα session-state στη μνήμη του server → κάθε request πάει σε οποιονδήποτε server. Επιτρέπει auto-scaling & failover. Το state πάει σε shared store (DB/Redis). Προϋπόθεση horizontal scaling."
+    },
+    {
+      question: "Τι είναι SPOF και πώς το αποφεύγεις;",
+      answer: "Single point of failure: component που ρίχνει όλο το σύστημα αν πέσει. Αποφυγή με redundancy: πολλαπλά instances, replication, failover. Βάση της availability (99.9% κ.λπ.)."
+    },
+    {
+      question: "Latency vs throughput;",
+      answer: "Latency: χρόνος ενός request (ms). Throughput: requests/sec συνολικά. Διαφορετικά — μπορείς να έχεις υψηλό throughput με κακή latency. Ξεκαθάρισε ποιο βελτιστοποιείς."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Σχεδίασε σε high level"
+  scenario="Πάρε μια απλή ιδέα (π.χ. link-in-bio app) και πέρασέ τη από το framework μέχρι ένα high-level diagram, χωρίς να μπεις σε λεπτομέρειες ακόμα."
+  outcomes={[
+    "Να ακολουθείς το system-design framework.",
+    "Να ξεχωρίζεις functional/non-functional requirements.",
+    "Να σχεδιάζεις stateless, χωρίς SPOF."
+  ]}
+  steps={[
+    "Γράψε 3 functional + 3 non-functional requirements (ρώτα κλίμακα/read-write).",
+    "Κάνε back-of-envelope: πρόχειρο QPS και storage.",
+    "Σχεδίασε: client → load balancer → app servers → cache → DB.",
+    "Βεβαιώσου ότι τα app servers είναι stateless (πού πάνε τα sessions;).",
+    "Εντόπισε κάθε SPOF και πρόσθεσε redundancy."
+  ]}
+  checkpoints={[
+    "Έχεις non-functional requirements, όχι μόνο features.",
+    "Τα app servers είναι stateless (state σε shared store).",
+    "Δεν υπάρχει αδιπλασίαστο κρίσιμο component (SPOF).",
+    "Κάθε επιλογή συνοδεύεται από tradeoff."
+  ]}
+  mistakes={[
+    "Να βουτάς σε DB/framework πριν τα requirements.",
+    "Stateful app servers που σπάνε το horizontal scaling.",
+    "Να αγνοείς την κλίμακα (read-heavy vs write-heavy).",
+    "Να παρουσιάζεις 'τη σωστή' αρχιτεκτονική χωρίς tradeoffs."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μπορείς να οδηγήσεις μια system-design συζήτηση με δομή και να σχεδιάζεις stateless, redundant συστήματα."
+/>

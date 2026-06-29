@@ -1,0 +1,160 @@
+# Transitions, Animations & Pseudo-classes
+
+Το «ζωντανό» κομμάτι του CSS: micro-interactions (hover, focus), smooth transitions και keyframe animations. Καλά καμωμένα, κάνουν ένα UI να νιώθει επαγγελματικό· κακώς καμωμένα, κολλάνε. Αυτό το μάθημα καλύπτει pseudo-classes/elements, `transition`, `transform`, `@keyframes` animation, και — κρίσιμο — **ποιες properties είναι φθηνές να κινηθούν** (performance).
+
+## Pseudo-classes & pseudo-elements
+
+**Pseudo-classes** στοχεύουν μια **κατάσταση** (ένα `:`):
+
+```css
+a:hover { }          /* ποντίκι από πάνω */
+button:focus { }     /* focus (keyboard/click) — μην το σβήνεις, a11y! */
+input:disabled { }
+li:nth-child(odd) { } /* structural: μονά παιδιά (zebra striping) */
+.item:first-child { }
+input:checked + label { } /* checkbox/radio state */
+```
+
+**Pseudo-elements** φτιάχνουν «εικονικά» elements (δύο `::`):
+
+```css
+.quote::before { content: "«"; }   /* εισάγει περιεχόμενο */
+.quote::after  { content: "»"; }
+p::first-line { font-weight: bold; }
+```
+
+## transition — ομαλή αλλαγή τιμής
+
+Το `transition` κάνει μια αλλαγή property να συμβεί **σταδιακά** αντί ακαριαία:
+
+```css
+.btn {
+  background: #0070f3;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+.btn:hover {
+  background: #0051a8;
+  transform: translateY(-2px); /* ανασηκώνεται απαλά */
+}
+```
+
+Σύνταξη: `transition: <property> <duration> <timing-function> <delay>`. Timing functions: `ease`, `linear`, `ease-in-out`, ή `cubic-bezier(...)`. **Tip**: δήλωσε το `transition` στην **κανονική** κατάσταση (όχι στο `:hover`), ώστε να ισχύει και στο «μπες» και στο «βγες».
+
+## transform — μετακίνηση/κλίμακα/περιστροφή
+
+```css
+transform: translateX(20px) scale(1.1) rotate(5deg);
+```
+
+Το `transform` (και το `opacity`) είναι **φθηνά** να κινηθούν — ο browser τα χειρίζεται στη GPU χωρίς να ξαναϋπολογίζει layout. Προτίμησέ τα για animations.
+
+## @keyframes — animations πολλαπλών βημάτων
+
+Όταν θες κάτι που τρέχει μόνο του ή έχει στάδια, ορίζεις `@keyframes` και τα εφαρμόζεις με `animation`:
+
+```css
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes fadeInUp {
+  0%   { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+```
+
+Σύνταξη: `animation: <name> <duration> <timing> <delay> <iteration-count> <direction>`. `infinite` για ατέρμονο, `forwards` για να κρατήσει την τελική κατάσταση.
+
+## Performance: τι είναι φθηνό να κινείς
+
+Ο κανόνας που ρωτιέται: **κίνησε `transform` και `opacity`**, απόφυγε να κινείς `width`, `height`, `top`, `left`, `margin` σε animations. Τα τελευταία προκαλούν **layout/reflow** (ο browser ξαναϋπολογίζει θέσεις) και **paint** σε κάθε frame → κολλήματα. Τα `transform`/`opacity` τρέχουν στο compositor (GPU) ομαλά.
+
+> Σεβασμός χρήστη: τύλιξε τα έντονα animations σε `@media (prefers-reduced-motion: reduce)` ώστε να τα μειώνεις για όσους έχουν ευαισθησία στην κίνηση.
+
+<PredictOutput
+  title="Animation performance"
+  code={`/* Δύο τρόποι να μετακινήσεις ένα box κατά 100px σε loop. Ποιος είναι ομαλός; */
+/* A */ @keyframes moveA { to { left: 100px; } }   /* position: relative */
+/* B */ @keyframes moveB { to { transform: translateX(100px); } }`}
+  options={["A — το left είναι πιο ακριβές", "B — το transform τρέχει στη GPU χωρίς reflow", "Ίδια απόδοση", "Κανένα — χρειάζεται JS"]}
+  correctOptionIndex={1}
+  answer="B — το transform τρέχει στη GPU χωρίς reflow"
+  explanation="Το animating του left προκαλεί layout/reflow + paint σε κάθε frame (ακριβό, κολλάει). Το transform: translateX το χειρίζεται ο compositor (GPU) χωρίς να ξαναϋπολογίζει layout — ομαλό 60fps. Κανόνας: κίνησε transform/opacity, όχι top/left/width/height."
+/>
+
+<Exercise
+  question="Πού δηλώνεις το transition για να ισχύει και στο hover-in και στο hover-out;"
+  options={[
+    "Μόνο στο :hover.",
+    "Στην κανονική κατάσταση του element (όχι στο :hover).",
+    "Δεν έχει σημασία — είναι το ίδιο."
+  ]}
+  correctOptionIndex={1}
+  explanation="Αν βάλεις το transition μόνο στο :hover, η ομαλή μετάβαση γίνεται μόνο όταν μπαίνει το ποντίκι· στο 'βγες' γυρνά ακαριαία. Δηλώνοντάς το στην κανονική κατάσταση, ισχύει και προς τις δύο κατευθύνσεις."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you add smooth UI animations without hurting performance?»
+
+> For state changes like hover and focus I use `transition` declared on the element's normal state — not on `:hover` — so it animates both in and out, and I animate `transform` and `opacity` rather than layout properties. That's the performance key: `transform` and `opacity` run on the compositor/GPU, while animating `width`, `height`, `top`, or `left` forces layout reflow and paint every frame, which janks. For multi-step or looping motion I define `@keyframes` and apply them with `animation`. I keep focus states visible for accessibility, and wrap heavy motion in `prefers-reduced-motion` so users who opt out get a calmer experience. Pseudo-classes target state (`:hover`, `:focus`, `:nth-child`) and pseudo-elements like `::before`/`::after` add decorative content.
+
+<Flashcards
+  title="Transitions & animations — interview drills"
+  cards={[
+    {
+      question: "pseudo-class vs pseudo-element;",
+      answer: "pseudo-class (ένα :) στοχεύει κατάσταση: :hover, :focus, :nth-child, :checked. pseudo-element (δύο ::) φτιάχνει εικονικό element: ::before, ::after (με content), ::first-line."
+    },
+    {
+      question: "Πού δηλώνεις το transition;",
+      answer: "Στην κανονική κατάσταση του element (όχι στο :hover), ώστε να ισχύει και στο hover-in και στο hover-out. Σύνταξη: transition: property duration timing-function delay."
+    },
+    {
+      question: "Ποιες properties είναι φθηνές να κινείς;",
+      answer: "transform & opacity — τρέχουν στον compositor (GPU) χωρίς reflow. Απόφυγε animation σε width/height/top/left/margin → προκαλούν layout reflow + paint κάθε frame (jank)."
+    },
+    {
+      question: "transition vs animation;",
+      answer: "transition: ομαλή μετάβαση ΜΕΤΑΞΥ δύο καταστάσεων (συνήθως από state change π.χ. hover). animation + @keyframes: αυτόνομη κίνηση πολλαπλών βημάτων, μπορεί infinite/forwards, τρέχει χωρίς trigger."
+    },
+    {
+      question: "Τι είναι το prefers-reduced-motion;",
+      answer: "Media query που ανιχνεύει αν ο χρήστης έχει ζητήσει μειωμένη κίνηση (a11y). Τυλίγεις/μειώνεις έντονα animations μέσα σε @media (prefers-reduced-motion: reduce)."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Πρόσθεσε polished micro-interactions"
+  scenario="Δώσε ζωή σε ένα component (κουμπί + κάρτα + spinner) με transitions και μία keyframe animation, χωρίς performance issues."
+  outcomes={[
+    "Να γράφεις transitions για hover/focus states.",
+    "Να φτιάχνεις @keyframes animations.",
+    "Να κινείς μόνο φθηνές properties (transform/opacity)."
+  ]}
+  steps={[
+    "Πρόσθεσε hover transition σε κουμπί με transform: translateY + background.",
+    "Δήλωσε το transition στην κανονική κατάσταση (όχι στο :hover).",
+    "Φτιάξε ένα spinner με @keyframes spin ... infinite.",
+    "Φτιάξε fade-in-up animation με opacity + translateY.",
+    "Τύλιξε τα έντονα animations σε @media (prefers-reduced-motion: reduce)."
+  ]}
+  checkpoints={[
+    "Οι μεταβάσεις είναι ομαλές και στις δύο κατευθύνσεις.",
+    "Κινείς transform/opacity, όχι top/left/width.",
+    "Το focus state παραμένει ορατό (a11y).",
+    "Τα animations μειώνονται με prefers-reduced-motion."
+  ]}
+  mistakes={[
+    "Animating width/height/top/left → jank.",
+    "Να βάζεις το transition μόνο στο :hover.",
+    "Να σβήνεις το focus outline χωρίς εναλλακτικό focus style.",
+    "Έντονα animations χωρίς prefers-reduced-motion."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν προσθέτεις ομαλές, performant micro-interactions και ξέρεις γιατί transform/opacity είναι ο σωστός δρόμος."
+/>

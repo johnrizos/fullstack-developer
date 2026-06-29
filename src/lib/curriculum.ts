@@ -15,8 +15,11 @@ export const lessonDurationsMinutes: Record<string, number> = {
   "html-forms-accessibility": 50,
   "web-accessibility": 60,
   "css-box-model": 40,
+  "css-selectors-specificity": 50,
+  "css-positioning": 50,
   "css-flex-responsive": 55,
   "css-grid-layouts": 55,
+  "css-transitions-animations": 50,
   "css-modern-styling": 55,
   "tailwind-foundations": 55,
   "tailwind-layout-responsive": 55,
@@ -146,6 +149,11 @@ export const lessonDurationsMinutes: Record<string, number> = {
   "ai-llm-evaluation": 55,
   "ai-llm-production": 65,
   "architecture-monolith-microservices": 80,
+  "system-design-fundamentals": 60,
+  "system-design-scaling": 70,
+  "system-design-caching-cdn": 60,
+  "system-design-async": 60,
+  "system-design-walkthrough": 65,
   "db-relational-modeling": 75,
   "db-sql-queries": 80,
   "db-indexing-performance": 85,
@@ -274,6 +282,24 @@ export const curriculum: CurriculumSection[] = [
         href: "/lessons/css-box-model",
       },
       {
+        id: "css-selectors-specificity",
+        title: "Selectors, Specificity & the Cascade",
+        description:
+          "Γιατί 'δεν πιάνει το CSS μου': selectors, specificity, cascade, inheritance και CSS custom properties.",
+        project: "Διάγνωση & λύση specificity conflict χωρίς !important.",
+        skills: ["specificity", "cascade", "custom properties"],
+        href: "/lessons/css-selectors-specificity",
+      },
+      {
+        id: "css-positioning",
+        title: "Positioning, z-index & Units",
+        description:
+          "display, position (relative/absolute/fixed/sticky), z-index & stacking context, και units (px/rem/em/%/vw).",
+        project: "Overlay/dropdown με absolute + sticky header, σωστό z-index.",
+        skills: ["positioning", "z-index", "units"],
+        href: "/lessons/css-positioning",
+      },
+      {
         id: "css-flex-responsive",
         title: "CSS Flexbox & Responsive Layouts",
         description: "Flexbox, wrapping και responsive navigation.",
@@ -288,6 +314,15 @@ export const curriculum: CurriculumSection[] = [
         project: "Responsive dashboard grid.",
         skills: ["grid", "columns", "responsive"],
         href: "/lessons/css-grid-layouts",
+      },
+      {
+        id: "css-transitions-animations",
+        title: "Transitions, Animations & Pseudo-classes",
+        description:
+          "Micro-interactions: pseudo-classes/elements, transition, transform, @keyframes animations και performance (τι είναι φθηνό να κινείς).",
+        project: "Polished hover/focus states + spinner χωρίς jank.",
+        skills: ["transitions", "@keyframes", "pseudo-classes"],
+        href: "/lessons/css-transitions-animations",
       },
       {
         id: "css-modern-styling",
@@ -1482,7 +1517,8 @@ export const curriculum: CurriculumSection[] = [
   {
     id: "architecture-system-design",
     title: "Architecture & System Design",
-    description: "Μαθαίνεις πότε διαλέγεις monolith, modular monolith, microservices ή hybrid architecture.",
+    description:
+      "Από αρχιτεκτονική (monolith→microservices) μέχρι πλήρες system-design interview track: scaling, load balancing, caching/CDN, data distribution (CAP), async/queues και ένα end-to-end design walkthrough.",
     lessons: [
       {
         id: "architecture-monolith-microservices",
@@ -1491,6 +1527,51 @@ export const curriculum: CurriculumSection[] = [
         project: "Architecture map για fullstack SaaS με core app και ξεχωριστά services.",
         skills: ["monolith", "microservices", "boundaries"],
         href: "/lessons/architecture-monolith-microservices",
+      },
+      {
+        id: "system-design-fundamentals",
+        title: "System Design Fundamentals",
+        description:
+          "Το framework κάθε system-design ερώτησης: requirements/estimation, building blocks, vertical vs horizontal scaling, stateless services, SPOF, latency vs throughput.",
+        project: "High-level design μιας ιδέας με το framework.",
+        skills: ["scaling", "stateless", "availability"],
+        href: "/lessons/system-design-fundamentals",
+      },
+      {
+        id: "system-design-scaling",
+        title: "Scaling, Load Balancing & Data Distribution",
+        description:
+          "Load balancing & horizontal scaling του compute, replication & sharding της βάσης, CAP theorem και consistency models.",
+        project: "Scaling plan για read-heavy σύστημα με ρητά tradeoffs.",
+        skills: ["load balancing", "replication/sharding", "CAP"],
+        href: "/lessons/system-design-scaling",
+      },
+      {
+        id: "system-design-caching-cdn",
+        title: "Caching, CDN & Rate Limiting",
+        description:
+          "Caching layers & strategies (cache-aside/write-through), invalidation (TTL vs write-time), CDN στο edge, και rate limiting.",
+        project: "Caching layer με σωστή στρατηγική invalidation + rate limiting.",
+        skills: ["caching", "invalidation", "CDN"],
+        href: "/lessons/system-design-caching-cdn",
+      },
+      {
+        id: "system-design-async",
+        title: "Async Processing, Queues & Idempotency",
+        description:
+          "Sync vs async, message queues (decoupling/buffering), event-driven, at-least-once delivery, idempotency, retries/backoff & dead-letter queues.",
+        project: "Async pipeline με queue, idempotent worker και retries/DLQ.",
+        skills: ["message queues", "idempotency", "retries"],
+        href: "/lessons/system-design-async",
+      },
+      {
+        id: "system-design-walkthrough",
+        title: "Walkthrough: Design a URL Shortener",
+        description:
+          "End-to-end εφαρμογή του framework σε ένα κλασικό design: requirements→estimation→API→high-level→deep dive→tradeoffs, με caching/scaling/async.",
+        project: "Πλήρης λύση URL shortener (και template για κάθε design ερώτηση).",
+        skills: ["system design", "tradeoffs", "end-to-end"],
+        href: "/lessons/system-design-walkthrough",
       },
     ],
   },

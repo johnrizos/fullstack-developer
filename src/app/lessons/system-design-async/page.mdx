@@ -1,0 +1,142 @@
+# Async Processing, Queues & Idempotency
+
+Όχι κάθε δουλειά πρέπει να γίνει **τώρα, μέσα στο request**. Αποστολή email, επεξεργασία βίντεο, δημιουργία report, ή ένα LLM call μπορεί να αργήσουν δευτερόλεπτα — και να κρατήσουν τον χρήστη να περιμένει ή να ρίξουν το σύστημα σε spike. Η λύση είναι **asynchronous processing** με **message queues**. Αυτό το μάθημα καλύπτει το pattern, το event-driven thinking, και τις δύο έννοιες που το κάνουν αξιόπιστο: **idempotency** και **retries**.
+
+## Sync vs async — πότε τι
+
+- **Synchronous** — ο client περιμένει την απάντηση. Καλό για γρήγορες, απαραίτητες-τώρα ενέργειες (διάβασε προφίλ, validate, γράψε ένα record).
+- **Asynchronous** — ο client παίρνει αμέσως «το έλαβα» (π.χ. 202 Accepted) και η δουλειά γίνεται στο παρασκήνιο. Καλό για αργές ή μη-κρίσιμες-τώρα ενέργειες.
+
+```txt
+Sync:  request → [αργή δουλειά 8s] → response   (ο χρήστης περιμένει 😴)
+Async: request → enqueue job → 202 "in progress" ταχύτατα
+       worker → παίρνει το job → το εκτελεί → ενημερώνει status
+```
+
+## Message queue — ο «αποσβεστήρας»
+
+Ένα **queue** (π.χ. RabbitMQ, SQS, Redis) στέκεται ανάμεσα στον **producer** (το app που βάζει jobs) και τους **consumers/workers** (που τα εκτελούν):
+
+- **Decoupling** — ο producer δεν ξέρει/δεν περιμένει τον worker. Μπορούν να κλιμακωθούν ανεξάρτητα.
+- **Buffering / load leveling** — σε spike, τα jobs μαζεύονται στο queue και οι workers τα «ρουφάνε» με τον ρυθμό τους — το σύστημα δεν καταρρέει· απλώς αργεί λίγο.
+- **Resilience** — αν πέσει ένας worker, το job μένει στο queue για τον επόμενο.
+
+Κλιμακώνεις throughput **προσθέτοντας workers** που καταναλώνουν από το ίδιο queue.
+
+## Event-driven thinking
+
+Πέρα από background jobs, τα queues επιτρέπουν **event-driven** αρχιτεκτονική: ένα service δημοσιεύει ένα **event** («OrderPlaced») και **πολλά** services αντιδρούν ανεξάρτητα (email, inventory, analytics) — χωρίς το αρχικό service να ξέρει για αυτά. Χαλαρή σύζευξη, εύκολη επέκταση.
+
+## Delivery & το πρόβλημα των διπλών
+
+Τα περισσότερα queues εγγυώνται **at-least-once delivery**: ένα μήνυμα μπορεί να παραδοθεί **πάνω από μία φορά** (π.χ. ο worker το επεξεργάστηκε αλλά έπεσε πριν κάνει ack). Άρα ο consumer **πρέπει** να αντέχει διπλά — εδώ μπαίνει το idempotency.
+
+## Idempotency — η αγαπημένη ερώτηση
+
+Μια ενέργεια είναι **idempotent** αν το να τρέξει **πολλές φορές** έχει το ίδιο αποτέλεσμα με **μία**. Κρίσιμο όταν τα μηνύματα/requests μπορεί να επαναληφθούν:
+
+```txt
+ΟΧΙ idempotent: "πρόσθεσε 10€ στο υπόλοιπο"  → 2 φορές = +20€ 😱
+Idempotent:    "θέσε υπόλοιπο = 100€"        → 2 φορές = 100€ ✅
+```
+
+Πρακτικές τεχνικές:
+- **Idempotency key** — ο client στέλνει ένα μοναδικό κλειδί ανά λειτουργία· ο server αν το ξαναδεί, δεν εκτελεί ξανά (επιστρέφει το προηγούμενο αποτέλεσμα). Κλασικό σε πληρωμές.
+- **Φυσικά idempotent operations** — set αντί για increment, upsert με unique key.
+
+## Retries, backoff & dead-letter queue
+
+Τα background jobs αποτυγχάνουν (network, downstream down). Χειρισμός:
+
+- **Retry με exponential backoff** — ξαναπροσπάθησε με αυξανόμενη καθυστέρηση (1s, 2s, 4s…) αντί να σφυροκοπάς ένα ήδη προβληματικό downstream.
+- **Dead-letter queue (DLQ)** — μετά από Χ αποτυχίες, στείλε το job σε ξεχωριστό queue για επιθεώρηση, αντί να μπλοκάρει την ουρά ή να χαθεί.
+- Επειδή τα retries σημαίνουν επανεκτέλεση → ο consumer **πρέπει** να είναι idempotent.
+
+<PredictOutput
+  title="Idempotency drill"
+  code={`Ένα payment endpoint κάνει "increment balance by amount".
+Το queue κάνει at-least-once delivery και το μήνυμα παραδίδεται 2 φορές.
+Αποτέλεσμα;`}
+  options={[
+    "Σωστό — το queue εγγυάται μία φορά",
+    "Διπλή χρέωση — η ενέργεια δεν είναι idempotent",
+    "Error 429",
+    "Το δεύτερο αγνοείται αυτόματα"
+  ]}
+  correctOptionIndex={1}
+  answer="Διπλή χρέωση — η ενέργεια δεν είναι idempotent"
+  explanation="At-least-once delivery σημαίνει ότι ένα μήνυμα μπορεί να έρθει >1 φορά. Το 'increment' δεν είναι idempotent, άρα 2 παραδόσεις = διπλή χρέωση. Λύση: idempotency key (αν το ξαναδείς, μην εκτελέσεις) ή φυσικά idempotent operation. Γι' αυτό το idempotency είναι must με queues/retries."
+/>
+
+<Exercise
+  question="Γιατί βάζεις message queue ανάμεσα σε producer και workers;"
+  options={[
+    "Για να τρέχει ο κώδικας πιο γρήγορα στη CPU.",
+    "Για decoupling, buffering σε spikes (load leveling) και resilience — και ανεξάρτητο scaling των workers.",
+    "Για να αποφύγεις τη βάση δεδομένων."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το queue αποσυνδέει producer/consumer (ανεξάρτητο scaling), απορροφά spikes (τα jobs μαζεύονται και οι workers τα καταναλώνουν με τον ρυθμό τους αντί να καταρρεύσει το σύστημα), και δίνει resilience (αν πέσει worker, το job μένει). Throughput ↑ με περισσότερους workers."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «When and how do you use asynchronous processing?»
+
+> Anything slow or not needed in the request path — emails, video processing, report generation, an LLM call — I move off the request. The user gets an immediate 202 and the work runs in the background. A message queue sits between the producer and the workers: it decouples them so they scale independently, it levels load during spikes by buffering jobs instead of letting the system collapse, and it adds resilience because a job survives a worker crash. I scale throughput by adding workers. The catch is that queues are at-least-once, so a message can arrive more than once — which means consumers must be idempotent: running twice has the same effect as once, via an idempotency key or naturally idempotent operations like set instead of increment. I retry failures with exponential backoff and send poison messages to a dead-letter queue after a few attempts. Queues also enable event-driven design, where one service emits an event and many react independently.
+
+<Flashcards
+  title="Async & queues — interview drills"
+  cards={[
+    {
+      question: "Πότε async αντί για sync;",
+      answer: "Sync: γρήγορες, απαραίτητες-τώρα ενέργειες (ο client περιμένει). Async: αργές/μη-κρίσιμες-τώρα (email, video, report, LLM) — ο client παίρνει αμέσως 202 και η δουλειά γίνεται στο παρασκήνιο."
+    },
+    {
+      question: "Τι προσφέρει ένα message queue;",
+      answer: "Decoupling producer/consumer (ανεξάρτητο scaling), buffering/load leveling σε spikes (jobs μαζεύονται αντί να καταρρεύσει το σύστημα), και resilience (job επιβιώνει worker crash). Throughput ↑ με περισσότερους workers."
+    },
+    {
+      question: "Τι είναι at-least-once delivery & γιατί μετράει;",
+      answer: "Τα περισσότερα queues μπορεί να παραδώσουν ένα μήνυμα >1 φορά (π.χ. worker έπεσε πριν το ack). Άρα ο consumer ΠΡΕΠΕΙ να αντέχει διπλά → idempotency."
+    },
+    {
+      question: "Τι είναι idempotency & πώς το πετυχαίνεις;",
+      answer: "Πολλές εκτελέσεις = ίδιο αποτέλεσμα με μία. Τεχνικές: idempotency key (αν ξαναδείς το κλειδί, μην εκτελέσεις), φυσικά idempotent ops (set αντί increment, upsert). Κρίσιμο σε πληρωμές/retries."
+    },
+    {
+      question: "Retries: backoff & dead-letter queue;",
+      answer: "Retry με exponential backoff (1s,2s,4s…) αντί να σφυροκοπάς downstream. Μετά από X αποτυχίες → dead-letter queue για επιθεώρηση (να μη μπλοκάρει/χαθεί). Retries απαιτούν idempotent consumer."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Σχεδίασε ένα async pipeline"
+  scenario="Μετέφερε μια αργή ενέργεια (π.χ. αποστολή email ή επεξεργασία upload) εκτός request, με queue, idempotency και retries."
+  outcomes={[
+    "Να ξεχωρίζεις sync από async δουλειά.",
+    "Να σχεδιάζεις producer → queue → workers.",
+    "Να κάνεις τον consumer idempotent με retries/DLQ."
+  ]}
+  steps={[
+    "Στο endpoint: enqueue job και γύρνα 202 με status reference αντί να περιμένεις.",
+    "Φτιάξε worker που καταναλώνει από το queue και εκτελεί τη δουλειά.",
+    "Κάνε την ενέργεια idempotent (idempotency key ή set/upsert).",
+    "Πρόσθεσε retry με exponential backoff + dead-letter queue μετά από X αποτυχίες.",
+    "Πρόσθεσε δεύτερο worker και δες το throughput να ανεβαίνει."
+  ]}
+  checkpoints={[
+    "Ο χρήστης δεν περιμένει την αργή δουλειά (202 + status).",
+    "Διπλή παράδοση μηνύματος ΔΕΝ προκαλεί διπλό αποτέλεσμα (idempotent).",
+    "Οι αποτυχίες κάνουν retry με backoff, όχι σφυροκόπημα.",
+    "Τα 'poison' jobs καταλήγουν σε DLQ, δεν μπλοκάρουν την ουρά."
+  ]}
+  mistakes={[
+    "Να κρατάς αργή δουλειά μέσα στο request (timeouts, κακό UX).",
+    "Μη idempotent consumer με at-least-once delivery → διπλά αποτελέσματα.",
+    "Retry χωρίς backoff (σφυροκοπάς ήδη προβληματικό downstream).",
+    "Χωρίς DLQ → ένα poison message μπλοκάρει ή χάνει jobs."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μετακινείς δουλειά σε queue-based async pipeline με idempotent, resilient workers."
+/>

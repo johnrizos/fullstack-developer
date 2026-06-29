@@ -1,0 +1,157 @@
+# Walkthrough: Design a URL Shortener
+
+Τώρα δένουμε όλα όσα είδαμε σε **μία** ολοκληρωμένη απάντηση. Το «design a URL shortener» (τύπου bit.ly) είναι το πιο κλασικό system-design ερώτημα — αρκετά απλό για να ολοκληρωθεί, αρκετά πλούσιο για να αγγίξει scaling, caching, data distribution και tradeoffs. Θα το λύσουμε **ακολουθώντας το framework** του πρώτου μαθήματος, ώστε να έχεις ένα template για κάθε παρόμοια ερώτηση.
+
+## 1. Requirements
+
+**Functional:**
+- Δίνεις ένα long URL → παίρνεις ένα short code (π.χ. `sho.rt/Xy7Qा`).
+- Επίσκεψη στο short → **redirect** στο original.
+- (Προαιρετικά) custom alias, expiration, analytics (clicks).
+
+**Non-functional (εδώ κρίνεται το design):**
+- **Read-heavy**: οι redirects (reads) >> οι δημιουργίες (writes), αναλογία ~100:1.
+- **Χαμηλό latency** στο redirect (είναι στο critical path του χρήστη).
+- **Υψηλή availability** (σπασμένα links = κακή εμπειρία).
+- Τα short codes **μοναδικά** και «μόνιμα».
+
+## 2. Estimation (back-of-envelope)
+
+Έστω 100M νέα links/μήνα → ~40 writes/sec. Με 100:1 read:write → ~4.000 reads/sec (redirects). Σε 5 χρόνια ~6B links. Με ~500 bytes/record → ~3TB storage. Συμπέρασμα: **τα reads κυριαρχούν** (caching!), το storage είναι διαχειρίσιμο αλλά θέλει πρόβλεψη.
+
+## 3. API & data model
+
+```txt
+POST /shorten   { url }            → { shortCode }
+GET  /{shortCode}                  → 301/302 redirect → original URL
+```
+
+```txt
+links: shortCode (PK) | originalUrl | createdAt | expiresAt? | ownerId?
+```
+
+Το `shortCode` είναι το primary key — τα lookups γίνονται με αυτό.
+
+## 4. Η καρδιά: πώς παράγεις το short code
+
+Δύο κύριες προσεγγίσεις (κλασικό σημείο tradeoff):
+
+- **Hash του URL** (π.χ. base62 από hash) — απλό, αλλά **collisions** (δύο URLs → ίδιο code) που πρέπει να χειριστείς.
+- **Counter / unique ID → base62 encode** — ένας αυξανόμενος μετρητής που κωδικοποιείται σε σύντομο string. Χωρίς collisions, αλλά ο **counter** πρέπει να είναι κατανεμημένος (π.χ. ID-generation service ή προ-εκχωρημένα ranges ανά server) ώστε να μη γίνει SPOF/bottleneck.
+
+Base62 (`a-zA-Z0-9`): 7 χαρακτήρες δίνουν 62⁷ ≈ 3.5 τρισ. codes — άφθονο.
+
+## 5. High-level design
+
+```txt
+                       ┌── read path (redirect, 4000/s) ──┐
+Client → CDN/LB → App servers (stateless)
+                       ├─ Redis cache (shortCode→URL) ─ HIT → 301 redirect
+                       └─ MISS → Database (read replicas) → cache → redirect
+
+Client → LB → App servers ── write path (shorten, 40/s) → ID gen → DB (primary)
+```
+
+- **Cache (Redis), cache-aside**: το redirect είναι read-heavy και επαναλαμβανόμενο (viral links) → το 99% των redirects εξυπηρετείται από cache, όχι DB. Τεράστια μείωση φορτίου & latency.
+- **Read replicas**: τα cache misses πάνε σε replicas (read-heavy).
+- **Stateless app servers** πίσω από load balancer → horizontal scaling.
+
+## 6. Deep dive: bottlenecks & επιλογές
+
+- **Reads**: cache (Redis) + read replicas. Τα δημοφιλή links μένουν «ζεστά» στο cache.
+- **Writes/storage στην κλίμακα**: αν χρειαστεί, **sharding** με shard key το `shortCode` (ομοιόμορφη κατανομή — τα codes είναι «τυχαία»). NoSQL key-value ταιριάζει φυσικά (lookup by key, τεράστιο throughput).
+- **Redirect type**: `301` (permanent, ο browser cache-άρει → λιγότερα hits αλλά χάνεις analytics) vs `302` (temporary, κάθε click περνά από σένα → analytics αλλά περισσότερο φορτίο). Tradeoff ανάλογα με το αν θες analytics.
+- **Analytics** (clicks): μην τα μετράς σύγχρονα στο redirect path — **enqueue** ένα event σε queue και επεξεργάσου async (μάθημα async). Έτσι το redirect μένει γρήγορο.
+- **Consistency**: ένα link αμέσως μετά τη δημιουργία πρέπει να δουλεύει → read-your-writes ή γράψε και στο cache κατά τη δημιουργία. Για analytics, eventual consistency αρκεί.
+
+## 7. Tradeoffs — η κατακλείδα
+
+«Δεν υπάρχει σωστή αρχιτεκτονική, μόνο κατάλληλη»: counter vs hash (collisions vs distributed counter), 301 vs 302 (cache/φορτίο vs analytics), SQL vs NoSQL (consistency/queries vs scale). Πες ποια διάλεξες **και γιατί**, με βάση τα requirements.
+
+<PredictOutput
+  title="Redirect path optimization"
+  code={`Το σύστημα κάνει ~4000 redirects/sec, με πολλά viral links
+να ζητιούνται ξανά και ξανά. Πού εξυπηρετείται η πλειονότητα;`}
+  options={[
+    "Από το primary database",
+    "Από το Redis cache (cache-aside) — τα ζεστά links δεν χτυπάνε DB",
+    "Από read replicas αποκλειστικά",
+    "Από το CDN μόνο"
+  ]}
+  correctOptionIndex={1}
+  answer="Από το Redis cache — τα ζεστά links δεν χτυπάνε DB"
+  explanation="Read-heavy + επαναλαμβανόμενα δημοφιλή links = ιδανικό για caching. Με cache-aside, το πρώτο redirect ενός code γεμίζει το cache· τα επόμενα (η συντριπτική πλειονότητα για viral links) εξυπηρετούνται από Redis χωρίς να αγγίξουν τη DB. Τα misses πάνε σε read replicas. Έτσι κρατάς latency χαμηλό και DB φορτίο ελάχιστο."
+/>
+
+<Exercise
+  question="Γιατί να μετράς τα analytics (clicks) ασύγχρονα και όχι μέσα στο redirect;"
+  options={[
+    "Γιατί τα analytics δεν είναι σημαντικά.",
+    "Για να μείνει το redirect γρήγορο — enqueue ένα event και επεξεργάσου το async αντί να επιβαρύνεις το critical path.",
+    "Γιατί η βάση δεν υποστηρίζει counters."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το redirect είναι στο critical path του χρήστη — πρέπει να είναι ταχύτατο. Αν μετράς clicks σύγχρονα (write στη DB σε κάθε redirect), προσθέτεις latency & φορτίο. Αντ' αυτού enqueue ένα 'click' event σε queue και επεξεργάσου το async· τα analytics ανέχονται eventual consistency."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «Design a URL shortener.»
+
+> I start with requirements: shorten a URL and redirect on visit, and crucially it's read-heavy — redirects vastly outnumber creations — with low-latency, high-availability redirects. A quick estimate (~40 writes/s, ~4000 reads/s, a few TB over years) confirms reads dominate, so caching is central. The data model is just `shortCode → originalUrl`. For code generation I weigh hashing (simple but collisions) against a distributed counter encoded in base62 (no collisions but the counter mustn't become a bottleneck); seven base62 chars give trillions of codes. High level: stateless app servers behind a load balancer, a Redis cache-aside layer so hot links never hit the DB, read replicas for misses, and the DB sharded by shortCode if storage grows — a key-value store fits naturally. I keep the redirect fast by pushing click analytics onto a queue to process asynchronously, and I choose 301 vs 302 based on whether I need those analytics. Then I close on tradeoffs: every choice — counter vs hash, 301 vs 302, SQL vs NoSQL — tied back to the requirements.
+
+<Flashcards
+  title="URL shortener walkthrough — interview drills"
+  cards={[
+    {
+      question: "Ποιο είναι το κυρίαρχο non-functional χαρακτηριστικό ενός URL shortener;",
+      answer: "Read-heavy (redirects >> creations, ~100:1) με χαμηλό latency & υψηλή availability στο redirect. Συνέπεια: caching + read replicas είναι κεντρικά στο design."
+    },
+    {
+      question: "Πώς παράγεις το short code; (2 προσεγγίσεις)",
+      answer: "Hash του URL (απλό, αλλά collisions να χειριστείς) ή distributed counter/unique ID → base62 encode (χωρίς collisions, αλλά ο counter δεν πρέπει να γίνει SPOF/bottleneck). 7 base62 chars ≈ 3.5 τρισ. codes."
+    },
+    {
+      question: "Πώς κρατάς το redirect γρήγορο;",
+      answer: "Redis cache-aside (shortCode→URL): τα ζεστά/viral links εξυπηρετούνται από cache, όχι DB. Misses → read replicas. Stateless app servers πίσω από LB. Analytics async μέσω queue."
+    },
+    {
+      question: "301 vs 302 redirect — το tradeoff;",
+      answer: "301 (permanent): ο browser cache-άρει → λιγότερα hits αλλά χάνεις analytics. 302 (temporary): κάθε click περνά από σένα → analytics αλλά περισσότερο φορτίο. Επιλογή βάσει αναγκών analytics."
+    },
+    {
+      question: "Πώς κλιμακώνεις writes/storage αν χρειαστεί;",
+      answer: "Sharding με shard key το shortCode (ομοιόμορφη κατανομή αφού τα codes είναι ~τυχαία). Key-value NoSQL ταιριάζει: lookup by key, τεράστιο throughput. Reads ήδη καλυμμένα από cache+replicas."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Λύσε ένα design από την αρχή"
+  scenario="Εφάρμοσε το πλήρες framework σε μια ΝΕΑ ερώτηση (π.χ. 'design a pastebin' ή 'design a rate limiter' ή 'design a news feed') αξιοποιώντας caching/scaling/async."
+  outcomes={[
+    "Να εφαρμόζεις το framework end-to-end.",
+    "Να εντοπίζεις το κυρίαρχο non-functional χαρακτηριστικό.",
+    "Να δικαιολογείς κάθε επιλογή με tradeoff."
+  ]}
+  steps={[
+    "Διευκρίνισε functional + non-functional (read/write ratio, latency, availability).",
+    "Κάνε back-of-envelope estimation (QPS, storage).",
+    "Όρισε API + data model.",
+    "Σχεδίασε high-level (LB → stateless servers → cache → DB/replicas → queue).",
+    "Deep dive στο bottleneck και κλείσε με ρητά tradeoffs."
+  ]}
+  checkpoints={[
+    "Εντόπισες αν είναι read-heavy ή write-heavy και σχεδίασες ανάλογα.",
+    "Έβαλες caching όπου τα reads επαναλαμβάνονται.",
+    "Μετέφερες αργές/μη-κρίσιμες ενέργειες σε async.",
+    "Κάθε επιλογή έχει tradeoff δεμένο στα requirements."
+  ]}
+  mistakes={[
+    "Να ξεκινάς από τη λύση χωρίς requirements/estimation.",
+    "Να ξεχνάς caching σε read-heavy redirect path.",
+    "Να μετράς analytics σύγχρονα στο critical path.",
+    "Να παρουσιάζεις 'τη σωστή' αρχιτεκτονική χωρίς tradeoffs."
+  ]}
+  mastery="Το μάθημα — και το System Design track — πέτυχε όταν λύνεις μια άγνωστη design ερώτηση end-to-end, με δομή, scaling και ρητά tradeoffs."
+/>

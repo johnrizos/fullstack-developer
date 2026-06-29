@@ -1,0 +1,151 @@
+# Caching, CDN & Rate Limiting
+
+Το caching είναι το **φθηνότερο και πιο αποτελεσματικό** εργαλείο scaling: αντί να κλιμακώσεις τη βάση, απλώς **μην τη χτυπάς** για δεδομένα που ζητιούνται συνέχεια. Αυτό το μάθημα καλύπτει πού μπαίνει το cache, τις στρατηγικές (cache-aside/write-through/write-back), το δύσκολο κομμάτι (invalidation), τα CDNs, και το rate limiting — όλα συχνά σε system-design συνεντεύξεις.
+
+## Πού μπαίνει cache — πολλά επίπεδα
+
+Το caching συμβαίνει σε όλη τη διαδρομή ενός request:
+
+```txt
+Browser cache → CDN → (Load Balancer) → App in-memory → Distributed cache (Redis) → Database
+   κοντά στον χρήστη  ───────────────────────────────────────────►  μακριά/ακριβά
+```
+
+Όσο πιο **κοντά στον χρήστη** εξυπηρετηθεί, τόσο πιο γρήγορα και φθηνά. Ο στόχος: τα ακριβά layers (DB) να βλέπουν όσο λιγότερα requests γίνεται.
+
+## Cache strategies
+
+### Cache-aside (lazy loading) — το πιο κοινό
+
+Η εφαρμογή διαχειρίζεται το cache:
+
+```txt
+1. Διάβασε από cache.
+2. HIT → επέστρεψέ το.
+3. MISS → διάβασε από DB, γράψε στο cache (με TTL), επέστρεψε.
+```
+
+Απλό και ανθεκτικό (αν πέσει το cache, διαβάζεις από DB). Tradeoff: το πρώτο request κάθε κλειδιού είναι αργό (cache miss), και τα δεδομένα μπορεί να «παλιώσουν» μέχρι το TTL.
+
+### Write-through
+
+Σε κάθε **write**, γράφεις **ταυτόχρονα** σε cache + DB. Το cache είναι πάντα φρέσκο, αλλά τα writes είναι πιο αργά (δύο γραψίματα) και cache-άρεις και δεδομένα που ίσως δεν διαβαστούν.
+
+### Write-back (write-behind)
+
+Γράφεις στο cache και **ασύγχρονα** στη DB αργότερα. Πολύ γρήγορα writes, αλλά **ρίσκο απώλειας** δεδομένων αν πέσει το cache πριν το flush. Για ειδικές περιπτώσεις.
+
+## Invalidation — το πραγματικά δύσκολο
+
+> «There are only two hard things in CS: cache invalidation and naming things.»
+
+Αν cache-άρεις δεδομένα και αυτά αλλάξουν στη DB, το cache έχει **stale** τιμή. Στρατηγικές:
+
+- **TTL (time-to-live)** — λήγει αυτόματα μετά από Χ χρόνο. Απλό· ανέχεσαι staleness μέχρι το TTL. Καλό για δεδομένα που «αντέχουν» λίγη παλαιότητα.
+- **Write-time invalidation** — όταν γράφεις στη DB, διέγραψε/ενημέρωσε το σχετικό cache key. Πιο φρέσκο, αλλά πρέπει να ξέρεις όλα τα κλειδιά που επηρεάζονται.
+
+Διάλεξε με βάση το **πόση staleness ανέχεται** το feature: ένα προφίλ χρήστη αντέχει 60s TTL· ένα υπόλοιπο λογαριασμού όχι.
+
+## CDN — cache στο edge
+
+Ένα **CDN** (Content Delivery Network) είναι γεωγραφικά κατανεμημένα caches κοντά στους χρήστες. Σερβίρει **στατικά** assets (images, CSS, JS, videos) — και cacheable HTML/API responses — από τον πλησιέστερο edge server:
+
+- Μειώνει **latency** (κοντά στον χρήστη) και **φορτίο** στους origin servers.
+- Ιδανικό για static/cacheable content· για προσωποποιημένο/δυναμικό περιεχόμενο, με προσοχή (cache keys, headers).
+
+## Rate limiting — προστασία & δικαιοσύνη
+
+Το **rate limiting** περιορίζει πόσα requests μπορεί να κάνει ένας client σε ένα παράθυρο χρόνου (π.χ. 100/min). Σκοπός: προστασία από abuse/DDoS, δίκαιη κατανομή πόρων, έλεγχος κόστους (ειδικά σε ακριβά endpoints όπως LLM calls).
+
+- Αλγόριθμοι: **token bucket** (συνηθέστερος), fixed/sliding window.
+- Υλοποιείται συχνά σε **shared store (Redis)** ώστε να μετράει σωστά **σε όλα** τα stateless app servers.
+- Στην υπέρβαση: HTTP **429 Too Many Requests** με `Retry-After`.
+
+<PredictOutput
+  title="Cache-aside miss"
+  code={`Cache-aside στρατηγική. Το κλειδί user:42 ΔΕΝ είναι στο cache.
+Έρχεται request για user:42. Τι συμβαίνει;`}
+  options={[
+    "Επιστρέφει null",
+    "Cache miss → διάβασε από DB → γράψε στο cache (με TTL) → επέστρεψε",
+    "Error 429",
+    "Γράφει στη DB"
+  ]}
+  correctOptionIndex={1}
+  answer="Cache miss → DB → γράψε στο cache → επέστρεψε"
+  explanation="Στο cache-aside, σε miss η εφαρμογή διαβάζει από τη DB, αποθηκεύει το αποτέλεσμα στο cache (με TTL) και το επιστρέφει. Το επόμενο request για user:42 θα είναι HIT. Το πρώτο request κάθε κλειδιού είναι αναπόφευκτα αργό (miss) — αυτό είναι το tradeoff του lazy loading."
+/>
+
+<Exercise
+  question="Cache-άρεις προφίλ χρηστών. Ένας χρήστης αλλάζει το όνομά του αλλά οι άλλοι βλέπουν το παλιό για λίγο. Ποιες οι δύο βασικές στρατηγικές invalidation;"
+  options={[
+    "Μεγαλύτερος server και sharding.",
+    "TTL (λήγει αυτόματα) ή write-time invalidation (διέγραψε το key στο write).",
+    "Write-back και CDN.",
+    "Round-robin load balancing."
+  ]}
+  correctOptionIndex={1}
+  explanation="TTL: το cache λήγει μόνο του μετά από Χ χρόνο — απλό, ανέχεσαι staleness μέχρι τότε. Write-time invalidation: όταν γίνεται το write στη DB, διαγράφεις/ενημερώνεις το σχετικό cache key — πιο φρέσκο αλλά πρέπει να ξέρεις τα επηρεαζόμενα κλειδιά. Διαλέγεις με βάση την ανεκτή staleness."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «Where and how would you add caching?»
+
+> Caching is the cheapest scaling lever — the goal is for the expensive layers, the database, to see as few requests as possible. It happens at many levels: browser, CDN, app in-memory, and a distributed cache like Redis in front of the DB. My default strategy is cache-aside: on a miss, read from the DB, populate the cache with a TTL, and return — simple and resilient, at the cost of a slow first request and some staleness. Write-through keeps the cache fresh at the cost of slower writes. The hard part is invalidation: I pick a TTL sized to how much staleness the feature tolerates — a profile can be stale for a minute, a balance cannot — or invalidate on write when freshness matters. For static assets I push them to a CDN at the edge to cut latency and origin load, and I add rate limiting, usually token-bucket in Redis so it counts across all stateless servers, returning 429 to protect against abuse and control cost.
+
+<Flashcards
+  title="Caching & CDN — interview drills"
+  cards={[
+    {
+      question: "Σε ποια επίπεδα συμβαίνει caching;",
+      answer: "Browser → CDN → app in-memory → distributed cache (Redis) → DB. Όσο πιο κοντά στον χρήστη εξυπηρετηθεί, τόσο πιο γρήγορα/φθηνά. Στόχος: τα ακριβά layers (DB) να βλέπουν λιγότερα requests."
+    },
+    {
+      question: "Cache-aside: πώς δουλεύει;",
+      answer: "Read cache· HIT→return· MISS→διάβασε DB, γράψε cache (με TTL), return. Το πιο κοινό· ανθεκτικό (cache down → DB). Tradeoff: αργό πρώτο request (miss) + staleness μέχρι TTL."
+    },
+    {
+      question: "Write-through vs write-back;",
+      answer: "Write-through: γράφεις cache+DB μαζί — πάντα φρέσκο, πιο αργά writes. Write-back: γράφεις cache, ασύγχρονα DB μετά — πολύ γρήγορα writes αλλά ρίσκο απώλειας αν πέσει το cache."
+    },
+    {
+      question: "Δύο στρατηγικές invalidation;",
+      answer: "TTL (λήγει αυτόματα — απλό, ανέχεσαι staleness) και write-time invalidation (διαγράφεις/ενημερώνεις το key στο write — πιο φρέσκο αλλά πρέπει να ξέρεις τα κλειδιά). Επιλογή βάσει ανεκτής staleness."
+    },
+    {
+      question: "Τι κάνει ένα CDN & το rate limiting;",
+      answer: "CDN: γεωγραφικά κατανεμημένα caches στο edge για στατικά/cacheable assets — μειώνει latency & origin load. Rate limiting: όριο requests/χρόνο (token bucket, σε Redis για όλα τα servers)· υπέρβαση → 429."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Πρόσθεσε caching layer"
+  scenario="Πάρε ένα read-heavy endpoint και σχεδίασε caching (στρατηγική + invalidation), CDN για στατικά, και rate limiting."
+  outcomes={[
+    "Να εφαρμόζεις cache-aside με TTL.",
+    "Να διαλέγεις στρατηγική invalidation ανά feature.",
+    "Να προσθέτεις CDN & rate limiting σωστά."
+  ]}
+  steps={[
+    "Βάλε Redis cache-aside μπροστά από ένα ακριβό read (με TTL).",
+    "Διάλεξε TTL ανάλογα με την ανεκτή staleness του feature.",
+    "Για mutable δεδομένα, πρόσθεσε write-time invalidation του key.",
+    "Σέρβιρε static assets από CDN.",
+    "Πρόσθεσε rate limiting (token bucket σε Redis) με 429 + Retry-After."
+  ]}
+  checkpoints={[
+    "Τα συχνά reads εξυπηρετούνται από cache (HIT), όχι από DB.",
+    "Το TTL ταιριάζει στην ανεκτή staleness.",
+    "Τα στατικά σερβίρονται από edge (CDN).",
+    "Το rate limit μετράει σωστά σε όλα τα stateless servers (shared store)."
+  ]}
+  mistakes={[
+    "Να cache-άρεις δεδομένα που πρέπει να είναι πάντα φρέσκα χωρίς invalidation.",
+    "Rate limiting σε in-memory per-server (λάθος μέτρημα σε πολλά servers).",
+    "CDN για προσωποποιημένο περιεχόμενο χωρίς σωστά cache keys.",
+    "Write-back εκεί που η απώλεια δεδομένων δεν είναι αποδεκτή."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν προσθέτεις caching/CDN/rate-limiting με συνειδητά tradeoffs staleness/φρεσκάδας."
+/>

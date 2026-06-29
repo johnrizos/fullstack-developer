@@ -1,0 +1,146 @@
+# Positioning, z-index & Units
+
+Μετά το box model και τα selectors, το επόμενο «μυστήριο» του CSS είναι το **positioning**: γιατί ένα element «ξεφεύγει» από τη ροή, γιατί το `z-index` «δεν δουλεύει», και ποια **units** να διαλέξεις. Όλα αυτά είναι καθημερινά frontend ζητήματα και συχνές ερωτήσεις συνέντευξης. Αυτό το μάθημα τα ξεκαθαρίζει.
+
+## display: η βάση της ροής
+
+Πριν το positioning, το `display` ορίζει πώς συμπεριφέρεται ένα element στη ροή:
+
+- **`block`** — πιάνει όλο το πλάτος, μπαίνει σε νέα γραμμή (`div`, `p`, `h1`).
+- **`inline`** — ρέει μέσα στο κείμενο, αγνοεί width/height (`span`, `a`).
+- **`inline-block`** — ρέει inline αλλά δέχεται width/height/padding.
+- **`flex` / `grid`** — layout contexts (τα είδες σε ξεχωριστά μαθήματα).
+- **`none`** — αφαιρείται εντελώς (δεν πιάνει χώρο· σε αντίθεση με `visibility: hidden`).
+
+## position: 5 τιμές
+
+```css
+.el { position: static | relative | absolute | fixed | sticky; }
+```
+
+- **`static`** (default) — κανονική ροή· το `top/left/z-index` αγνοούνται.
+- **`relative`** — μένει στη ροή, αλλά μετατοπίζεται με `top/left/...` **σε σχέση με τον εαυτό του**. Κρίσιμη χρήση: γίνεται **containing block** για absolute παιδιά.
+- **`absolute`** — **βγαίνει από τη ροή** (δεν πιάνει χώρο) και τοποθετείται σε σχέση με τον **πλησιέστερο positioned ancestor** (μη-static). Αν δεν υπάρχει, σε σχέση με το viewport.
+- **`fixed`** — βγαίνει από τη ροή, τοποθετείται σε σχέση με το **viewport** (μένει σταθερό στο scroll) — sticky headers, modals.
+- **`sticky`** — υβρίδιο: ρέει κανονικά μέχρι ένα threshold (π.χ. `top: 0`), μετά «κολλάει».
+
+Το πιο κοινό pattern: parent `position: relative` + child `position: absolute` → τοποθετείς το child οπουδήποτε μέσα στον parent (badge, dropdown, overlay):
+
+```css
+.card { position: relative; }
+.card .badge { position: absolute; top: 8px; right: 8px; }
+```
+
+## z-index & stacking context — γιατί «δεν δουλεύει»
+
+Το `z-index` ελέγχει ποιο element είναι «μπροστά». Δύο παγίδες που εξηγούν το 90% των «δεν δουλεύει το z-index»:
+
+1. **Δουλεύει μόνο σε positioned elements** (όχι `static`). Χωρίς `position` (ή flex/grid item), το `z-index` αγνοείται.
+2. **Stacking context**: κάθε positioned element με `z-index` (και κάποια properties όπως `opacity < 1`, `transform`, `filter`) δημιουργεί **νέο stacking context**. Μέσα του, τα παιδιά «μαλώνουν» μόνο μεταξύ τους — ένα child με `z-index: 9999` **δεν** μπορεί να ξεπεράσει element έξω από το context του parent.
+
+```css
+/* Το .modal με z-index: 100 ΔΕΝ φαίνεται πάνω από .header
+   αν ο parent του δημιουργεί stacking context με χαμηλότερο z-index */
+```
+
+Η λύση είναι σχεδόν πάντα: κατάλαβε **ποιο stacking context** ανήκει το element, όχι να ανεβάσεις το νούμερο σε `999999`.
+
+## Units — ποια να διαλέξεις
+
+| Unit | Τι είναι | Χρήση |
+|---|---|---|
+| `px` | absolute pixel | borders, μικρές σταθερές αποστάσεις |
+| `rem` | σχετικό με το **root** font-size | **typography, spacing** — κλιμακώνεται με τις προτιμήσεις χρήστη |
+| `em` | σχετικό με το font-size του **ίδιου** element | local scaling (προσοχή: «συσσωρεύεται» σε nested) |
+| `%` | σχετικό με τον parent | widths, fluid layouts |
+| `vw` / `vh` | % του viewport width/height | full-screen sections, hero |
+| `fr` | fraction (μόνο σε grid) | grid tracks |
+
+Κανόνας προσβασιμότητας: για **font-size χρησιμοποίησε `rem`** (όχι `px`), ώστε να σέβεται τη ρύθμιση μεγέθους γραμματοσειράς του χρήστη.
+
+<PredictOutput
+  title="z-index drill"
+  code={`.box-a { position: relative; z-index: 1; opacity: 0.9; }
+.box-a .child { position: absolute; z-index: 9999; }
+.box-b { position: relative; z-index: 2; }
+
+/* Θα φανεί το .child (z-index 9999) πάνω από το .box-b (z-index 2); */`}
+  options={["Ναι — 9999 > 2", "Όχι — το .child είναι παγιδευμένο στο stacking context του .box-a", "Μόνο αν το .box-b είναι static", "Εξαρτάται από τη σειρά στο HTML"]}
+  correctOptionIndex={1}
+  answer="Όχι — το .child είναι παγιδευμένο στο stacking context του .box-a"
+  explanation="Το .box-a δημιουργεί stacking context (position+z-index, και opacity<1). Το z-index: 9999 του child συγκρίνεται ΜΟΝΟ μέσα σε αυτό το context. Στο επίπεδο του root, μετράει το z-index του .box-a (1) έναντι του .box-b (2) — άρα το .box-b είναι μπροστά. Αυτή είναι η Νο1 αιτία 'δεν δουλεύει το z-index'."
+/>
+
+<Exercise
+  question="Θες ένα badge στην πάνω-δεξιά γωνία μιας κάρτας. Ποιο σωστό setup;"
+  options={[
+    "Card: position absolute, badge: position relative.",
+    "Card: position relative, badge: position absolute με top/right.",
+    "Badge: position fixed με top/right.",
+    "Float right στο badge."
+  ]}
+  correctOptionIndex={1}
+  explanation="Ο parent (card) γίνεται position: relative ώστε να είναι το containing block. Το badge γίνεται position: absolute και τοποθετείται με top/right σε σχέση με την κάρτα. Το fixed θα το κόλλαγε στο viewport (λάθος), όχι στην κάρτα."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «Explain CSS positioning and why z-index sometimes doesn't work.»
+
+> `static` is the default in-flow position. `relative` keeps the element in flow but lets me nudge it and, crucially, makes it the containing block for absolutely-positioned children. `absolute` removes the element from flow and positions it against the nearest positioned ancestor — the relative-parent, absolute-child pair is the everyday pattern for badges and dropdowns. `fixed` positions against the viewport, and `sticky` flows normally until it hits a threshold then sticks. For z-index, two things trip people up: it only applies to positioned elements, and every positioned element with a z-index — plus things like `opacity` below 1 or a `transform` — creates a new stacking context, so a child's z-index only competes inside its parent's context. The fix is almost never a bigger number; it's understanding which stacking context the element lives in. For units I default to `rem` for typography and spacing so it respects the user's font-size, `%`/`vw` for fluid layout, and `px` for fine borders.
+
+<Flashcards
+  title="Positioning & z-index — interview drills"
+  cards={[
+    {
+      question: "absolute σε σχέση με τι τοποθετείται;",
+      answer: "Με τον πλησιέστερο positioned (μη-static) ancestor· αν δεν υπάρχει, με το viewport. Βγαίνει από τη ροή (δεν πιάνει χώρο). Pattern: parent relative + child absolute."
+    },
+    {
+      question: "fixed vs sticky;",
+      answer: "fixed: τοποθετείται στο viewport, μένει σταθερό στο scroll (modals, fixed header). sticky: ρέει κανονικά μέχρι ένα threshold (π.χ. top:0) και μετά 'κολλάει' στη θέση."
+    },
+    {
+      question: "Γιατί 'δεν δουλεύει' το z-index;",
+      answer: "(1) Δουλεύει μόνο σε positioned elements (όχι static). (2) Stacking context: opacity<1/transform/positioned+z-index δημιουργούν νέο context· το z-index του child συγκρίνεται μόνο μέσα του. Λύση: κατάλαβε το context, όχι μεγαλύτερο νούμερο."
+    },
+    {
+      question: "px vs rem vs em;",
+      answer: "px: absolute. rem: σχετικό με root font-size — best για typography/spacing (σέβεται user prefs). em: σχετικό με το font-size του ίδιου element (συσσωρεύεται σε nested). % : σχετικό με parent."
+    },
+    {
+      question: "display: none vs visibility: hidden;",
+      answer: "none: αφαιρείται εντελώς, δεν πιάνει χώρο. hidden: κρύβεται αλλά κρατά τον χώρο του (και το layout). Διαφορετικά αποτελέσματα στη ροή."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Φτιάξε overlay & sticky header"
+  scenario="Υλοποίησε ένα dropdown/overlay με absolute positioning και ένα sticky header, χειριζόμενος σωστά το z-index."
+  outcomes={[
+    "Να χρησιμοποιείς relative+absolute για τοποθέτηση.",
+    "Να φτιάχνεις sticky/fixed elements.",
+    "Να διαγιγνώσκεις stacking context issues."
+  ]}
+  steps={[
+    "Κάνε ένα card position: relative και βάλε ένα badge absolute (top/right).",
+    "Φτιάξε header position: sticky; top: 0 και δες το να κολλάει στο scroll.",
+    "Φτιάξε ένα dropdown absolute κάτω από ένα κουμπί.",
+    "Δημιούργησε επίτηδες ένα z-index bug με opacity/transform σε parent και λύσ' το.",
+    "Άλλαξε units (px→rem) σε typography και δοκίμασε αλλαγή root font-size."
+  ]}
+  checkpoints={[
+    "Το badge τοποθετείται σχετικά με την κάρτα, όχι το viewport.",
+    "Το sticky header κολλάει στο σωστό threshold.",
+    "Καταλαβαίνεις γιατί το z-index conflict συνέβη (stacking context).",
+    "Η typography κλιμακώνεται με το root font-size (rem)."
+  ]}
+  mistakes={[
+    "Να ανεβάζεις z-index σε 999999 αντί να βρεις το stacking context.",
+    "Να ξεχνάς position: relative στον parent ενός absolute child.",
+    "Να χρησιμοποιείς fixed εκεί που θες absolute (κολλάει στο viewport).",
+    "px για font-size (αγνοεί τις προτιμήσεις προσβασιμότητας)."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν τοποθετείς elements με σιγουριά και διαγιγνώσκεις z-index/stacking issues αντί να μαντεύεις."
+/>

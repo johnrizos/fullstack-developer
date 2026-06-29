@@ -1,0 +1,143 @@
+# Scaling, Load Balancing & Data Distribution
+
+Όταν ένα σύστημα μεγαλώνει, δύο πράγματα γίνονται bottleneck: τα **app servers** και η **βάση**. Αυτό το μάθημα δείχνει πώς κλιμακώνεις και τα δύο — load balancing & horizontal scaling για το compute, replication & sharding για τα δεδομένα — και την έννοια που τα διέπει όλα στην κλίμακα: **CAP theorem** και consistency models.
+
+## Load balancing — μοίρασε το φορτίο
+
+Ένας **load balancer** στέκεται μπροστά από πολλά (stateless) app servers και μοιράζει τα requests:
+
+- **Algorithms**: round-robin (με τη σειρά), least-connections (στον λιγότερο φορτωμένο), IP hash (ίδιος χρήστης → ίδιος server).
+- **Health checks**: σταματά να στέλνει σε server που δεν απαντά → αυτόματο failover.
+- Είναι και ο ίδιος υποψήφιο **SPOF** — σε production τρέχει σε εφεδρεία (active-passive ή πολλαπλοί).
+
+Επειδή τα app servers είναι stateless (προηγούμενο μάθημα), ο LB μπορεί να στείλει κάθε request οπουδήποτε — έτσι κλιμακώνεις το compute οριζόντια απλώς προσθέτοντας servers (auto-scaling με βάση CPU/traffic).
+
+## Database scaling — το πραγματικό bottleneck
+
+Τα app servers κλιμακώνονται εύκολα· η **βάση** είναι το δύσκολο. Τρεις τεχνικές:
+
+### 1. Replication (αντίγραφα)
+
+Ένα **primary** (writes) + πολλά **replicas** (reads). Επειδή τα περισσότερα συστήματα είναι **read-heavy**, στέλνεις τα reads στα replicas → κλιμακώνεις τα reads μαζικά.
+
+- **Tradeoff: replication lag** — τα replicas ενημερώνονται με μικρή καθυστέρηση, οπότε ένα read αμέσως μετά από write μπορεί να δει «παλιά» δεδομένα (eventual consistency).
+- Δίνει και **availability**: αν πέσει το primary, ένα replica προάγεται (failover).
+
+### 2. Partitioning / Sharding (διαμοιρασμός)
+
+Όταν τα **δεδομένα** ή τα **writes** δεν χωράνε σε ένα μηχάνημα, σπας τη βάση σε **shards** — κάθε shard κρατά ένα **υποσύνολο** των δεδομένων (π.χ. users A–M στο shard 1, N–Z στο shard 2), με βάση ένα **shard key**.
+
+- Κλιμακώνει **writes** και **storage** (όχι μόνο reads όπως η replication).
+- **Tradeoffs**: queries που χρειάζονται πολλά shards γίνονται ακριβά· κακό shard key → **hot shards** (ανισοκατανομή). Διάλεξε shard key με ομοιόμορφη κατανομή.
+
+### 3. Caching (επόμενο μάθημα)
+
+Το πιο φθηνό «scaling»: μη χτυπάς καθόλου τη βάση για συχνά δεδομένα.
+
+## SQL vs NoSQL στην κλίμακα
+
+- **SQL (relational)** — strong consistency, joins, transactions· κάθετη κλιμάκωση πιο εύκολη από οριζόντια (sharding είναι πιο δύσκολο).
+- **NoSQL** — σχεδιασμένα για horizontal scaling & τεράστιο throughput, ευέλικτο schema· συχνά eventual consistency, χωρίς joins. Διάλεξε βάσει access patterns, όχι hype.
+
+## CAP theorem — το αναπόφευκτο tradeoff
+
+Σε ένα **κατανεμημένο** σύστημα, όταν συμβεί **network partition** (P) — δηλαδή κόβεται η επικοινωνία μεταξύ nodes — πρέπει να διαλέξεις **ένα** από τα δύο:
+
+- **Consistency (C)** — κάθε read βλέπει την πιο πρόσφατη τιμή (ή σφάλμα). Προτίμηση σε τραπεζικά/πληρωμές.
+- **Availability (A)** — το σύστημα πάντα απαντά, αλλά ίσως με «παλιά» δεδομένα. Προτίμηση σε feeds/likes.
+
+Το P είναι αναπόφευκτο σε κατανεμημένα συστήματα, άρα στην πράξη διαλέγεις **CP** ή **AP**. Παράδειγμα: ένα banking ledger θέλει C (καλύτερα error παρά λάθος υπόλοιπο)· ένα social feed θέλει A (καλύτερα λίγο παλιό feed παρά κανένα).
+
+## Consistency models
+
+- **Strong consistency** — μετά από write, κάθε read βλέπει τη νέα τιμή. Ακριβό στην κλίμακα.
+- **Eventual consistency** — τα αντίγραφα «συγκλίνουν» με τον χρόνο· προσωρινά μπορεί να δεις παλιά δεδομένα. Φθηνό, scalable — αποδεκτό για likes/views/feeds, όχι για υπόλοιπα λογαριασμού.
+
+<PredictOutput
+  title="Replication tradeoff"
+  code={`Στέλνεις writes στο primary και reads στα read-replicas.
+Ένας χρήστης κάνει POST (write) και αμέσως GET (read) τα ίδια δεδομένα.
+Τι μπορεί να δει;`}
+  options={[
+    "Πάντα τα νέα δεδομένα",
+    "Ίσως τα ΠΑΛΙΑ δεδομένα — replication lag (eventual consistency)",
+    "Error",
+    "Διπλά δεδομένα"
+  ]}
+  correctOptionIndex={1}
+  answer="Ίσως τα ΠΑΛΙΑ δεδομένα — replication lag"
+  explanation="Το write πήγε στο primary, αλλά το read μπορεί να χτύπησε replica που δεν έχει ακόμα προλάβει να συγχρονιστεί (replication lag). Αυτό είναι eventual consistency. Λύσεις: read-your-writes (διάβασε από primary μετά από write), ή ανέξου το lag όπου είναι αποδεκτό."
+/>
+
+<Exercise
+  question="Το σύστημά σου είναι read-heavy και η βάση δεν προλαβαίνει τα reads. Πρώτη κίνηση;"
+  options={[
+    "Sharding με βάση το user id.",
+    "Read replicas — στείλε τα reads σε αντίγραφα του primary.",
+    "Μεγαλύτερος server (vertical scaling) για πάντα."
+  ]}
+  correctOptionIndex={1}
+  explanation="Για read-heavy φορτίο, τα read replicas είναι η φυσική πρώτη κίνηση: ένα primary για writes, πολλά replicas για reads. Το sharding λύνει write/storage bottleneck (πιο σύνθετο) και το vertical scaling έχει όριο. (Και caching, στο επόμενο μάθημα, μειώνει ακόμα περισσότερο τα reads.)"
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you scale the database when one server isn't enough?»
+
+> First I separate the two bottlenecks. App servers are stateless, so I scale them horizontally behind a load balancer that health-checks and fails over. The database is the hard part. Since most systems are read-heavy, I start with replication — a primary for writes and read replicas for reads — accepting replication lag, which means a read right after a write might see stale data unless I read-your-writes from the primary. When writes or storage outgrow one machine, I shard by a key with even distribution, which scales writes too but makes cross-shard queries expensive and risks hot shards with a bad key. Underlying all of this is CAP: in a partition I choose consistency or availability — strong consistency for money, eventual consistency for feeds and likes — and I pick SQL or NoSQL by access patterns, not hype.
+
+<Flashcards
+  title="Scaling & data distribution — interview drills"
+  cards={[
+    {
+      question: "Τι κάνει ένας load balancer;",
+      answer: "Μοιράζει requests σε πολλούς stateless app servers (round-robin/least-connections/IP hash), κάνει health checks & failover. Επιτρέπει horizontal scaling του compute. Ο ίδιος θέλει εφεδρεία (SPOF)."
+    },
+    {
+      question: "Replication: τι λύνει & ποιο το tradeoff;",
+      answer: "Primary (writes) + replicas (reads) → κλιμακώνει reads (read-heavy) + availability via failover. Tradeoff: replication lag → read μετά από write μπορεί να δει παλιά δεδομένα (eventual consistency)."
+    },
+    {
+      question: "Sharding/partitioning: πότε & ποιο το ρίσκο;",
+      answer: "Σπας τη βάση σε shards (υποσύνολα δεδομένων με shard key) όταν writes/storage δεν χωράνε σε ένα μηχάνημα — κλιμακώνει writes. Ρίσκα: cross-shard queries ακριβές, hot shards από κακό shard key."
+    },
+    {
+      question: "Τι λέει το CAP theorem;",
+      answer: "Σε network partition (P, αναπόφευκτο σε distributed) διαλέγεις Consistency Ή Availability. CP: σωστά δεδομένα ή error (banking). AP: πάντα απαντά αλλά ίσως παλιά δεδομένα (feeds/likes)."
+    },
+    {
+      question: "Strong vs eventual consistency;",
+      answer: "Strong: κάθε read μετά από write βλέπει τη νέα τιμή — ακριβό στην κλίμακα (υπόλοιπα/πληρωμές). Eventual: τα αντίγραφα συγκλίνουν με τον χρόνο — φθηνό/scalable (likes/views/feeds)."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Κλιμάκωσε ένα read-heavy σύστημα"
+  scenario="Πάρε ένα σύστημα που λυγίζει στην κλίμακα και σχεδίασε scaling για compute και data, δικαιολογώντας κάθε tradeoff."
+  outcomes={[
+    "Να κλιμακώνεις compute με load balancing + stateless servers.",
+    "Να διαλέγεις replication vs sharding ανά bottleneck.",
+    "Να εφαρμόζεις CAP/consistency στις αποφάσεις."
+  ]}
+  steps={[
+    "Βάλε load balancer μπροστά από πολλαπλούς stateless app servers.",
+    "Για read-heavy: πρόσθεσε read replicas και δρομολόγησε reads εκεί.",
+    "Εντόπισε write/storage bottleneck και πρότεινε shard key με ομοιόμορφη κατανομή.",
+    "Για ένα κρίσιμο flow (π.χ. πληρωμή) επίλεξε strong consistency· για feed, eventual.",
+    "Σημείωσε τα tradeoffs κάθε επιλογής (lag, cross-shard, hot shards)."
+  ]}
+  checkpoints={[
+    "Reads κλιμακώνονται με replicas· writes με sharding όπου χρειάζεται.",
+    "Διάλεξες consistency model ανά use case (όχι ένα για όλα).",
+    "Ο shard key δεν δημιουργεί hot shards.",
+    "Κάθε επιλογή έχει ρητό tradeoff."
+  ]}
+  mistakes={[
+    "Sharding από την αρχή ενώ replication/caching αρκούν.",
+    "Να αγνοείς το replication lag σε read-after-write.",
+    "Strong consistency παντού (ακριβό & περιττό σε feeds).",
+    "Κακός shard key → hot shards/ανισοκατανομή."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν κλιμακώνεις compute & data ξεχωριστά και δικαιολογείς consistency tradeoffs με CAP."
+/>
