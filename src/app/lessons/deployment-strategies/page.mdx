@@ -1,0 +1,134 @@
+# Deployment Strategies & Zero-Downtime Releases
+
+«Πώς βγάζεις νέο release χωρίς να ρίξεις το site;» — η ερώτηση που ξεχωρίζει όποιον έχει κάνει deploy σε production. Ένα απλό «σταμάτα το παλιό, ανέβασε το νέο» σημαίνει downtime και ρίσκο. Αυτό το μάθημα καλύπτει τις στρατηγικές zero-downtime (rolling, blue-green, canary), τα **feature flags**, τα **rollbacks**, και γιατί τα **health checks** + **backward-compatible migrations** είναι προϋπόθεση για όλα.
+
+## Το πρόβλημα: «recreate» = downtime
+
+Η αφελής προσέγγιση («σβήσε το παλιό, σήκωσε το νέο») έχει ένα παράθυρο όπου **τίποτα δεν τρέχει**, και αν το νέο release είναι χαλασμένο, έχεις downtime μέχρι να το πιάσεις. Οι στρατηγικές παρακάτω εξαλείφουν αυτό το παράθυρο και μειώνουν το blast radius.
+
+## Rolling deployment
+
+Αντικαθιστάς τα instances **σταδιακά**, λίγα-λίγα: ανεβάζεις το νέο σε κάποια, τα βγάζεις από τον load balancer, μετά συνεχίζεις στα υπόλοιπα.
+
+- **+** Χωρίς downtime, χωρίς διπλάσιους πόρους.
+- **−** Για λίγο τρέχουν **παλιά + νέα** έκδοση μαζί → πρέπει να είναι συμβατές (δες migrations).
+- **−** Πιο αργό rollback (πρέπει να γυρίσεις σταδιακά).
+
+## Blue-green deployment
+
+Κρατάς **δύο πανομοιότυπα περιβάλλοντα**: **blue** (τρέχον) και **green** (νέο). Ανεβάζεις στο green, το δοκιμάζεις, και μετά **γυρνάς όλο το traffic** στο green με μια αλλαγή στον router/LB.
+
+- **+** Ακαριαίο switch· **ακαριαίο rollback** (γύρνα πίσω στο blue).
+- **−** Διπλάσιοι πόροι (δύο πλήρη περιβάλλοντα).
+
+## Canary deployment
+
+Στέλνεις το νέο release σε **μικρό ποσοστό** χρηστών (π.χ. 5%), παρακολουθείς metrics/errors, και αν όλα καλά **αυξάνεις σταδιακά** μέχρι 100%.
+
+- **+** Πιάνεις προβλήματα με ελάχιστο blast radius (μόνο 5% επηρεάζεται).
+- **−** Απαιτεί καλό monitoring + traffic splitting.
+
+## Feature flags — αποσύνδεσε deploy από release
+
+Ένα **feature flag** είναι ένα if που ενεργοποιεί/απενεργοποιεί λειτουργικότητα **χωρίς νέο deploy**. Έτσι «ξεκλειδώνεις» ένα feature όταν θες (ή μόνο σε beta users), και αν χαλάσει το **σβήνεις άμεσα** χωρίς rollback.
+
+```txt
+deploy (ο κώδικας μπαίνει, flag OFF) ≠ release (flag ON για χρήστες)
+```
+
+## Rollbacks & health checks
+
+- **Rollback** — η ικανότητα να γυρίσεις γρήγορα στην προηγούμενη γνωστή-καλή έκδοση. Blue-green το κάνει ακαριαία· πάντα να μπορείς να κάνεις rollback.
+- **Health checks** — endpoints (`/health`, readiness/liveness) που λένε στον LB/orchestrator αν ένα instance είναι έτοιμο. **Χωρίς αυτά**, καμία στρατηγική δεν δουλεύει — ο LB θα στείλει traffic σε instance που δεν σηκώθηκε ακόμα.
+
+## Backward-compatible migrations — ο κρυφός κανόνας
+
+Σε rolling/canary, **παλιός + νέος** κώδικας τρέχουν ταυτόχρονα πάνω στην **ίδια** βάση. Άρα οι DB migrations πρέπει να είναι **backward-compatible**: π.χ. για να αφαιρέσεις στήλη → πρώτα σταμάτα να τη γράφεις (deploy), μετά σβήσε τη στήλη (επόμενο deploy). Ποτέ «breaking» migration μαζί με το deploy που τη χρειάζεται — αλλιώς ο παλιός κώδικας σπάει.
+
+<PredictOutput
+  title="Rollback speed"
+  code={`Έκανες deploy και 2 λεπτά μετά βλέπεις spike σε 500 errors.
+Με ποια στρατηγική κάνεις το ΤΑΧΥΤΕΡΟ rollback;`}
+  options={[
+    "Rolling — γύρνα τα instances ένα-ένα",
+    "Blue-green — γύρνα τον router πίσω στο blue (ακαριαία)",
+    "Canary — μείωσε το ποσοστό",
+    "Recreate — ξαναανέβασε το παλιό"
+  ]}
+  correctOptionIndex={1}
+  answer="Blue-green — γύρνα τον router πίσω στο blue"
+  explanation="Στο blue-green το παλιό περιβάλλον (blue) είναι ακόμα όρθιο. Το rollback είναι μια αλλαγή στον router/LB → ακαριαίο. Το rolling απαιτεί σταδιακή επαναφορά (πιο αργό), το recreate έχει downtime. Γι' αυτό το blue-green προτιμάται όταν το γρήγορο rollback είναι κρίσιμο."
+/>
+
+<Exercise
+  question="Γιατί πρέπει οι migrations να είναι backward-compatible σε rolling deployment;"
+  options={[
+    "Για να τρέχουν πιο γρήγορα.",
+    "Γιατί για λίγο τρέχουν παλιός + νέος κώδικας ταυτόχρονα πάνω στην ίδια βάση.",
+    "Γιατί το blue-green δεν υποστηρίζει migrations."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σε rolling/canary, κατά τη μετάβαση συνυπάρχουν παλιά & νέα έκδοση πάνω στην ίδια DB. Μια breaking migration (π.χ. drop column που ο παλιός κώδικας ακόμα διαβάζει) θα έσπαγε τον παλιό κώδικα. Λύση: expand-then-contract — πρόσθεσε/σταμάτα-χρήση σε ξεχωριστά deploys."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you release without downtime?»
+
+> I never recreate — that means a window of downtime and risk. The three strategies: rolling replaces instances gradually, no extra resources but old and new run together for a while; blue-green keeps two identical environments and flips the router to the new one, which gives an instant switch and instant rollback at the cost of double resources; canary sends the new version to a small percentage, watches metrics, and ramps up, catching issues with minimal blast radius. I decouple deploy from release with feature flags so I can turn a feature on or off without shipping, and kill it instantly if it misbehaves. Two things make all of this work: health checks so the load balancer only sends traffic to ready instances, and backward-compatible migrations — expand-then-contract — because old and new code share the same database during the rollout, and I always keep a fast rollback path.
+
+<Flashcards
+  title="Deployment strategies — interview drills"
+  cards={[
+    {
+      question: "Rolling vs blue-green vs canary;",
+      answer: "Rolling: σταδιακή αντικατάσταση instances (no downtime, no extra resources· παλιό+νέο μαζί). Blue-green: δύο περιβάλλοντα, flip του router (ακαριαίο switch & rollback, διπλοί πόροι). Canary: νέο σε μικρό % χρηστών, σταδιακή αύξηση (ελάχιστο blast radius, θέλει monitoring)."
+    },
+    {
+      question: "Τι είναι feature flag & τι λύνει;",
+      answer: "Toggle που ενεργοποιεί λειτουργία χωρίς νέο deploy. Αποσυνδέει deploy (κώδικας μέσα, flag OFF) από release (flag ON). Σβήνεις χαλασμένο feature άμεσα χωρίς rollback· beta/gradual rollout."
+    },
+    {
+      question: "Γιατί χρειάζονται health checks;",
+      answer: "Λένε στον LB/orchestrator αν ένα instance είναι έτοιμο (readiness/liveness). Χωρίς αυτά, traffic πάει σε instance που δεν σηκώθηκε → errors. Προϋπόθεση κάθε zero-downtime στρατηγικής."
+    },
+    {
+      question: "Γιατί backward-compatible migrations;",
+      answer: "Σε rolling/canary συνυπάρχουν παλιός+νέος κώδικας στην ίδια DB. Breaking migration σπάει τον παλιό. Λύση: expand-then-contract (πρόσθεσε/σταμάτα-χρήση/αφαίρεσε σε ξεχωριστά deploys)."
+    },
+    {
+      question: "Ποια στρατηγική για ταχύτατο rollback;",
+      answer: "Blue-green: το παλιό (blue) μένει όρθιο, γυρνάς τον router πίσω ακαριαία. Πάντα κράτα διαθέσιμο rollback path στην προηγούμενη γνωστή-καλή έκδοση."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Σχεδίασε ένα zero-downtime release"
+  scenario="Πάρε ένα production deploy που περιλαμβάνει και αλλαγή schema και σχεδίασέ το χωρίς downtime, με ασφαλές rollback."
+  outcomes={[
+    "Να διαλέγεις στρατηγική (rolling/blue-green/canary) ανά περίσταση.",
+    "Να σπας breaking migrations σε backward-compatible βήματα.",
+    "Να χρησιμοποιείς feature flags & health checks."
+  ]}
+  steps={[
+    "Διάλεξε στρατηγική και δικαιολόγησέ τη (resources vs rollback speed vs blast radius).",
+    "Πρόσθεσε health/readiness endpoint και σύνδεσέ το στον LB.",
+    "Σπάσε μια 'drop column' σε expand-then-contract (πολλαπλά deploys).",
+    "Βάλε το νέο feature πίσω από flag (deploy OFF → release ON).",
+    "Γράψε το rollback plan (πώs γυρνάς γρήγορα πίσω)."
+  ]}
+  checkpoints={[
+    "Καμία στιγμή χωρίς διαθέσιμο service (zero downtime).",
+    "Παλιός & νέος κώδικας συνυπάρχουν χωρίς να σπάει η DB.",
+    "Μπορείς να σβήσεις το feature χωρίς deploy (flag).",
+    "Υπάρχει σαφές, γρήγορο rollback path."
+  ]}
+  mistakes={[
+    "Recreate deploy με downtime window.",
+    "Breaking migration μαζί με το deploy που τη χρειάζεται.",
+    "Καμία health check → traffic σε μη-έτοιμα instances.",
+    "Κανένα rollback plan όταν κάτι πάει στραβά."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν σχεδιάζεις zero-downtime release (ακόμα και με schema change) με σωστή στρατηγική, flags και ασφαλές rollback."
+/>

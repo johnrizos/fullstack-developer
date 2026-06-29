@@ -1,0 +1,139 @@
+# Reliability: SLOs, Error Budgets & Incident Response
+
+«Πόσο αξιόπιστο πρέπει να είναι το σύστημά σου;» Η απάντηση δεν είναι «100%» — αυτό είναι αδύνατο και ασύμφορο. Η ώριμη απάντηση μετρά την αξιοπιστία με **νούμερα** (SLI/SLO), ορίζει πόσες αποτυχίες είναι αποδεκτές (**error budget**), και έχει διαδικασία για όταν κάτι σπάει (**incident response & postmortems**). Αυτό το μάθημα είναι η οπτική του **SRE** (Site Reliability Engineering) — το κλείσιμο της ενότητας Cloud/DevOps.
+
+## SLI, SLO, SLA — η ιεραρχία
+
+| Όρος | Τι είναι | Παράδειγμα |
+|---|---|---|
+| **SLI** (Indicator) | Η **μέτρηση** — ένας πραγματικός αριθμός. | «99.95% των requests < 200ms τον τελευταίο μήνα» |
+| **SLO** (Objective) | Ο **στόχος** που βάζεις στο SLI (εσωτερικός). | «99.9% availability/μήνα» |
+| **SLA** (Agreement) | **Συμβόλαιο** με τον πελάτη + ποινές αν το παραβείς. | «99.5% ή επιστροφή χρημάτων» |
+
+Η σχέση: μετράς (**SLI**) → βάζεις στόχο (**SLO**) → υπόσχεσαι λιγότερα στον πελάτη με ποινή (**SLA**). Το SLO είναι αυστηρότερο από το SLA, ώστε να έχεις περιθώριο πριν σπάσεις συμβόλαιο.
+
+## Error budget — η μεγάλη ιδέα
+
+Αν ο SLO είναι **99.9%** availability, τότε επιτρέπεται **0.1%** downtime. Αυτό το 0.1% είναι το **error budget** σου — περίπου **43 λεπτά/μήνα** που «δικαιούσαι» να είσαι κάτω.
+
+Γιατί είναι ισχυρό; Μετατρέπει το «αξιοπιστία vs ταχύτητα ανάπτυξης» από συναισθηματικό καβγά σε **νούμερο**:
+- Έχει **μείνει** budget → προχώρα, βγάλε features, ρίσκαρε.
+- **Εξαντλήθηκε** το budget → πάγωσε τα features, εστίασε σε σταθερότητα.
+
+Δίνει στις ομάδες κοινό, αντικειμενικό κριτήριο απόφασης. 100% δεν είναι στόχος — θα έκοβε κάθε ανάπτυξη χωρίς αξία για τον χρήστη.
+
+## The Four Golden Signals
+
+Τι να παρακολουθείς για κάθε service (κατά το Google SRE):
+- **Latency** — πόσο αργούν τα requests (ξεχώρισε επιτυχημένα από αποτυχημένα).
+- **Traffic** — πόση ζήτηση (req/sec).
+- **Errors** — ποσοστό αποτυχημένων requests.
+- **Saturation** — πόσο «γεμάτο» είναι το σύστημα (CPU/memory/disk) — πόσο κοντά στο όριο.
+
+Αυτά συνδέονται με το μάθημα observability: μετράς τα golden signals, βγάζεις SLIs, και alert-άρεις πάνω σε **symptoms** (ο χρήστης πονάει) όχι σε κάθε αιτία.
+
+## Alerting — σε τι χτυπάς
+
+Καλό alert = **actionable** + δεμένο σε **symptom/SLO burn**. Κακό alerting → **alert fatigue** (πολλά, άχρηστα alerts → τα αγνοείς → χάνεις το πραγματικό). Προτίμησε «καίγεται το error budget γρήγορα» αντί για «η CPU είναι 80%» (που μπορεί να είναι φυσιολογικό).
+
+## Incident response & blameless postmortems
+
+Όταν συμβεί incident:
+1. **Mitigate πρώτα** — επανάφερε την υπηρεσία (π.χ. rollback), μετά ψάξε root cause. Η αποκατάσταση προηγείται της διάγνωσης.
+2. **Ρόλοι** — incident commander (συντονίζει), communications, ops.
+3. **Postmortem** — μετά, γράψε τι έγινε, χρονολόγιο, root cause, action items.
+
+Το postmortem είναι **blameless**: εστιάζει στο **σύστημα/διαδικασία** που επέτρεψε το λάθος, όχι στο άτομο. Στόχος: να μην ξανασυμβεί — αν φοβούνται να μιλήσουν, χάνεις τη μάθηση.
+
+## MTTR > «μην κάνεις ποτέ λάθη»
+
+Δύο χρήσιμες μετρικές: **MTBF** (mean time between failures) και **MTTR** (mean time to recovery). Σε σύγχρονα συστήματα, το **MTTR** (πόσο γρήγορα ανακάμπτεις) μετράει συχνά περισσότερο από το να αποτρέψεις κάθε αποτυχία — αποτυχίες θα συμβούν· το ζητούμενο είναι γρήγορη, αξιόπιστη ανάκαμψη (γι' αυτό fast rollback, health checks, self-healing).
+
+<PredictOutput
+  title="Error budget"
+  code={`Ο SLO είναι 99.9% availability/μήνα. Είσαι στα μέσα του μήνα και
+έχεις ήδη εξαντλήσει όλο το error budget λόγω ενός outage.
+Τι είναι το ώριμο επόμενο βήμα;`}
+  options={[
+    "Συνέχισε κανονικά να βγάζεις νέα features",
+    "Πάγωσε τα risky features και εστίασε σε σταθερότητα μέχρι να ανακάμψει το budget",
+    "Άλλαξε τον SLO σε 100%",
+    "Σταμάτησε εντελώς κάθε deploy για πάντα"
+  ]}
+  correctOptionIndex={1}
+  answer="Πάγωσε risky features, εστίασε σε σταθερότητα"
+  explanation="Το error budget είναι το αντικειμενικό κριτήριο: όταν εξαντληθεί, η πολιτική είναι feature freeze / εστίαση σε reliability work μέχρι να ξαναμπείς εντός SLO. Δεν αλλάζεις τον SLO για να 'κρυφτείς', ούτε σταματάς για πάντα — όταν το budget ανακάμψει (νέα περίοδος/βελτιώσεις), επιστρέφεις σε κανονικό ρυθμό ανάπτυξης."
+/>
+
+<Exercise
+  question="Γιατί τα postmortems είναι 'blameless';"
+  options={[
+    "Για να μην τιμωρείται κανείς, ακόμα κι αν φταίει.",
+    "Γιατί στόχος είναι να διορθωθεί το σύστημα/διαδικασία που επέτρεψε το λάθος· αν φοβούνται να μιλήσουν, χάνεις την πραγματική αιτία & τη μάθηση.",
+    "Γιατί τα incidents δεν έχουν ποτέ αιτία."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σχεδόν κάθε incident οφείλεται σε αδυναμία του συστήματος/διαδικασίας (π.χ. έλλειψη guardrail), όχι σε 'κακό' άτομο. Blameless κουλτούρα → οι άνθρωποι μοιράζονται ειλικρινά τι έγινε → βρίσκεις τη ρίζα και βάζεις action items ώστε να μην ξανασυμβεί. Το blame κρύβει την αλήθεια."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you think about reliability?»
+
+> I measure it, I don't aim for 100% — that's impossible and not worth it. I start with an SLI, an actual measurement like the percentage of requests under 200ms, set an SLO as the internal target, say 99.9%, and an SLA is the customer contract with penalties, kept looser than the SLO so I have margin. The key concept is the error budget: a 99.9% SLO allows 0.1% downtime, about 43 minutes a month, and that budget turns reliability-versus-velocity into a number — budget left, ship features; budget burned, freeze and focus on stability. I monitor the four golden signals — latency, traffic, errors, saturation — and alert on symptoms and budget burn, not every cause, to avoid alert fatigue. When something breaks I mitigate first, usually a rollback, then diagnose, and run a blameless postmortem focused on the system that allowed the failure, not the person. And I optimize for MTTR — fast recovery — because failures will happen; recovering quickly matters more than pretending they won't.
+
+<Flashcards
+  title="Reliability & SRE — interview drills"
+  cards={[
+    {
+      question: "SLI vs SLO vs SLA;",
+      answer: "SLI: η μέτρηση (π.χ. 99.95% req < 200ms). SLO: ο εσωτερικός στόχος στο SLI (π.χ. 99.9%). SLA: συμβόλαιο με πελάτη + ποινές. SLO αυστηρότερο του SLA → περιθώριο πριν σπάσεις συμβόλαιο."
+    },
+    {
+      question: "Τι είναι error budget & πώς το χρησιμοποιείς;",
+      answer: "1 − SLO = επιτρεπτό downtime (99.9% → 0.1% ≈ 43 λεπτά/μήνα). Budget διαθέσιμο → βγάζε features/ρίσκαρε. Budget εξαντλημένο → feature freeze, εστίαση σε σταθερότητα. Αντικειμενικό κριτήριο velocity vs reliability."
+    },
+    {
+      question: "Τα four golden signals;",
+      answer: "Latency (πόσο αργούν τα requests), Traffic (ζήτηση/req-sec), Errors (ποσοστό αποτυχιών), Saturation (πόσο γεμάτο/κοντά στο όριο το σύστημα). Τα κύρια σήματα παρακολούθησης κατά το Google SRE."
+    },
+    {
+      question: "Σειρά ενεργειών σε incident;",
+      answer: "1) Mitigate πρώτα (π.χ. rollback) — αποκατάσταση πριν τη διάγνωση. 2) Ρόλοι (incident commander/comms/ops). 3) Blameless postmortem: χρονολόγιο, root cause, action items ώστε να μην ξανασυμβεί."
+    },
+    {
+      question: "Γιατί MTTR συχνά > MTBF;",
+      answer: "Αποτυχίες θα συμβούν αναπόφευκτα· το ζητούμενο είναι γρήγορη/αξιόπιστη ανάκαμψη (MTTR) παρά να αποτρέψεις κάθε αποτυχία (MTBF). Γι' αυτό fast rollback, health checks, self-healing."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Όρισε reliability για ένα service"
+  scenario="Πάρε ένα production API και όρισε το πλήρες reliability story: SLI/SLO, error budget πολιτική, signals, alerting και incident flow."
+  outcomes={[
+    "Να ορίζεις SLI/SLO που έχουν νόημα για τον χρήστη.",
+    "Να μετατρέπεις SLO σε error budget & πολιτική.",
+    "Να σχεδιάζεις alerting & incident response."
+  ]}
+  steps={[
+    "Διάλεξε SLIs δεμένα στην εμπειρία χρήστη (availability, latency).",
+    "Όρισε SLO (π.χ. 99.9%) και υπολόγισε το error budget.",
+    "Γράψε την πολιτική: τι γίνεται όταν εξαντληθεί το budget.",
+    "Όρισε alerts πάνω σε symptoms/budget burn (όχι κάθε αιτία).",
+    "Σκιαγράφησε incident flow: mitigate → ρόλοι → blameless postmortem."
+  ]}
+  checkpoints={[
+    "Τα SLIs μετρούν αυτό που νιώθει ο χρήστης.",
+    "Το error budget οδηγεί απόφαση velocity vs stability.",
+    "Τα alerts είναι actionable (όχι alert fatigue).",
+    "Το incident flow βάζει mitigation πριν τη διάγνωση."
+  ]}
+  mistakes={[
+    "Στόχος 100% availability (αδύνατο/ασύμφορο).",
+    "Alert σε κάθε αιτία (CPU 80%) αντί σε symptoms → alert fatigue.",
+    "Διάγνωση πριν την αποκατάσταση σε incident.",
+    "Postmortem που ψάχνει φταίχτη αντί για systemic fix."
+  ]}
+  mastery="Το μάθημα — και η ενότητα Cloud/DevOps — πέτυχε όταν ορίζεις αξιοπιστία με SLI/SLO/error budget, παρακολουθείς τα golden signals και χειρίζεσαι incidents με blameless, mitigation-first διαδικασία."
+/>

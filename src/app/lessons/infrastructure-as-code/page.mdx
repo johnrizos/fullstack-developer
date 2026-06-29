@@ -1,0 +1,132 @@
+# Infrastructure as Code (IaC)
+
+«Πώς στήθηκε αυτός ο server;» Αν η απάντηση είναι «κάποιος μπήκε στο dashboard και πάτησε κουμπιά πέρυσι», έχεις πρόβλημα: κανείς δεν ξέρει την ακριβή κατάσταση, δεν αναπαράγεται, και κάθε αλλαγή είναι ρίσκο. **Infrastructure as Code** σημαίνει ότι περιγράφεις την υποδομή σου (servers, networks, databases, DNS) σε **αρχεία κώδικα** που μπαίνουν σε version control και εφαρμόζονται αυτόματα. Αυτό το μάθημα καλύπτει το **γιατί** (reproducibility), τις βασικές έννοιες (declarative, state, idempotency) και τα συνηθισμένα λάθη.
+
+## Το πρόβλημα: «click-ops» & configuration drift
+
+Όταν στήνεις υποδομή χειροκίνητα από το web console:
+- **Δεν αναπαράγεται** — δεν μπορείς να ξαναφτιάξεις πανομοιότυπο περιβάλλον (staging ≠ production).
+- **Configuration drift** — η πραγματική κατάσταση αποκλίνει σιγά-σιγά από αυτό που νομίζεις, με μη-καταγεγραμμένες χειροκίνητες αλλαγές.
+- **Κανένα audit trail / review** — δεν ξέρεις ποιος άλλαξε τι, πότε και γιατί.
+- **Bus factor** — η γνώση είναι στο κεφάλι ενός ατόμου.
+
+## Η λύση: υποδομή ως κώδικας
+
+Με IaC (π.χ. **Terraform**, Pulumi, CloudFormation) γράφεις σε αρχεία **τι** υποδομή θες. Αυτά τα αρχεία:
+- μπαίνουν σε **git** → version control, history, code review, PRs,
+- εφαρμόζονται **αυτόματα & επαναλήψιμα** σε οποιοδήποτε περιβάλλον,
+- είναι η **single source of truth** για το πώς μοιάζει η υποδομή.
+
+## Declarative vs imperative
+
+- **Imperative** (scripts): γράφεις τα **βήματα** («create VM, then attach disk, then…»). Πρέπει να σκεφτείς κάθε μετάβαση.
+- **Declarative** (IaC/Terraform): δηλώνεις την **τελική κατάσταση** («θέλω 3 VMs αυτού του τύπου, αυτό το network»). Το εργαλείο υπολογίζει **μόνο του** τι αλλαγές χρειάζονται για να φτάσεις εκεί.
+
+Το declarative κερδίζει: ίδιο μοτίβο με το Kubernetes — δηλώνεις desired state, το εργαλείο κάνει το reconcile.
+
+## State — πώς ξέρει το εργαλείο τι υπάρχει
+
+Το Terraform κρατά ένα αρχείο **state** που χαρτογραφεί «τι έχω δηλώσει» ↔ «τι υπάρχει πραγματικά στο cloud». Κάθε φορά συγκρίνει:
+
+```txt
+desired (ο κώδικάς σου) vs state (τι υπάρχει) → plan (τι θα αλλάξει) → apply
+```
+
+Το `plan` σού δείχνει **πριν** εφαρμόσεις τι ακριβώς θα δημιουργηθεί/αλλάξει/διαγραφεί — κρίσιμο για ασφάλεια. Το state είναι ευαίσθητο (μπορεί να περιέχει secrets) και **κοινό** στην ομάδα → αποθηκεύεται remote (π.χ. S3) με **locking** ώστε δύο άτομα να μην κάνουν apply ταυτόχρονα.
+
+## Idempotency — το κλειδί
+
+IaC είναι **idempotent**: τρέχεις το ίδιο config πολλές φορές → το αποτέλεσμα είναι το ίδιο. Αν η υποδομή είναι ήδη στην επιθυμητή κατάσταση, ένα `apply` **δεν κάνει τίποτα**. Δεν δημιουργεί διπλά resources. Αυτό το ξεχωρίζει από ένα αφελές «create» script που θα έφτιαχνε δεύτερο VM κάθε φορά που τρέχει.
+
+## Immutable infrastructure
+
+Συχνό μοτίβο με IaC: αντί να **τροποποιείς** έναν υπάρχοντα server (patch, ssh, αλλαγές με το χέρι → drift), **τον αντικαθιστάς** με νέο από το επικαιροποιημένο config. Ίδια φιλοσοφία με τα containers: το server γίνεται «αναλώσιμο», αναπαράξιμο artifact, όχι χειροποίητο «pet».
+
+<PredictOutput
+  title="Idempotency"
+  code={`Έχεις Terraform config που δηλώνει 1 database.
+Τρέχεις 'terraform apply' τρεις φορές στη σειρά.
+Πόσες databases έχεις στο τέλος;`}
+  options={[
+    "3 — μία ανά apply",
+    "1 — το apply είναι idempotent· αφού υπάρχει ήδη, δεν ξαναδημιουργεί",
+    "0 — το δεύτερο apply σβήνει το πρώτο",
+    "Σφάλμα στο δεύτερο apply"
+  ]}
+  correctOptionIndex={1}
+  answer="1 — το apply είναι idempotent"
+  explanation="Το Terraform συγκρίνει desired (config: 1 db) με το state (τι υπάρχει). Στο πρώτο apply τη δημιουργεί· στα επόμενα βλέπει ότι η επιθυμητή κατάσταση ισχύει ήδη και δεν κάνει τίποτα. Αυτή είναι η idempotency — σε αντίθεση με ένα 'create' script που θα έφτιαχνε νέα db κάθε φορά."
+/>
+
+<Exercise
+  question="Γιατί τρέχεις 'terraform plan' πριν το 'apply';"
+  options={[
+    "Είναι υποχρεωτικό βήμα χωρίς νόημα.",
+    "Για να δεις εκ των προτέρων ΤΙ ακριβώς θα δημιουργηθεί/αλλάξει/διαγραφεί, πριν επηρεάσεις πραγματική υποδομή.",
+    "Για να τρέξει πιο γρήγορα το apply."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το plan συγκρίνει τον κώδικα με το state και δείχνει το diff χωρίς να αλλάζει τίποτα. Έτσι πιάνεις κατά λάθος διαγραφές (π.χ. ένα resource που θα καταστραφεί) πριν συμβούν. Σε production είναι το βήμα ασφαλείας πριν αγγίξεις πραγματικά resources."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «What is Infrastructure as Code and why use it?»
+
+> IaC means I describe my infrastructure — servers, networks, databases, DNS — in code files that live in version control and get applied automatically, instead of clicking around a cloud console. The problem with manual setup is it's not reproducible, it drifts from what you think is deployed, and there's no audit trail or review. With a tool like Terraform I write declarative config — I state the desired end state and the tool figures out what changes are needed, same model as Kubernetes. It keeps a state file mapping my config to real resources, so `plan` shows me exactly what will be created, changed, or destroyed before I apply — that's my safety gate. It's idempotent: applying the same config repeatedly converges to the same result, it won't create duplicates. State lives remotely with locking so the team doesn't clobber each other. And it pairs with immutable infrastructure — replace servers from updated config rather than patching them in place, which kills drift.
+
+<Flashcards
+  title="Infrastructure as Code — interview drills"
+  cards={[
+    {
+      question: "Τι είναι IaC & ποιο πρόβλημα λύνει;",
+      answer: "Περιγραφή υποδομής σε αρχεία κώδικα (σε git), που εφαρμόζονται αυτόματα & επαναλήψιμα. Λύνει: μη-αναπαραγωγιμότητα, configuration drift, έλλειψη audit/review, bus factor από χειροκίνητο click-ops."
+    },
+    {
+      question: "Declarative vs imperative στην υποδομή;",
+      answer: "Imperative: γράφεις τα βήματα (create X, then Y). Declarative (Terraform): δηλώνεις την τελική κατάσταση, το εργαλείο υπολογίζει τις αλλαγές. Declarative = ίδιο μοντέλο desired-state με το K8s."
+    },
+    {
+      question: "Τι είναι το Terraform state & γιατί plan πριν apply;",
+      answer: "State: χάρτης 'τι δήλωσα' ↔ 'τι υπάρχει'. Plan: δείχνει το diff (create/change/destroy) ΠΡΙΝ αγγίξεις πραγματική υποδομή — safety gate. State: remote + locking (κοινό, ευαίσθητο)."
+    },
+    {
+      question: "Τι σημαίνει idempotency στο IaC;",
+      answer: "Τρέχεις το ίδιο config πολλές φορές → ίδιο αποτέλεσμα. Αν η υποδομή είναι ήδη στην επιθυμητή κατάσταση, το apply δεν κάνει τίποτα (δεν δημιουργεί διπλά). Σε αντίθεση με αφελές 'create' script."
+    },
+    {
+      question: "Τι είναι immutable infrastructure;",
+      answer: "Αντί να τροποποιείς υπάρχοντα server (patch/ssh → drift), τον αντικαθιστάς με νέο από επικαιροποιημένο config. Server = αναλώσιμο/αναπαράξιμο artifact ('cattle, not pets'), όπως τα containers."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Μετέτρεψε click-ops σε IaC"
+  scenario="Πάρε μια υποδομή που στήθηκε χειροκίνητα (web/app server + database + DNS) και περίγραψε πώς θα την έκανες Infrastructure as Code, concept-level."
+  outcomes={[
+    "Να εξηγείς γιατί IaC > χειροκίνητο setup.",
+    "Να περιγράφεις το plan → apply → state flow.",
+    "Να εφαρμόζεις idempotency & immutable infra."
+  ]}
+  steps={[
+    "Κατάγραψε τα resources (servers, db, network, DNS) δηλωτικά σε config.",
+    "Βάλε το config σε git (version control + review μέσω PR).",
+    "Τρέξε plan για να δεις το diff πριν εφαρμόσεις.",
+    "Apply· επιβεβαίωσε ότι ξανα-apply δεν αλλάζει τίποτα (idempotent).",
+    "Όρισε remote state με locking για την ομάδα."
+  ]}
+  checkpoints={[
+    "Όλη η υποδομή περιγράφεται σε αρχεία (όχι click-ops).",
+    "Το plan δείχνει το diff πριν κάθε apply.",
+    "Επαναλαμβανόμενο apply δεν δημιουργεί διπλά resources.",
+    "Το state είναι remote + locked, όχι τοπικό μόνο."
+  ]}
+  mistakes={[
+    "Χειροκίνητες αλλαγές στο console παράλληλα με IaC → drift.",
+    "State τοπικά/σε git χωρίς locking → conflicts & διαρροή secrets.",
+    "Apply χωρίς να διαβάσεις το plan → κατά λάθος destroy.",
+    "Imperative scripts που δεν είναι idempotent (διπλά resources)."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν εξηγείς reproducibility, declarative state, idempotency & immutable infra — και γιατί το click-ops οδηγεί σε drift."
+/>

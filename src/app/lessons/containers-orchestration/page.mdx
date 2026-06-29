@@ -1,0 +1,136 @@
+# Containers & Orchestration (Kubernetes)
+
+Το Docker σου δίνει ένα container· αλλά σε production τρέχεις **δεκάδες/εκατοντάδες** containers σε πολλά μηχανήματα — και κάποιος πρέπει να τα ξεκινά, να τα κλιμακώνει, να τα ξανασηκώνει όταν πέφτουν, και να τα ενημερώνει χωρίς downtime. Αυτό κάνει ένα **orchestrator** (κυρίως **Kubernetes**). Αυτό το μάθημα είναι concept-first: τι λύνει το orchestration, οι core έννοιες του Kubernetes, και — εξίσου σημαντικό — **πότε ΔΕΝ το χρειάζεσαι**.
+
+## Από container σε orchestration
+
+Ένα container είναι φορητό και απομονωμένο, αλλά μόνο του δεν ξέρει:
+- να τρέχει **πολλά αντίγραφα** σε πολλούς servers,
+- να **ξανασηκώνεται** αν πέσει (self-healing),
+- να **κλιμακώνεται** αυτόματα με το φορτίο,
+- να γίνεται **rolling update** χωρίς downtime,
+- να βρίσκει άλλα services (service discovery) και να μοιράζει traffic.
+
+Ένας **orchestrator** τα κάνει όλα αυτά δηλωτικά: του λες **τι** θες (desired state), και αυτός το διατηρεί.
+
+## Declarative & self-healing — η βασική ιδέα
+
+Με Kubernetes δηλώνεις την επιθυμητή κατάσταση (π.χ. «θέλω 3 αντίγραφα αυτού του image»). Ο orchestrator συνεχώς **συγκρίνει actual vs desired** και διορθώνει: αν ένα pod πέσει, σηκώνει νέο· αν ζητήσεις 5 αντί για 3, προσθέτει 2. Δεν λες **πώς** — λες **τι**.
+
+## Core Kubernetes concepts
+
+| Concept | Τι είναι |
+|---|---|
+| **Pod** | Η μικρότερη μονάδα — ένα (ή λίγα) containers που τρέχουν μαζί. Εφήμερο. |
+| **Deployment** | Δηλώνει «θέλω N αντίγραφα αυτού του pod» + κάνει rolling updates & rollbacks. |
+| **Service** | Σταθερό δικτυακό endpoint + load balancing μπροστά από τα (εφήμερα) pods. |
+| **Ingress** | Δρομολόγηση εξωτερικού HTTP traffic σε services (host/path routing, TLS). |
+| **ConfigMap / Secret** | Config & μυστικά, ξεχωριστά από το image (έξω από τον κώδικα). |
+| **Namespace** | Λογικός διαχωρισμός (π.χ. dev/staging/prod). |
+
+Το pod είναι εφήμερο (μπορεί να πεθάνει/μετακινηθεί), γι' αυτό μιλάς πάντα μέσω **Service** — αυτό δίνει σταθερή διεύθυνση και μοιράζει traffic στα ζωντανά pods.
+
+## Self-healing με health probes
+
+Το Kubernetes χρησιμοποιεί δύο probes:
+- **Liveness probe** — «είναι ζωντανό;» Αν αποτύχει → **restart** του pod.
+- **Readiness probe** — «είναι έτοιμο να δεχτεί traffic;» Αν αποτύχει → το βγάζει από το Service (δεν του στέλνει requests) μέχρι να ετοιμαστεί.
+
+Έτσι υλοποιούνται τα zero-downtime deploys που είδες: νέα pods μπαίνουν στο Service μόνο όταν είναι ready.
+
+## Autoscaling
+
+- **Horizontal Pod Autoscaler (HPA)** — αυξάνει/μειώνει τον αριθμό των pods με βάση CPU/μετρικές.
+- **Cluster autoscaler** — προσθέτει/αφαιρεί μηχανήματα (nodes) όταν χρειάζονται.
+
+## Πότε ΔΕΝ χρειάζεσαι Kubernetes
+
+Κρίσιμη (και ώριμη) απάντηση συνέντευξης: το Kubernetes έχει **μεγάλη πολυπλοκότητα**. Για μικρές/μεσαίες εφαρμογές, ένα **PaaS** (Vercel, Render, Railway, Fly.io) ή απλά managed containers κάνουν την ίδια δουλειά με κλάσμα του operational κόστους. Διάλεξε Kubernetes όταν έχεις **πολλά services**, ανάγκη για fine-grained control/portability, ή ομάδα που μπορεί να το συντηρήσει — όχι by default.
+
+<PredictOutput
+  title="Self-healing"
+  code={`Δηλώνεις Deployment με replicas: 3. Ένα pod κρασάρει στις 3 το πρωί.
+Τι γίνεται;`}
+  options={[
+    "Μένουν 2 pods μέχρι να το διορθώσει κάποιος",
+    "Ο orchestrator σηκώνει αυτόματα νέο pod για να ξαναγίνουν 3 (self-healing)",
+    "Όλο το Deployment πέφτει",
+    "Στέλνεται alert αλλά τίποτα δεν γίνεται"
+  ]}
+  correctOptionIndex={1}
+  answer="Σηκώνει αυτόματα νέο pod — self-healing"
+  explanation="Το Kubernetes συγκρίνει συνεχώς desired (3) vs actual (2 μετά το crash) και επαναφέρει: σηκώνει νέο pod ώστε να ξαναγίνουν 3. Αυτό είναι το declarative, self-healing μοντέλο — δηλώνεις την επιθυμητή κατάσταση, ο orchestrator τη διατηρεί χωρίς ανθρώπινη παρέμβαση."
+/>
+
+<Exercise
+  question="Γιατί μιλάς σε ένα pod μέσω Service και όχι απευθείας;"
+  options={[
+    "Για ασφάλεια μόνο.",
+    "Γιατί τα pods είναι εφήμερα (αλλάζουν IP/πεθαίνουν)· το Service δίνει σταθερό endpoint + load balancing στα ζωντανά pods.",
+    "Γιατί τα pods δεν έχουν δίκτυο."
+  ]}
+  correctOptionIndex={1}
+  explanation="Τα pods είναι εφήμερα — δημιουργούνται/καταστρέφονται/μετακινούνται, με μεταβαλλόμενες IPs. Το Service είναι σταθερή abstraction μπροστά τους: σταθερό όνομα/IP + load balancing στα τρέχοντα ready pods. Έτσι το service discovery δεν σπάει όταν αλλάζουν τα pods."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «What does Kubernetes give you, and when would you avoid it?»
+
+> A container alone doesn't run multiple replicas across machines, restart on failure, scale with load, roll out without downtime, or do service discovery — an orchestrator does. Kubernetes is declarative and self-healing: I declare desired state, like three replicas of an image, and it continuously reconciles actual against desired, recreating a pod if one dies. The core objects: pods are the ephemeral unit, a Deployment maintains N replicas and handles rolling updates and rollbacks, a Service is a stable endpoint with load balancing in front of the ephemeral pods, and Ingress routes external HTTP. Liveness probes restart unhealthy pods and readiness probes gate traffic, which is what enables zero-downtime deploys, and HPA autoscales pods on metrics. But I wouldn't reach for it by default — it's heavy operationally. For small to mid apps a PaaS like Vercel or Render does the same job for a fraction of the cost; Kubernetes earns its complexity when you have many services or need fine control and have a team to run it.
+
+<Flashcards
+  title="Containers & orchestration — interview drills"
+  cards={[
+    {
+      question: "Τι λύνει ένας orchestrator (vs σκέτο Docker);",
+      answer: "Πολλά αντίγραφα σε πολλά μηχανήματα, self-healing (restart on crash), autoscaling, rolling updates χωρίς downtime, service discovery & load balancing. Declarative: δηλώνεις desired state, το κρατά."
+    },
+    {
+      question: "Pod vs Deployment vs Service;",
+      answer: "Pod: μικρότερη μονάδα (container[s]), εφήμερο. Deployment: διατηρεί N replicas + rolling updates/rollbacks. Service: σταθερό network endpoint + load balancing μπροστά από εφήμερα pods."
+    },
+    {
+      question: "Liveness vs readiness probe;",
+      answer: "Liveness: 'ζωντανό;' — αποτυχία → restart του pod. Readiness: 'έτοιμο για traffic;' — αποτυχία → βγαίνει από το Service (no traffic) μέχρι να ετοιμαστεί. Βάση των zero-downtime deploys."
+    },
+    {
+      question: "Τι κάνει το HPA;",
+      answer: "Horizontal Pod Autoscaler: αυξάνει/μειώνει τον αριθμό pods με βάση CPU/μετρικές. (Cluster autoscaler προσθέτει/αφαιρεί nodes.)"
+    },
+    {
+      question: "Πότε ΔΕΝ χρειάζεσαι Kubernetes;",
+      answer: "Για μικρές/μεσαίες εφαρμογές — η πολυπλοκότητά του δεν αξίζει. Ένα PaaS (Vercel/Render/Railway/Fly) ή managed containers κάνουν τη δουλειά φθηνότερα. K8s όταν έχεις πολλά services/ανάγκη control + ομάδα να το συντηρεί."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Μοντελοποίησε ένα deployment σε orchestrator"
+  scenario="Πάρε ένα containerized service και περίγραψε πώς τρέχει σε Kubernetes (concept-level): replicas, service, probes, scaling — και κρίνε αν το χρειάζεσαι."
+  outcomes={[
+    "Να αντιστοιχίζεις ανάγκες σε K8s concepts (Deployment/Service/Ingress).",
+    "Να σχεδιάζεις self-healing & zero-downtime με probes.",
+    "Να κρίνεις πότε K8s vs PaaS."
+  ]}
+  steps={[
+    "Όρισε Deployment με replicas + το container image.",
+    "Βάλε Service μπροστά για σταθερό endpoint + load balancing.",
+    "Πρόσθεσε liveness & readiness probes (health endpoints).",
+    "Πρόσθεσε HPA με στόχο CPU για autoscaling.",
+    "Αποφάσισε αν αυτό το project χρειάζεται όντως K8s ή ένα PaaS αρκεί."
+  ]}
+  checkpoints={[
+    "Τα pods είναι πίσω από Service (όχι direct access).",
+    "Το crash ενός pod επαναφέρεται αυτόματα (self-healing).",
+    "Νέα pods δέχονται traffic μόνο όταν είναι ready.",
+    "Δικαιολογείς K8s vs PaaS με βάση το μέγεθος/ομάδα."
+  ]}
+  mistakes={[
+    "Να μιλάς απευθείας σε pods (εφήμερα) αντί για Service.",
+    "Καμία readiness probe → traffic σε μη-έτοιμα pods.",
+    "Να βάζεις config/secrets μέσα στο image αντί για ConfigMap/Secret.",
+    "Να επιλέγεις Kubernetes by default για μια μικρή εφαρμογή."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν εξηγείς το declarative/self-healing μοντέλο, τα core K8s concepts, και κρίνεις πότε αξίζει η πολυπλοκότητα."
+/>
