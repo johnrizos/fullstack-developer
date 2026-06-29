@@ -34,6 +34,7 @@ jobs:
         run: npm run build
         env:
           GITHUB_PAGES: "true"
+          NEXT_PUBLIC_SHEET_SYNC_URL: "https://script.google.com/macros/s/AKfycbw46HZgJEZgsnK0cqogBMygvFLWt8L-mkgAmrn5FHscUDtxpAm0x0_a0x8rdPzgmw/exec"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
