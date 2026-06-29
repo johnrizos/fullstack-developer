@@ -85,6 +85,37 @@ const hasPerfectScore = score === 100;
 
 Προτίμησε `===` αντί για `==` μέχρι να καταλάβεις καλά το coercion της JavaScript.
 
+## Truthy, falsy & type coercion
+
+Σε ένα `if`, η JavaScript μετατρέπει κάθε τιμή σε boolean. Οι **falsy** τιμές (που μετράνε ως `false`) είναι λίγες — αξίζει να τις μάθεις απ' έξω:
+
+```js
+false, 0, "" (κενό string), null, undefined, NaN
+```
+
+**Οτιδήποτε άλλο** είναι **truthy** — ακόμα και το `"0"` (string), το `[]` (κενό array) και το `{}` (κενό object). Αυτό προκαλεί κλασικά bugs:
+
+```js
+if (items.length) { /* τρέχει μόνο αν length !== 0 — σωστό */ }
+if ([]) { /* ΠΑΝΤΑ τρέχει — το κενό array είναι truthy! */ }
+```
+
+Το `==` (loose equality) κάνει **type coercion** πριν συγκρίνει, και τα αποτελέσματα συχνά εκπλήσσουν:
+
+```js
+"5" == 5        // true  — το string γίνεται number
+0 == ""         // true  — και τα δύο γίνονται falsy/0
+null == undefined // true
+NaN === NaN     // false — το NaN δεν ισούται με τίποτα, ούτε με τον εαυτό του!
+```
+
+Δύο παγίδες που πρέπει να ξέρεις:
+
+- **`typeof null === "object"`** — ιστορικό bug της γλώσσας. Για να ελέγξεις `null` χρησιμοποίησε `value === null`.
+- **`NaN`** — για να το πιάσεις χρησιμοποίησε `Number.isNaN(x)`, ποτέ `x === NaN`.
+
+Ο κανόνας: **πάντα `===`** (συγκρίνει τιμή ΚΑΙ τύπο, χωρίς εκπλήξεις), και να ξέρεις τις falsy τιμές για να γράφεις σωστά conditions.
+
 ## Multiple branches
 
 Αν έχεις περισσότερα από δύο outcomes, μπορείς να χρησιμοποιήσεις `else if`.
@@ -116,6 +147,52 @@ if (role === "admin" || role === "owner") {
 ```
 
 Το `&&` σημαίνει “και τα δύο”. Το `||` σημαίνει “τουλάχιστον ένα”.
+
+Σημαντικό: τα `&&` και `||` δεν επιστρέφουν απαραίτητα boolean — επιστρέφουν **μία από τις δύο τιμές** με **short-circuit**. Το `||` δίνει την πρώτη truthy (ή την τελευταία), το `&&` την πρώτη falsy (ή την τελευταία):
+
+```js
+const name = inputName || "Ανώνυμος"; // αν inputName είναι falsy → "Ανώνυμος"
+isLoggedIn && showDashboard();         // καλεί showDashboard ΜΟΝΟ αν isLoggedIn
+```
+
+## Optional chaining `?.` & nullish coalescing `??`
+
+Δύο σύγχρονοι operators που θα γράφεις κάθε μέρα — και ρωτιούνται συχνά σε συνεντεύξεις.
+
+**Optional chaining `?.`** — διαβάζεις «βαθιά» χωρίς να σκάσει αν κάτι στη μέση είναι `null`/`undefined`:
+
+```js
+const city = user.address.city;   // ❌ TypeError αν δεν υπάρχει address
+const city = user?.address?.city; // ✅ undefined αν λείπει κάτι — χωρίς crash
+user.save?.();                    // καλεί τη save ΜΟΝΟ αν υπάρχει
+```
+
+**Nullish coalescing `??`** — δίνει default τιμή, αλλά **μόνο** για `null`/`undefined`:
+
+```js
+const count = settings.count ?? 10; // 10 μόνο αν count είναι null/undefined
+```
+
+Η κρίσιμη διαφορά από το `||`: το `||` «πατάει» πάνω σε **κάθε** falsy τιμή — άρα και πάνω σε `0`, `""` και `false`, που συχνά είναι έγκυρες τιμές:
+
+```js
+const qty = order.quantity || 1; // ❌ αν quantity === 0, παίρνεις 1 (λάθος!)
+const qty = order.quantity ?? 1; // ✅ το 0 περνάει· default μόνο σε null/undefined
+```
+
+Υπάρχει και το `??=` που αναθέτει default μόνο αν η μεταβλητή είναι `null`/`undefined`: `config.timeout ??= 5000`.
+
+<PredictOutput
+  title="?? vs ||"
+  code={`const stock = 0; // υπάρχουν 0 τεμάχια
+const a = stock || "δεν ορίστηκε";
+const b = stock ?? "δεν ορίστηκε";
+console.log(a, b);`}
+  options={["0 0", "δεν ορίστηκε 0", "0 δεν ορίστηκε", "δεν ορίστηκε δεν ορίστηκε"]}
+  correctOptionIndex={1}
+  answer="δεν ορίστηκε 0"
+  explanation="Το || πατάει πάνω σε ΚΑΘΕ falsy τιμή, και το 0 είναι falsy → επιστρέφει 'δεν ορίστηκε' (λάθος, αφού 0 είναι έγκυρο stock!). Το ?? δίνει default ΜΟΝΟ για null/undefined → το 0 περνάει. Γι' αυτό για αριθμητικά defaults χρησιμοποιείς ??, όχι ||."
+/>
 
 ## Mini project: pass/fail score checker
 
@@ -158,6 +235,22 @@ if (role === "admin" || role === "owner") {
     {
       question: "== ή === ;",
       answer: "Πάντα ===. Το == κάνει type coercion πριν συγκρίνει ('5' == 5 είναι true) και κρύβει bugs. Το === συγκρίνει τιμή ΚΑΙ τύπο — προβλέψιμο."
+    },
+    {
+      question: "Ποιες είναι οι falsy τιμές;",
+      answer: "false, 0, '' (κενό string), null, undefined, NaN. Οτιδήποτε άλλο είναι truthy — ΑΚΟΜΑ και '0', [] και {}. Γι' αυτό if ([]) τρέχει πάντα· για άδειο array έλεγξε .length."
+    },
+    {
+      question: "Δύο coercion traps που πρέπει να ξέρεις;",
+      answer: "typeof null === 'object' (ιστορικό bug· έλεγξε value === null). Και NaN === NaN είναι false — πιάσε το με Number.isNaN(x), ποτέ x === NaN."
+    },
+    {
+      question: "?? vs || για default τιμές;",
+      answer: "Το || πατάει πάνω σε κάθε falsy (0, '', false) — λάθος όταν αυτά είναι έγκυρα. Το ?? δίνει default ΜΟΝΟ για null/undefined. Για αριθμούς/booleans χρησιμοποίησε ??."
+    },
+    {
+      question: "Τι κάνει το optional chaining ?. ;",
+      answer: "Διαβάζει βαθιά χωρίς crash: user?.address?.city δίνει undefined αν λείπει κάτι, αντί για TypeError. Και user.save?.() καλεί τη μέθοδο μόνο αν υπάρχει."
     },
     {
       question: "&& και || — τι κάνουν;",

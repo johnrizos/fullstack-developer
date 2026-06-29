@@ -169,6 +169,40 @@ console.log(result);`}
   explanation="filter κρατά τα διαθέσιμα (Laptop, Keyboard), map βγάζει τις τιμές [1200, 80], reduce τις αθροίζει: 1280. Αυτή η αλυσίδα filter→map→reduce είναι το πιο συχνό pattern σε πραγματικό κώδικα."
 />
 
+## Map & Set: όταν το object/array δεν φτάνει
+
+Δύο δομές που λύνουν συγκεκριμένα προβλήματα — και ρωτιούνται σε συνεντεύξεις.
+
+**`Set`** = συλλογή με **μοναδικές** τιμές. Ιδανικό για dedup και για «υπάρχει;» έλεγχο:
+
+```js
+const ids = new Set([1, 2, 2, 3]); // {1, 2, 3} — τα διπλά φεύγουν μόνα τους
+ids.add(4);
+ids.has(2);   // true — γρήγορος έλεγχος ύπαρξης
+ids.size;     // 4
+
+const unique = [...new Set([1, 1, 2, 3])]; // [1, 2, 3] — το πιο καθαρό dedup
+```
+
+**`Map`** = συλλογή από ζεύγη key→value, σαν object αλλά **καλύτερο για δυναμικά keys**:
+
+```js
+const scores = new Map();
+scores.set("ada", 95);
+scores.get("ada");   // 95
+scores.has("ada");   // true
+scores.size;         // 1
+for (const [name, score] of scores) { /* ... */ }
+```
+
+Πότε `Map` αντί για `{}`;
+
+- **Keys οποιουδήποτε τύπου** — όχι μόνο strings (ακόμα και objects ως keys).
+- **Πραγματικό `size`** και εύκολο iteration με σειρά εισαγωγής.
+- **Καθαρό κλειδί από user input** — ένα `{}` έχει κληρονομημένα keys (`toString`, `constructor`) που μπερδεύουν τους ελέγχους· το `Map` όχι.
+
+Για σταθερά, γνωστά πεδία ενός «πράγματος» → object. Για δυναμικό lookup table που μεγαλώνει/συρρικνώνεται → `Map`.
+
 ## Προσοχή: references, όχι αντίγραφα
 
 Τα objects και τα arrays **δεν αντιγράφονται** με την ανάθεση — η μεταβλητή δείχνει στο ίδιο πράγμα:
@@ -183,6 +217,37 @@ const realCopy = { ...a }; // αυτό είναι αντίγραφο (πρώτο
 ```
 
 Το ίδιο ισχύει και στις συγκρίσεις: `[1,2] === [1,2]` είναι `false` — συγκρίνονται οι references, όχι τα περιεχόμενα. Κράτα το στο μυαλό σου· θα το εξερευνήσουμε σε βάθος στα interview drills.
+
+### Shallow vs deep copy
+
+Το `{...a}` και το `[...arr]` είναι **shallow** (ρηχό) αντίγραφο: αντιγράφουν το πρώτο επίπεδο, αλλά τα **nested** objects/arrays παραμένουν κοινές references:
+
+```js
+const original = { user: { name: "Ada" } };
+const shallow = { ...original };
+shallow.user.name = "Grace";
+console.log(original.user.name); // "Grace" 😱 — το nested object είναι κοινό!
+```
+
+Για **deep** (βαθύ) αντίγραφο, εντελώς ανεξάρτητο, χρησιμοποίησε `structuredClone`:
+
+```js
+const deep = structuredClone(original);
+deep.user.name = "Linus";
+console.log(original.user.name); // αμετάβλητο — πραγματικά ξεχωριστό
+```
+
+### `Object.freeze` — «κλείδωσε» ένα object
+
+Αν θες να αποτρέψεις αλλαγές (π.χ. σε config/constants), το `Object.freeze` κάνει το object read-only (στο πρώτο επίπεδο):
+
+```js
+const config = Object.freeze({ apiUrl: "/api", retries: 3 });
+config.retries = 5;        // αγνοείται σιωπηλά (ή πετάει error σε strict mode)
+console.log(config.retries); // 3
+```
+
+> Σημείωση: το `const` εμποδίζει το **re-assignment** της μεταβλητής, ΟΧΙ τη μεταβολή του object. Το `Object.freeze` εμποδίζει τη μεταβολή των properties. Είναι δύο διαφορετικά πράγματα.
 
 ## Rendering: από δεδομένα σε UI
 
@@ -263,6 +328,22 @@ function renderTasks() {
     {
       question: "Γιατί b = a δεν αντιγράφει ένα object;",
       answer: "Τα objects/arrays ανατίθενται by reference — και οι δύο μεταβλητές δείχνουν στο ΙΔΙΟ object, οπότε αλλαγή μέσω της μίας φαίνεται και στην άλλη. Αντίγραφο: {...a} ή structuredClone(a) για nested."
+    },
+    {
+      question: "Shallow vs deep copy;",
+      answer: "{...obj} / [...arr] είναι shallow: αντιγράφουν το 1ο επίπεδο, αλλά τα nested μένουν κοινές references (αλλαγή σε nested φαίνεται και στο αρχικό). Για πλήρως ανεξάρτητο αντίγραφο: structuredClone(obj)."
+    },
+    {
+      question: "Map vs object — πότε Map;",
+      answer: "Map: keys οποιουδήποτε τύπου (όχι μόνο strings), πραγματικό .size, iteration με σειρά εισαγωγής, καθαρό από κληρονομημένα keys — ιδανικό για δυναμικό lookup table. Object: σταθερά γνωστά πεδία ενός 'πράγματος'."
+    },
+    {
+      question: "Πού χρησιμεύει το Set;",
+      answer: "Μοναδικές τιμές + γρήγορος έλεγχος .has(). Dedup σε μία γραμμή: [...new Set(arr)]. Έχει add/has/delete/size."
+    },
+    {
+      question: "const vs Object.freeze;",
+      answer: "const εμποδίζει το re-assignment της μεταβλητής (όχι τη μεταβολή του object). Object.freeze κάνει τα properties read-only. Διαφορετικά πράγματα — συχνά τα συνδυάζεις για constants."
     },
     {
       question: "Τι είναι το destructuring;",
