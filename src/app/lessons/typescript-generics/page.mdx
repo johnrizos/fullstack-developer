@@ -1,0 +1,180 @@
+# Generics, keyof & Indexed Access
+
+Τα generics είναι «παράμετροι τύπων»: γράφεις κώδικα που δουλεύει με **οποιονδήποτε** τύπο, διατηρώντας την τυποασφάλεια. Μαζί με τα `keyof`, `typeof` (type operator) και τα indexed access types (`T[K]`), αποτελούν το «βαρύ οπλοστάσιο» που στηρίζει τα utility types και τις βιβλιοθήκες — και είναι από τα πιο διακριτικά interview topics.
+
+## Generics — επαναχρησιμοποιήσιμα types
+
+Χωρίς generics, θα έγραφες το ίδιο type ξανά και ξανά (ή θα κατέφευγες σε `any`, χάνοντας την ασφάλεια):
+
+```ts
+interface ApiResponse<T> {
+  data: T;
+  error?: string;
+}
+
+type TasksResponse = ApiResponse<Task[]>;
+type UserResponse = ApiResponse<User>;
+
+// Σε functions — με inference, δεν δηλώνεις το T:
+function first<T>(items: T[]): T | undefined {
+  return items[0];
+}
+const task = first(tasks);  // T = Task, αυτόματα
+```
+
+Το `<T>` είναι placeholder που «γεμίζει» τη στιγμή της χρήσης. Σημαντικό: το generic **διατηρεί** τη σχέση input→output — η `first` επιστρέφει ακριβώς τον τύπο των στοιχείων, όχι `any`.
+
+## Constraints — `extends`
+
+Με constraints περιορίζεις τι δέχεται το generic, ώστε να μπορείς να το χρησιμοποιήσεις με ασφάλεια:
+
+```ts
+function getById<T extends { id: string }>(items: T[], id: string): T | undefined {
+  return items.find((item) => item.id === id); // ✅ ξέρει ότι κάθε T έχει id
+}
+
+getById(tasks, "1");      // ✅ τα Task έχουν id
+getById([1, 2, 3], "1");  // ❌ τα numbers δεν έχουν id
+```
+
+Το `T extends { id: string }` σημαίνει «οποιοσδήποτε τύπος που **έχει τουλάχιστον** `id: string`».
+
+## `keyof` — τα κλειδιά ενός τύπου ως union
+
+Το `keyof` παίρνει ένα object type και δίνει union από τα **κλειδιά** του:
+
+```ts
+interface Task { id: string; title: string; done: boolean }
+type TaskKey = keyof Task; // "id" | "title" | "done"
+```
+
+## Indexed access types — `T[K]`
+
+Παίρνεις τον τύπο μιας **property** μέσω του κλειδιού της:
+
+```ts
+type TitleType = Task["title"];        // string
+type Value = Task["id" | "done"];      // string | boolean
+```
+
+## Το κλασικό combo: type-safe property getter
+
+`keyof` + indexed access + generics μαζί δίνουν μια απόλυτα typed `getProp`:
+
+```ts
+function getProp<T, K extends keyof T>(obj: T, key: K): T[K] {
+  return obj[key];
+}
+
+const task: Task = { id: "1", title: "Μάθε TS", done: false };
+const title = getProp(task, "title");  // τύπος: string
+const done = getProp(task, "done");    // τύπος: boolean
+getProp(task, "missing");              // ❌ "missing" δεν είναι keyof Task
+```
+
+Ο compiler ξέρει ότι το `key` είναι έγκυρο κλειδί **και** ότι το αποτέλεσμα έχει τον σωστό τύπο για κάθε κλειδί ξεχωριστά. Αυτό ακριβώς το pattern κρύβεται μέσα στα `Pick`/`Omit`/`Record` που θα δεις στο επόμενο μάθημα.
+
+## `typeof` (type operator) — τύπος από τιμή
+
+Διαφορετικό από το runtime `typeof`. Στο type-level, παίρνει τον **τύπο μιας υπάρχουσας τιμής**:
+
+```ts
+const config = { retries: 3, url: "/api" };
+type Config = typeof config; // { retries: number; url: string }
+```
+
+Συνδυάζεται με `keyof` για να παράγεις τύπους από constants: `type Key = keyof typeof config` → `"retries" | "url"`.
+
+<PredictOutput
+  title="keyof + indexed access"
+  code={`interface User {
+  id: number;
+  name: string;
+  active: boolean;
+}
+
+function getProp<T, K extends keyof T>(obj: T, key: K): T[K] {
+  return obj[key];
+}
+
+const u: User = { id: 1, name: "Ada", active: true };
+const x = getProp(u, "active");
+// Τι τύπο έχει το x;`}
+  options={["any", "boolean", "string | number | boolean", "User"]}
+  correctOptionIndex={1}
+  answer="boolean"
+  explanation="Το K περιορίζεται σε keyof User και το return type είναι T[K] — ο indexed access τύπος για το συγκεκριμένο κλειδί. Για key 'active', το User['active'] είναι boolean. Ο compiler γνωρίζει τον ακριβή τύπο ανά κλειδί, όχι ένα γενικό union."
+/>
+
+<Exercise
+  question="Τι κάνει το constraint `<T extends { id: string }>`;"
+  options={[
+    "Μετατρέπει το T σε { id: string }.",
+    "Περιορίζει το T ώστε να δέχεται μόνο τύπους που έχουν τουλάχιστον id: string.",
+    "Κάνει το id optional."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το extends σε generic constraint σημαίνει 'οποιοσδήποτε τύπος που έχει τουλάχιστον αυτό το σχήμα'. Έτσι μέσα στη function μπορείς να χρησιμοποιήσεις με ασφάλεια το .id, και ο compiler απορρίπτει τύπους χωρίς id."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «What are generics, and what do keyof and indexed access types give you?»
+
+> Generics are type parameters — they let me write reusable code that keeps the relationship between input and output instead of collapsing to `any`. A `first<T>(items: T[]): T` returns exactly the element type. Constraints with `extends` restrict what a generic accepts so I can safely use properties inside — `<T extends { id: string }>` guarantees an `id`. `keyof` turns an object type into a union of its keys, and indexed access `T[K]` gets the type of a property by its key. Put together — `getProp<T, K extends keyof T>(obj: T, key: K): T[K]` — I get a fully type-safe getter where the compiler both rejects invalid keys and knows the exact return type per key. That same combination is what powers the built-in utility types like Pick and Record.
+
+<Flashcards
+  title="Generics & keyof — interview drills"
+  cards={[
+    {
+      question: "Τι είναι generics και τι λύνουν;",
+      answer: "Παράμετροι τύπων: γράφεις κώδικα για οποιονδήποτε τύπο διατηρώντας τη σχέση input→output (αντί για any). first<T>(items: T[]): T επιστρέφει ακριβώς τον τύπο των στοιχείων. Συχνά το T συμπεραίνεται αυτόματα."
+    },
+    {
+      question: "Τι κάνει το constraint extends σε generic;",
+      answer: "Περιορίζει το T σε τύπους που έχουν τουλάχιστον ένα σχήμα: <T extends { id: string }>. Έτσι μέσα στη function χρησιμοποιείς με ασφάλεια το .id· τύποι χωρίς id απορρίπτονται."
+    },
+    {
+      question: "Τι κάνει το keyof;",
+      answer: "Παίρνει object type και δίνει union από τα κλειδιά του: keyof { id; title } = 'id' | 'title'. Βάση για type-safe access σε properties."
+    },
+    {
+      question: "Τι είναι indexed access type T[K];",
+      answer: "Ο τύπος μιας property μέσω κλειδιού: Task['title'] = string. Συνδυασμένο με keyof+generics δίνει type-safe getProp<T, K extends keyof T>(o,k): T[K]."
+    },
+    {
+      question: "typeof (type operator) vs runtime typeof;",
+      answer: "Στο type-level, typeof value δίνει τον ΤΥΠΟ μιας υπάρχουσας τιμής: type C = typeof config. Συχνά με keyof: keyof typeof config. Διαφορετικό από το runtime typeof που δίνει string ('number' κ.λπ.)."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Γράψε type-safe utilities"
+  scenario="Φτιάξε generic utilities (getProp, pluck, groupBy) που διατηρούν τύπους με keyof/indexed access — όπως θα τα έγραφε μια βιβλιοθήκη."
+  outcomes={[
+    "Να γράφεις generic functions με constraints.",
+    "Να χρησιμοποιείς keyof και T[K] για type-safe access.",
+    "Να παράγεις τύπους από τιμές με typeof."
+  ]}
+  steps={[
+    "Γράψε getProp<T, K extends keyof T>(obj, key): T[K].",
+    "Γράψε pluck<T, K extends keyof T>(arr: T[], key: K): T[K][].",
+    "Πρόσθεσε constraint σε ένα generic (π.χ. <T extends { id: string }>).",
+    "Όρισε ένα const config και παράγαγε type με typeof + keyof.",
+    "Δοκίμασε λάθος κλειδί και επιβεβαίωσε το compile error."
+  ]}
+  checkpoints={[
+    "Τα utilities δεν χρησιμοποιούν any.",
+    "Λάθος κλειδί κόβεται στο compile (keyof constraint).",
+    "Ο τύπος επιστροφής είναι σωστός ανά κλειδί (T[K]).",
+    "Παράγεις τύπους από const αντί να τους ξαναγράφεις."
+  ]}
+  mistakes={[
+    "Να καταφεύγεις σε any αντί για generic.",
+    "Να ξεχνάς το K extends keyof T (επιτρέπει invalid keys).",
+    "Να μπερδεύεις runtime typeof με type-level typeof.",
+    "Να ξαναγράφεις types αντί να τους παράγεις με typeof/keyof."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν γράφεις generic, type-safe utilities με keyof/indexed access και καταλαβαίνεις πώς στηρίζουν τα utility types."
+/>

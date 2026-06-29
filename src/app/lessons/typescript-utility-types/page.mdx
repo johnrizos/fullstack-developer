@@ -1,0 +1,168 @@
+# Utility, Mapped & Conditional Types
+
+Το TypeScript σου επιτρέπει να **παράγεις** types από άλλους types αντί να τους ξαναγράφεις. Αυτό το μάθημα καλύπτει τα built-in utility types (το λεξιλόγιο που εξετάζεται), πώς χτίζονται με **mapped** & **conditional** types (+ `infer`), και το modern `satisfies` operator. Το κεντρικό μήνυμα: **ένα source of truth** — ορίζεις ένα type μία φορά και παράγεις τα συγγενικά.
+
+## Built-in utility types — το λεξιλόγιο
+
+```ts
+interface Task {
+  id: string;
+  title: string;
+  status: "todo" | "doing" | "done";
+  createdAt: Date;
+}
+
+type TaskDraft = Omit<Task, "id" | "createdAt">; // χωρίς server-generated fields
+type TaskPatch = Partial<TaskDraft>;             // όλα optional — για PATCH body
+type TaskPreview = Pick<Task, "id" | "title">;   // μόνο όσα δείχνει η λίστα
+type TasksById = Record<string, Task>;           // map από id σε Task
+type FrozenTask = Readonly<Task>;                // όλα readonly
+type RequiredDraft = Required<TaskDraft>;        // όλα required
+
+function createTask(draft: TaskDraft): Task { /* ... */ }
+type Created = ReturnType<typeof createTask>;     // Task — παράγεται, δεν αντιγράφεται
+type Args = Parameters<typeof createTask>;        // [TaskDraft]
+```
+
+Τα πιο συχνά στις συνεντεύξεις: `Partial`, `Pick`, `Omit`, `Record`, `Readonly`, `Required`, `ReturnType`, `Parameters`, `Awaited`. Το πραγματικό μάθημα: ορίζεις το `Task` **μία φορά** και παράγεις τα υπόλοιπα — αν αλλάξει το `Task`, ενημερώνονται αυτόματα.
+
+## Mapped types — πώς χτίζονται τα utility types
+
+Ένα mapped type «περπατά» πάνω στα κλειδιά ενός τύπου και φτιάχνει νέο. Έτσι ορίζεται, π.χ., το `Partial`:
+
+```ts
+type MyPartial<T> = { [K in keyof T]?: T[K] };   // κάθε property γίνεται optional
+type MyReadonly<T> = { readonly [K in keyof T]: T[K] };
+```
+
+Το `[K in keyof T]` είναι το «for κάθε κλειδί K του T». Μπορείς να προσθέσεις/αφαιρέσεις modifiers (`?`, `readonly`) και να μετασχηματίσεις τον τύπο `T[K]`. Αυτό ακριβώς (keyof + indexed access από το προηγούμενο μάθημα) στηρίζει όλα τα built-in.
+
+## Conditional types & `infer`
+
+Ένα conditional type διαλέγει τύπο με βάση μια συνθήκη: `T extends U ? X : Y`.
+
+```ts
+type IsString<T> = T extends string ? "yes" : "no";
+type A = IsString<string>; // "yes"
+type B = IsString<number>; // "no"
+```
+
+Το `infer` «πιάνει» έναν τύπο μέσα από μια δομή. Έτσι ορίζεται, π.χ., το `Awaited`/`ReturnType`:
+
+```ts
+type MyAwaited<T> = T extends Promise<infer U> ? U : T; // βγάλε το U μέσα από το Promise
+type R = MyAwaited<Promise<string>>; // string
+
+type MyReturnType<F> = F extends (...args: any[]) => infer R ? R : never;
+```
+
+> Mapped & conditional types είναι «προχωρημένα» — δεν θα τα γράφεις κάθε μέρα. Αλλά το να **καταλαβαίνεις** πώς χτίζονται τα utility types ξεχωρίζει στις συνεντεύξεις και σε ξεμπλοκάρει όταν διαβάζεις types βιβλιοθηκών.
+
+## `satisfies` — έλεγξε χωρίς να χάσεις τον στενό τύπο
+
+Πρόβλημα: ένα type annotation **πλαταίνει** τον τύπο, ενώ ένα `as` **παρακάμπτει** τον έλεγχο. Το `satisfies` (modern TS) δίνει το καλύτερο και των δύο: ελέγχει ότι η τιμή ταιριάζει σε ένα type, **κρατώντας** τον στενό inferred τύπο.
+
+```ts
+type Config = Record<string, string | number>;
+
+// με annotation: χάνεις τους στενούς τύπους
+const a: Config = { port: 3000, host: "localhost" };
+a.port; // string | number — δεν ξέρει ότι είναι number 😕
+
+// με satisfies: ελέγχεται ΚΑΙ κρατά τους στενούς τύπους
+const b = { port: 3000, host: "localhost" } satisfies Config;
+b.port;  // number ✅
+b.host;  // string ✅
+b.xyz;   // ❌ compile error — ελέγχθηκε ότι ταιριάζει στο Config
+```
+
+Χρησιμοποίησέ το όταν θες **και** validation έναντι ενός type **και** τον ακριβή inferred τύπο της τιμής (config objects, routes, palettes).
+
+<PredictOutput
+  title="satisfies vs annotation"
+  code={`const colors = {
+  primary: "#0070f3",
+  secondary: "#7928ca",
+} satisfies Record<string, string>;
+
+const c = colors.primary;
+// Τι τύπο έχει το c;`}
+  options={['string', '"#0070f3" (literal)', "any", "Record<string, string>"]}
+  correctOptionIndex={1}
+  answer='"#0070f3" (literal)'
+  explanation="Το satisfies ελέγχει ότι το object ταιριάζει στο Record<string,string>, αλλά ΔΕΝ πλαταίνει τον τύπο — κρατά τον στενό inferred τύπο, άρα το colors.primary είναι το literal '#0070f3'. Με annotation (: Record<string,string>) θα ήταν απλώς string."
+/>
+
+<Exercise
+  question="Θες ένα type 'Task χωρίς id και createdAt'. Τι χρησιμοποιείς;"
+  options={[
+    "Pick<Task, 'id' | 'createdAt'>",
+    "Omit<Task, 'id' | 'createdAt'>",
+    "Partial<Task>",
+    "Record<string, Task>"
+  ]}
+  correctOptionIndex={1}
+  explanation="Omit<T, K> αφαιρεί τα κλειδιά K. Το Pick θα κρατούσε ΜΟΝΟ αυτά, το Partial θα έκανε όλα optional, το Record φτιάχνει map. Παράγεις το type από το Task αντί να το ξαναγράψεις — ένα source of truth."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you avoid duplicating types, and what's `satisfies`?»
+
+> One source of truth: I define the core type once and derive the rest with utility types — `Omit` for a create-draft without server fields, `Partial` for a PATCH body, `Pick` for a list preview, `ReturnType`/`Awaited` to pull a type out of a function. If the core type changes, the derived ones update automatically. Under the hood those are mapped types — `{ [K in keyof T]?: T[K] }` is essentially `Partial` — and conditional types with `infer`, which is how `Awaited` and `ReturnType` extract an inner type. And `satisfies` is the modern operator I reach for on config-like objects: it checks the value against a type without widening it, so I keep the precise inferred literal types while still catching typos — something a plain annotation loses and an `as` cast skips entirely.
+
+<Flashcards
+  title="Utility & advanced types — interview drills"
+  cards={[
+    {
+      question: "Ποια είναι τα πιο κοινά utility types;",
+      answer: "Partial (όλα optional), Required, Readonly, Pick<T,K> (κράτα K), Omit<T,K> (αφαίρεσε K), Record<K,V> (map), ReturnType / Parameters / Awaited (από functions/promises). Σκοπός: ένα source of truth."
+    },
+    {
+      question: "Τι είναι mapped type;",
+      answer: "Type που 'περπατά' στα κλειδιά: { [K in keyof T]: ... }. Έτσι χτίζονται τα built-in — Partial = { [K in keyof T]?: T[K] }. Μπορείς να προσθέσεις/αφαιρέσεις ? και readonly."
+    },
+    {
+      question: "Τι είναι conditional type & infer;",
+      answer: "T extends U ? X : Y — διαλέγει τύπο με συνθήκη. Το infer πιάνει εσωτερικό τύπο: Awaited<T> = T extends Promise<infer U> ? U : T. Έτσι ορίζονται ReturnType/Awaited."
+    },
+    {
+      question: "Τι κάνει το satisfies;",
+      answer: "Ελέγχει ότι μια τιμή ταιριάζει σε type ΧΩΡΙΣ να πλατύνει τον inferred τύπο. Annotation πλαταίνει· as παρακάμπτει· satisfies κρατά τους στενούς τύπους + κάνει validation. Ιδανικό για config objects."
+    },
+    {
+      question: "Omit vs Pick vs Partial;",
+      answer: "Omit<T,K>: όλα εκτός K. Pick<T,K>: μόνο K. Partial<T>: όλα optional. Παράγεις παράγωγα types αντί να αντιγράφεις — αλλάζει το source, ενημερώνονται αυτόματα."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Παράγαγε types από ένα source of truth"
+  scenario="Πάρε ένα domain model και παράγαγε όλα τα συγγενικά types (draft, patch, preview, map) με utility types — και χρησιμοποίησε satisfies σε ένα config."
+  outcomes={[
+    "Να παράγεις types με Omit/Pick/Partial/Record/ReturnType.",
+    "Να καταλαβαίνεις πώς χτίζονται (mapped/conditional/infer).",
+    "Να χρησιμοποιείς satisfies για config objects."
+  ]}
+  steps={[
+    "Όρισε ένα model μία φορά (π.χ. Task με id, title, status, createdAt).",
+    "Παράγαγε TaskDraft (Omit), TaskPatch (Partial), TaskPreview (Pick), TasksById (Record).",
+    "Πάρε τον τύπο επιστροφής μιας function με ReturnType<typeof fn>.",
+    "Γράψε ένα δικό σου MyPartial<T> ως mapped type για να δεις πώς χτίζεται.",
+    "Όρισε ένα config object με satisfies και επιβεβαίωσε ότι κρατά στενούς τύπους."
+  ]}
+  checkpoints={[
+    "Δεν ξαναγράφεις χειροκίνητα παράγωγα types.",
+    "Αλλαγή στο model ενημερώνει αυτόματα τα παράγωγα.",
+    "Καταλαβαίνεις ότι Partial = mapped type με ?.",
+    "Το satisfies config κρατά literal/στενούς τύπους + πιάνει typos."
+  ]}
+  mistakes={[
+    "Να αντιγράφεις types με copy-paste αντί για utility types.",
+    "Να μπερδεύεις Pick με Omit.",
+    "Να χρησιμοποιείς annotation εκεί που το satisfies κρατά καλύτερο τύπο.",
+    "Να φοβάσαι τα mapped/conditional types — είναι απλώς keyof + συνθήκη."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν παράγεις types από ένα source of truth, εξηγείς πώς χτίζονται τα utility types, και χρησιμοποιείς satisfies σωστά."
+/>

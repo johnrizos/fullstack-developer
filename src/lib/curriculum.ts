@@ -43,7 +43,13 @@ export const lessonDurationsMinutes: Record<string, number> = {
   "job-ready-practice": 60,
   "milestone-projects": 70,
   "code-review-practice": 70,
-  "typescript": 75,
+  "typescript-foundations": 55,
+  "typescript-unions-narrowing": 60,
+  "typescript-functions": 55,
+  "typescript-generics": 60,
+  "typescript-utility-types": 60,
+  "typescript-safety-config": 55,
+  "typescript-declarations": 50,
   "testing-debugging": 70,
   "build-tools": 60,
   "react-rendering-model": 70,
@@ -533,10 +539,73 @@ export const curriculum: CurriculumSection[] = [
       {
         id: "typescript",
         title: "TypeScript",
-        description: "Τύποι, interfaces, generics και πιο ασφαλής JavaScript σε frontend και backend.",
-        project: "Typed task model και API response types.",
-        skills: ["types", "interfaces", "generics"],
-        href: "/lessons/typescript",
+        description:
+          "Πλήρης διαδρομή για TypeScript σε βάθος συνέντευξης: από foundations & structural typing μέχρι unions/narrowing, functions, generics, utility/mapped types, type safety/config και declaration files.",
+        lessons: [
+          {
+            id: "typescript-foundations",
+            title: "TypeScript Foundations",
+            description:
+              "Structural typing, βασικοί τύποι & annotations, type vs interface, και type erasure (τα types εξαφανίζονται στη runtime).",
+            project: "Typed domain model με interfaces και typed functions.",
+            skills: ["structural typing", "type vs interface", "type erasure"],
+            href: "/lessons/typescript-foundations",
+          },
+          {
+            id: "typescript-unions-narrowing",
+            title: "Unions, Narrowing & Type Guards",
+            description:
+              "Literal unions vs enum/as const, narrowing, discriminated unions με exhaustiveness/never, και custom type guards.",
+            project: "Data-fetching states ως discriminated union που δεν σπάει.",
+            skills: ["unions", "discriminated unions", "type guards"],
+            href: "/lessons/typescript-unions-narrowing",
+          },
+          {
+            id: "typescript-functions",
+            title: "Typing Functions & Async",
+            description:
+              "Params (optional/default/rest), return types (void/never), function types, overloads, και async με Promise<T>/Awaited.",
+            project: "Typed data layer με async functions και callbacks.",
+            skills: ["function types", "overloads", "async types"],
+            href: "/lessons/typescript-functions",
+          },
+          {
+            id: "typescript-generics",
+            title: "Generics, keyof & Indexed Access",
+            description:
+              "Generics & constraints, keyof, typeof type operator, indexed access T[K], και type-safe getProp pattern.",
+            project: "Generic, type-safe utilities (getProp/pluck).",
+            skills: ["generics", "keyof", "indexed access"],
+            href: "/lessons/typescript-generics",
+          },
+          {
+            id: "typescript-utility-types",
+            title: "Utility, Mapped & Conditional Types",
+            description:
+              "Built-in utility types (Pick/Omit/Partial/Record/ReturnType), mapped & conditional types + infer, και ο satisfies operator.",
+            project: "Παραγωγή συγγενικών types από ένα source of truth.",
+            skills: ["utility types", "mapped/conditional", "satisfies"],
+            href: "/lessons/typescript-utility-types",
+          },
+          {
+            id: "typescript-safety-config",
+            title: "Type Safety & tsconfig",
+            description:
+              "any vs unknown, assertions (as) & non-null !, runtime validation (Zod) για external data, και strict mode (tsconfig).",
+            project: "Σκλήρυνση ενός data boundary: unknown + validation + strict.",
+            skills: ["unknown", "runtime validation", "strict mode"],
+            href: "/lessons/typescript-safety-config",
+          },
+          {
+            id: "typescript-declarations",
+            title: "Declaration Files & Type Ecosystem",
+            description:
+              ".d.ts declaration files, @types/DefinitelyTyped, ambient/global declarations, και module augmentation για library types.",
+            project: "Project πλήρως typed με JS libraries, globals και augmentation.",
+            skills: [".d.ts", "@types", "module augmentation"],
+            href: "/lessons/typescript-declarations",
+          },
+        ],
       },
       {
         id: "testing-debugging",

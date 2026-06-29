@@ -1,0 +1,167 @@
+# Type Safety & tsconfig
+
+Το TypeScript είναι ασφαλές **όσο το αφήνεις** να είναι. Αυτό το μάθημα καλύπτει τα σημεία όπου χάνεις ή κερδίζεις ασφάλεια: `any` vs `unknown`, type assertions (`as`) και το non-null `!`, **runtime validation** για external data, και τη ρύθμιση του compiler — το `tsconfig.json` και ειδικά το **strict mode**, που είναι αυτό που κάνει το TypeScript να αξίζει.
+
+## `any` vs `unknown` — η ερώτηση-φίλτρο
+
+```ts
+function parse(json: string): unknown {
+  return JSON.parse(json);
+}
+
+const data = parse('{"title":"hi"}');
+data.title;                       // ❌ error — το unknown ΔΕΝ επιτρέπει πρόσβαση
+if (typeof data === "object" && data !== null && "title" in data) {
+  // εδώ μπορείς να το χρησιμοποιήσεις — απέδειξες το σχήμα
+}
+```
+
+- **`any`**: απενεργοποιεί τον έλεγχο — ό,τι κάνεις περνάει, και «μολύνει» ό,τι αγγίζει. Αποφυγή.
+- **`unknown`**: «δεν ξέρω τι είναι» — δεν μπορείς να το αγγίξεις **μέχρι να το αποδείξεις** με narrowing ή validation. Το type-safe αντίστοιχο του any.
+
+Για οτιδήποτε από έξω (API, JSON, query params), η σωστή πύλη εισόδου είναι `unknown`.
+
+## Type assertions (`as`) και non-null `!`
+
+Το **type assertion (`as`)** λέει στον compiler «εμπιστέψου με» — δεν μετατρέπει δεδομένα, δεν ελέγχει τίποτα:
+
+```ts
+const el = document.getElementById("email") as HTMLInputElement; // ΟΚ: ξέρεις κάτι που ο compiler δεν ξέρει
+const user = JSON.parse(raw) as User; // ❌ αντι-pattern: external data χωρίς έλεγχο
+```
+
+Το **non-null assertion `!`** λέει «αυτό δεν είναι null/undefined, σ' το εγγυώμαι»:
+
+```ts
+const el = document.getElementById("email")!; // αφαιρεί το | null
+```
+
+Και τα δύο είναι «υποσχέσεις» χωρίς runtime έλεγχο. Δικαιολογούνται όταν **ξέρεις κάτι που ο compiler δεν μπορεί να συμπεράνει**· είναι αντι-pattern για δεδομένα που δεν ελέγχεις.
+
+## Runtime validation — γιατί τα types δεν αρκούν
+
+Επειδή τα types εξαφανίζονται στη runtime (foundations μάθημα), ένα `as User` σε δεδομένα fetch δεν εγγυάται τίποτα. Το σωστό production pattern: `unknown` + **runtime validation** με schema validator (π.χ. Zod). Bonus: το schema παράγει και τον TypeScript τύπο:
+
+```ts
+import { z } from "zod";
+
+const UserSchema = z.object({ id: z.string(), name: z.string() });
+type User = z.infer<typeof UserSchema>;      // ο τύπος παράγεται από το schema
+
+const res = await fetch("/api/user");
+const user = UserSchema.parse(await res.json()); // ✅ ελέγχει στη runtime· πετάει αν δεν ταιριάζει
+```
+
+Έτσι έχεις **ένα source of truth** που είναι ταυτόχρονα runtime έλεγχος και compile-time τύπος.
+
+## tsconfig & strict mode
+
+Ο compiler ρυθμίζεται από το `tsconfig.json`. Το πιο σημαντικό flag είναι το `strict`:
+
+```json
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2022",
+    "module": "ESNext"
+  }
+}
+```
+
+Το `"strict": true` ενεργοποιεί μια ομάδα ελέγχων — οι σημαντικότεροι:
+
+- **`strictNullChecks`** — το `null`/`undefined` δεν είναι πια «μέλος κάθε τύπου». Σε αναγκάζει να χειριστείς ρητά τις null περιπτώσεις (ο Νο1 λόγος που το strict πιάνει bugs).
+- **`noImplicitAny`** — απαγορεύει το σιωπηλό `any` (π.χ. param χωρίς τύπο). Σε αναγκάζει να τυπώσεις.
+- συν `strictFunctionTypes`, `strictBindCallApply`, `strictPropertyInitialization` κ.ά.
+
+> Κανόνας: **`strict: true` πάντα** σε νέο project. Χωρίς strict (ειδικά χωρίς `strictNullChecks`), χάνεις το μεγαλύτερο μέρος της αξίας του TypeScript — γι' αυτό είναι συχνή ερώτηση «τι κάνει το strict mode;».
+
+<PredictOutput
+  title="strictNullChecks"
+  code={`// με "strict": true
+function getLength(s: string | null) {
+  return s.length;
+}`}
+  options={[
+    "Compile OK",
+    "Compile error — το s μπορεί να είναι null",
+    "Runtime error μόνο",
+    "Επιστρέφει 0 για null"
+  ]}
+  correctOptionIndex={1}
+  answer="Compile error — το s μπορεί να είναι null"
+  explanation="Με strictNullChecks (μέρος του strict), το null δεν 'ανήκει' αυτόματα στο string — άρα s.length είναι error μέχρι να χειριστείς το null (if (s) ... ή s?.length). Αυτός ακριβώς είναι ο λόγος που το strict πιάνει null-related bugs πριν τη runtime."
+/>
+
+<Exercise
+  question="Παίρνεις JSON από εξωτερικό API. Ποια είναι η ασφαλέστερη προσέγγιση;"
+  options={[
+    "const data = response as MyType — γρήγορο και καθαρό.",
+    "Τύπος unknown και μετά runtime validation (π.χ. Zod) πριν τη χρήση.",
+    "Τύπος any για ευελιξία και έλεγχος με try/catch."
+  ]}
+  correctOptionIndex={1}
+  explanation="Τα types εξαφανίζονται στη runtime — το as δεν ελέγχει τίποτα και το any απενεργοποιεί τον έλεγχο. Το unknown σε αναγκάζει να αποδείξεις το σχήμα, και ένα schema validator (Zod) το κάνει σωστά + δίνει καθαρά errors + παράγει τον τύπο."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you keep TypeScript actually safe, especially with external data?»
+
+> Two things. First, the right gateway for anything from outside — API responses, JSON, query params — is `unknown`, not `any`: `any` disables checking and spreads, while `unknown` forces me to prove the shape before I touch it. Since types are erased at runtime, an `as` cast guarantees nothing on fetched data, so I validate at the boundary with a schema validator like Zod, which both checks at runtime and derives the TypeScript type — one source of truth. I keep `as` and the non-null `!` for cases where I genuinely know something the compiler can't, like a `getElementById` I control. Second, configuration: I always run `strict: true`. The big one is `strictNullChecks` — `null` stops being a silent member of every type, so I have to handle it — plus `noImplicitAny`. Without strict you lose most of the value of TypeScript.
+
+<Flashcards
+  title="Type safety & config — interview drills"
+  cards={[
+    {
+      question: "any vs unknown;",
+      answer: "any: απενεργοποιεί το type checking, μολύνει ό,τι αγγίζει — αποφυγή. unknown: type-safe άγνωστο — δεν επιτρέπει καμία πράξη μέχρι narrowing/validation. Για external data: πάντα unknown."
+    },
+    {
+      question: "Είναι ασφαλές το type assertion (as);",
+      answer: "Όχι από μόνο του — λέει 'εμπιστέψου με' χωρίς runtime έλεγχο. ΟΚ όταν ξέρεις κάτι που ο compiler δεν μπορεί (π.χ. getElementById ως HTMLInputElement). Αντι-pattern για external data."
+    },
+    {
+      question: "Τι κάνει το non-null assertion !;",
+      answer: "Αφαιρεί το | null | undefined από έναν τύπο: el!. Υπόσχεση χωρίς runtime έλεγχο — χρήση μόνο όταν είσαι σίγουρος. Διαφορετικά χειρίσου το null (if/?. )."
+    },
+    {
+      question: "Γιατί runtime validation για external data;",
+      answer: "Τα types εξαφανίζονται στη runtime — το as δεν ελέγχει τίποτα. unknown + schema validator (Zod): ελέγχει στη runtime, δίνει καθαρά errors, και παράγει τον τύπο (z.infer). Ένα source of truth."
+    },
+    {
+      question: "Τι κάνει το strict mode (tsconfig);",
+      answer: "Ενεργοποιεί ομάδα αυστηρών ελέγχων. Σημαντικότεροι: strictNullChecks (το null δεν ανήκει σε κάθε τύπο — χειρίζεσαι ρητά null) και noImplicitAny (όχι σιωπηλό any). strict: true πάντα σε νέο project."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Σκλήρυνε ένα data boundary"
+  scenario="Πάρε ένα fetch flow και κάνε το πραγματικά type-safe: unknown στην είσοδο, runtime validation, strict tsconfig — χωρίς any/as σε external data."
+  outcomes={[
+    "Να χρησιμοποιείς unknown ως πύλη για external data.",
+    "Να κάνεις runtime validation που παράγει και τον τύπο.",
+    "Να ρυθμίζεις strict mode και να εξηγείς τι πιάνει."
+  ]}
+  steps={[
+    "Βεβαιώσου ότι το tsconfig έχει strict: true.",
+    "Γράψε ένα schema (Zod) και παράγαγε τον τύπο με z.infer.",
+    "Στο fetch, πάρε unknown και κάνε schema.parse πριν τη χρήση.",
+    "Αφαίρεσε όλα τα as MyType πάνω σε external data.",
+    "Πρόσθεσε μια function με param χωρίς τύπο και δες το noImplicitAny να σε πιάνει."
+  ]}
+  checkpoints={[
+    "Κανένα any/as πάνω σε δεδομένα από fetch.",
+    "Το schema είναι το source of truth για τύπο + validation.",
+    "Το strictNullChecks σε αναγκάζει να χειριστείς null cases.",
+    "Invalid API δεδομένα πιάνονται στη runtime με καθαρό error."
+  ]}
+  mistakes={[
+    "as MyType πάνω σε external data (δεν ελέγχει τίποτα).",
+    "any αντί για unknown στην είσοδο.",
+    "Να δουλεύεις χωρίς strict (χάνεις strictNullChecks).",
+    "Να αντιγράφεις τον τύπο χωριστά από το schema (ξεσυγχρονίζονται)."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν τα external data περνούν από unknown + validation, και το project τρέχει σε strict mode συνειδητά."
+/>

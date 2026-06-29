@@ -1,0 +1,267 @@
+export const tsHtml = `<main>
+  <h1>TypeScript model</h1>
+  <p>Το preview είναι στατικό. Το TypeScript ελέγχεται από το checklist.</p>
+</main>`;
+
+export const tsCss = `body {
+  font-family: Arial, sans-serif;
+  background: #f3f4f6;
+  padding: 40px;
+}
+
+main {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 24px;
+  background: white;
+  border-radius: 12px;
+}`;
+
+export const taskTs = `// Στόχος: δήλωσε τους τύπους και τις functions ώστε να περάσει το checklist.
+// Αν κολλήσεις, πάτα "Δείξε λύση".
+
+// 1. Ένα union (string literals) με όνομα TaskStatus: "todo" | "doing" | "done".
+
+// 2. Ένα interface με όνομα Task: id (string), title (string), status,
+//    και ένα optional πεδίο για τις ώρες εκτίμησης (με ?).
+
+// 3. Ένα generic interface ApiResponse που κρατά data: T και optional error.
+
+// 4. formatTask: παίρνει ένα Task και επιστρέφει string της μορφής "title [status]".
+
+// 5. getCompletedTasks: παίρνει πίνακα από Task και επιστρέφει μόνο όσα είναι "done".`;
+
+export const taskSolutionTs = `type TaskStatus = "todo" | "doing" | "done";
+
+interface Task {
+  id: string;
+  title: string;
+  status: TaskStatus;
+  estimateHours?: number;
+}
+
+interface ApiResponse<T> {
+  data: T;
+  error?: string;
+}
+
+function formatTask(task: Task): string {
+  return \`\${task.title} [\${task.status}]\`;
+}
+
+function getCompletedTasks(tasks: Task[]): Task[] {
+  return tasks.filter((task) => task.status === "done");
+}
+
+const response: ApiResponse<Task[]> = {
+  data: [
+    { id: "1", title: "Learn TypeScript", status: "doing", estimateHours: 3 },
+    { id: "2", title: "Build typed React app", status: "todo" }
+  ]
+};
+
+const completed = getCompletedTasks(response.data);
+console.log(completed.map(formatTask));`;
+
+# TypeScript Foundations
+
+Το TypeScript είναι JavaScript με στατικό type checking — τα types εξαφανίζονται στο compile, άρα **δεν** αλλάζουν τη runtime συμπεριφορά. Η αξία του: πιάνει λάθη πριν τρέξει ο κώδικας, τεκμηριώνει contracts μεταξύ modules, και κάνει το refactoring ασφαλές (μετονομάζεις ένα πεδίο και βλέπεις αμέσως κάθε σπασμένη χρήση). Σε fullstack αγγελίες είναι πλέον σχεδόν υποχρεωτικό. Αυτό το πρώτο μάθημα του track χτίζει τη βάση: πώς σκέφτεται ο compiler, βασικοί τύποι & annotations, `type` vs `interface`, και η κρίσιμη ιδέα ότι **τα types εξαφανίζονται στη runtime**. Τα επόμενα μαθήματα μπαίνουν βαθιά σε unions/narrowing, functions, generics, utility/mapped types, safety/config και declarations.
+
+## Βασικοί τύποι & annotations
+
+Δηλώνεις τον τύπο μιας μεταβλητής/παραμέτρου με `: Type`. Συχνά δεν χρειάζεται — ο compiler κάνει **inference**:
+
+```ts
+let title: string = "Μάθε TS";  // explicit
+let count = 0;                  // inferred ως number — δεν χρειάζεται annotation
+const tags: string[] = [];      // array από strings
+const point: { x: number; y: number } = { x: 1, y: 2 };
+
+function greet(name: string): string {  // typed param + return
+  return `Γεια ${name}`;
+}
+```
+
+Κανόνας: **άσε το inference να δουλέψει** για τοπικές μεταβλητές· βάλε explicit types στα **όρια** — function signatures, public APIs, exported types. Εκεί το type είναι το «συμβόλαιο».
+
+## Η βάση: structural typing
+
+Το πιο σημαντικό πράγμα για το πώς σκέφτεται ο compiler: συγκρίνει **σχήματα**, όχι ονόματα. Αυτό λέγεται structural typing (ή «duck typing»):
+
+```ts
+interface Point {
+  x: number;
+  y: number;
+}
+
+const spot = { x: 1, y: 2, label: "home" };
+const p: Point = spot; // ✅ ΟΚ — έχει ό,τι χρειάζεται το Point (και παραπάνω)
+
+function logPoint(point: Point) {}
+logPoint({ x: 1, y: 2 });               // ✅
+logPoint({ x: 1, y: 2, label: "hi" });  // ❌ object literal: excess property check!
+```
+
+Παρατήρησε την ασυμμετρία — όταν περνάς **object literal απευθείας**, το TypeScript κάνει αυστηρότερο έλεγχο για «έξτρα» properties (πιάνει typos). Μέσω μεταβλητής, αρκεί το σχήμα να καλύπτεται. Αντίθετο μοντέλο: το **nominal typing** (Java/C#), όπου μετράει το όνομα της κλάσης.
+
+## type vs interface — η σίγουρη ερώτηση
+
+Και τα δύο περιγράφουν object shapes. Οι πραγματικές διαφορές:
+
+| | `interface` | `type` |
+|---|---|---|
+| Object shapes | ✅ | ✅ |
+| Unions, primitives, tuples | ❌ | ✅ `type ID = string \| number` |
+| Επέκταση | `extends` | `&` (intersection) |
+| Declaration merging | ✅ — δηλώσεις με ίδιο όνομα ενώνονται | ❌ — διπλό όνομα = error |
+
+Πρακτικός κανόνας που αρκεί σε συνέντευξη: **interface για δημόσια object contracts** (props, models — και για library types όπου το merging βοηθά), **type για unions και συνθέσεις**. Μέσα σε ένα project, η συνέπεια μετράει περισσότερο από την επιλογή.
+
+## Τα types εξαφανίζονται στη runtime
+
+Η πιο παρεξηγημένη ιδέα — και ερώτηση-φίλτρο. Το TypeScript κάνει **type erasure**: μετά το compile, ο κώδικας είναι σκέτη JavaScript χωρίς κανένα type. Συνέπειες:
+
+- **Μηδενικό runtime κόστος** — τα types δεν υπάρχουν όταν τρέχει ο κώδικας.
+- **Δεν μπορείς να ελέγξεις types στη runtime** με τον τρόπο των classes — δεν υπάρχει «`if (x is User)`» μαγικά.
+- **Τα δεδομένα από έξω (API/JSON) δεν ελέγχονται** από τους τύπους. Ένα `as User` είναι απλώς υπόσχεση προς τον compiler — γι' αυτό χρειάζεσαι **runtime validation** (το βλέπεις στο safety μάθημα).
+
+```ts
+interface User { name: string; }
+const raw = '{"username": "ada"}';
+const user = JSON.parse(raw) as User; // ψέμα στον compiler — δεν ελέγχει τίποτα
+user.name.toUpperCase();              // 💥 runtime: name είναι undefined
+```
+
+<PredictOutput
+  title="Runtime drill — τα types εξαφανίζονται"
+  code={`interface User {
+  name: string;
+}
+
+const raw = '{"username": "ada"}';
+const user = JSON.parse(raw) as User;
+
+console.log(user.name.toUpperCase());`}
+  options={[
+    "Runtime TypeError — το name είναι undefined",
+    "Compile error στο as User",
+    '"ADA"',
+    "undefined"
+  ]}
+  correctOptionIndex={0}
+  answer="TypeError: Cannot read properties of undefined"
+  explanation="Το as User είναι υπόσχεση προς τον compiler, ΟΧΙ έλεγχος. Το JSON έχει username, όχι name — άρα user.name είναι undefined και το .toUpperCase() σκάει στη runtime. Τα types εξαφανίζονται· external data θέλει runtime validation."
+/>
+
+## Mini project: typed task model
+
+Το challenge ελέγχει αν έχεις τα βασικά κομμάτια ενός typed model όπως θα τα περίμενε ένα code review:
+
+<CodeChallenge
+  title="Typed task model challenge"
+  description="Οργάνωσε task model, API response type και typed functions."
+  initialHtml={tsHtml}
+  initialCss={tsCss}
+  initialTs={taskTs}
+  solutionTs={taskSolutionTs}
+  checks={[
+    {
+      id: "has-status-union",
+      label: "Υπάρχει union type TaskStatus.",
+      type: "jsIncludes",
+      value: "type TaskStatus"
+    },
+    {
+      id: "has-task-interface",
+      label: "Υπάρχει interface Task.",
+      type: "jsIncludes",
+      value: "interface Task"
+    },
+    {
+      id: "has-optional",
+      label: "Υπάρχει optional property με ?.",
+      type: "jsIncludes",
+      value: "estimateHours?"
+    },
+    {
+      id: "has-generic-response",
+      label: "Υπάρχει generic ApiResponse<T>.",
+      type: "jsIncludes",
+      value: "ApiResponse<T>"
+    },
+    {
+      id: "typed-function",
+      label: "Υπάρχει function με typed parameter και return type.",
+      type: "jsIncludes",
+      value: "function formatTask(task: Task): string"
+    },
+    {
+      id: "typed-array",
+      label: "Χρησιμοποιείται Task[] για typed array.",
+      type: "jsIncludes",
+      value: "Task[]"
+    }
+  ]}
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+«Why TypeScript, and what's the catch?»
+
+> TypeScript catches type errors at compile time, documents the contracts between modules, and makes refactoring safe — renaming a field shows every broken usage instantly. The compiler is structural: compatibility is about an object's shape, not the name of its type. The catch is that types are erased at compile time — there's no runtime cost, but it also means external data still needs runtime validation; an `as` assertion checks nothing. My rule of thumb on `type` vs `interface`: interfaces for object contracts (they support `extends` and declaration merging), type aliases for unions and compositions — and consistency within a codebase above the choice itself.
+
+<Flashcards
+  title="TypeScript foundations — interview drills"
+  cards={[
+    {
+      question: "Τι σημαίνει structural typing;",
+      answer: "Η συμβατότητα κρίνεται από το ΣΧΗΜΑ, όχι το όνομα του τύπου. Αν ένα object έχει όλα τα πεδία που απαιτεί το type, ταιριάζει. Αντίθετο: nominal typing (Java/C#), όπου μετράει το όνομα της κλάσης."
+    },
+    {
+      question: "type vs interface;",
+      answer: "Και τα δύο για object shapes. interface: extends + declaration merging (καλό για public APIs/libraries). type: unions, tuples, primitives, intersections (&). Default: interface για contracts, type για unions — με συνέπεια στο project."
+    },
+    {
+      question: "Τι σημαίνει 'τα types εξαφανίζονται στη runtime';",
+      answer: "Type erasure: μετά το compile ο κώδικας είναι σκέτη JS χωρίς types. Μηδενικό runtime κόστος, αλλά external data δεν ελέγχεται — ένα as δεν ελέγχει τίποτα· χρειάζεσαι runtime validation."
+    },
+    {
+      question: "Πότε βάζεις explicit type annotation;",
+      answer: "Στα όρια: function signatures, exported/public types, API contracts. Για τοπικές μεταβλητές άσε το inference — το TS συμπεραίνει τον τύπο μόνο του (let count = 0 → number)."
+    },
+    {
+      question: "Τι είναι το excess property check;",
+      answer: "Όταν περνάς object literal ΑΠΕΥΘΕΙΑΣ, το TS ελέγχει αυστηρά για έξτρα properties (πιάνει typos). Μέσω μεταβλητής ισχύει το χαλαρό structural rule (αρκεί να καλύπτεται το σχήμα)."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Τύπωσε ένα domain model"
+  scenario="Πάρε ένα μικρό domain (π.χ. tasks ή products) και φτιάξε καθαρά typed models + functions, αφήνοντας τον compiler να σε προστατεύει."
+  outcomes={[
+    "Να ορίζεις interfaces για data models.",
+    "Να διαλέγεις type vs interface συνειδητά.",
+    "Να αφήνεις το inference να δουλέψει και να βάζεις types στα όρια."
+  ]}
+  steps={[
+    "Όρισε interface για το βασικό model (id, title, optional fields με ?).",
+    "Όρισε ένα type alias για ένα union (π.χ. status).",
+    "Γράψε typed functions με params + return types.",
+    "Δοκίμασε να περάσεις object με έξτρα πεδίο απευθείας και δες το excess property check.",
+    "Πρόσπαθησε ένα as σε λάθος shape και κατάλαβε γιατί δεν σε σώζει στη runtime."
+  ]}
+  checkpoints={[
+    "Δεν χρησιμοποιείς any για να περάσεις το πρόβλημα.",
+    "Τα optional fields έχουν πραγματικό λόγο.",
+    "Τα types μπαίνουν στα όρια, όχι παντού.",
+    "Καταλαβαίνεις ότι το as δεν ελέγχει runtime δεδομένα."
+  ]}
+  mistakes={[
+    "Να βάζεις explicit type παντού ενώ το inference αρκεί.",
+    "Να μπερδεύεις type erasure με 'το TS ελέγχει runtime'.",
+    "Να εμπιστεύεσαι as MyType για δεδομένα από fetch.",
+    "Να διαλέγεις type/interface τυχαία χωρίς συνέπεια."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν εξηγείς το structural typing, διαλέγεις type vs interface, και ξέρεις γιατί τα types δεν προστατεύουν runtime δεδομένα."
+/>

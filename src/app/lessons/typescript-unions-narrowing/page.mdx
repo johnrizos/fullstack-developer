@@ -1,0 +1,210 @@
+# Unions, Narrowing & Type Guards
+
+Τα union types είναι το καθημερινό εργαλείο του TypeScript και το θεμέλιο των πιο δυνατών patterns. Αυτό το μάθημα καλύπτει: literal unions (και γιατί αντικαθιστούν τα `enum`), το `as const`, narrowing, **discriminated unions** με exhaustiveness/`never`, και **custom type guards** — όλα όσα χρειάζεσαι για να μοντελοποιείς καταστάσεις ώστε ο compiler να κάνει τα invalid states αδύνατα να γραφτούν.
+
+## Union types & narrowing
+
+Ένα union λέει «μία από αυτές τις δυνατότητες»:
+
+```ts
+type TaskStatus = "todo" | "doing" | "done";
+```
+
+Με unions έρχεται το **narrowing** — ο compiler «στενεύει» τον τύπο καθώς ελέγχεις, χωρίς casts:
+
+```ts
+function describe(value: string | number | null) {
+  if (value === null) return "empty";        // εδώ: null
+  if (typeof value === "string") {
+    return value.toUpperCase();              // εδώ: string
+  }
+  return value.toFixed(2);                   // εδώ: number
+}
+```
+
+Τα εργαλεία narrowing: `typeof` (primitives), `instanceof` (classes), `in` (ύπαρξη property), ισότητα με literal, και **custom type guards** (παρακάτω).
+
+## enum vs `as const` vs literal unions
+
+Το TypeScript έχει `enum`, αλλά στα modern codebases συχνά αποφεύγεται:
+
+```ts
+enum Status { Todo, Doing, Done }   // παράγει runtime object· number enums έχουν reverse mapping
+```
+
+Τα **literal unions** το αντικαθιστούν: σκέτα strings στη runtime, μηδενικό overhead, εύκολο JSON, καμία ανάγκη import. Όταν θες και τις **τιμές** ως object (όχι μόνο τον τύπο), το pattern είναι `as const`:
+
+```ts
+const STATUS = ["todo", "doing", "done"] as const;
+type Status = (typeof STATUS)[number]; // "todo" | "doing" | "done" — παράγεται από τον πίνακα
+
+const ROLES = { admin: "admin", user: "user" } as const;
+type Role = (typeof ROLES)[keyof typeof ROLES];
+```
+
+Το `as const` «παγώνει» μια τιμή στον **πιο στενό** τύπο (literal, readonly), αντί να την πλατύνει σε `string`/`string[]`. Έτσι έχεις ένα source of truth και για τιμές και για τύπους.
+
+> Πότε `enum`; Αν η ομάδα/κώδικας ήδη το χρησιμοποιεί, ή θες named numeric constants. Για νέα fullstack apps, literal unions ή `as const` objects είναι η συνήθης σύσταση.
+
+## Discriminated unions — το πιο δυνατό pattern
+
+Αυτό ξεχωρίζει όσους «γράφουν TypeScript» από όσους τον αξιοποιούν. Ένα κοινό literal field (ο **discriminant**) κάνει τα invalid states αδύνατα:
+
+```ts
+type ApiResult<T> =
+  | { status: "loading" }
+  | { status: "success"; data: T }
+  | { status: "error"; message: string };
+
+function render(result: ApiResult<string[]>) {
+  switch (result.status) {
+    case "loading":
+      return "Loading…";
+    case "success":
+      return result.data.length;     // ✅ το data υπάρχει ΜΟΝΟ εδώ
+    case "error":
+      return result.message;         // ✅ το message υπάρχει ΜΟΝΟ εδώ
+  }
+}
+```
+
+Σύγκρινε με το «αφελές» `{ loading: boolean; data?: T; error?: string }` — εκεί τίποτα δεν εμποδίζει `loading: true` μαζί με `error`. Με το discriminated union, ο compiler **αποδεικνύει** ότι χειρίστηκες κάθε περίπτωση.
+
+## Exhaustiveness checking με `never`
+
+Το `never` είναι ο τύπος του «αδύνατου» — τιμή που δεν μπορεί να υπάρξει. Η πρακτική του χρήση: αν προσθέσεις νέο μέλος στο union και ξεχάσεις ένα case, ο compiler το πιάνει:
+
+```ts
+function render(result: ApiResult<string[]>) {
+  switch (result.status) {
+    case "loading": return "…";
+    case "success": return "ok";
+    case "error":   return "err";
+    default: {
+      const unreachable: never = result; // ❌ compile error αν έμεινε case εκτός
+      return unreachable;
+    }
+  }
+}
+```
+
+## Custom type guards (`x is Foo`)
+
+Όταν το narrowing δεν προκύπτει αυτόματα, γράφεις δική σου **type predicate** function που επιστρέφει `param is Type`:
+
+```ts
+interface Cat { meow: () => void }
+interface Dog { bark: () => void }
+
+function isCat(animal: Cat | Dog): animal is Cat {
+  return "meow" in animal;
+}
+
+function speak(animal: Cat | Dog) {
+  if (isCat(animal)) {
+    animal.meow();   // ✅ ο compiler ξέρει: Cat
+  } else {
+    animal.bark();   // ✅ εδώ: Dog
+  }
+}
+```
+
+Το `animal is Cat` λέει στον compiler: «αν αυτή η function γυρίσει `true`, ο τύπος είναι `Cat`». Χρήσιμο για validation, για unknown data, και για να καθαρίσεις σύνθετο narrowing σε επαναχρησιμοποιήσιμη function.
+
+<PredictOutput
+  title="Narrowing drill"
+  code={`type Shape =
+  | { kind: "circle"; radius: number }
+  | { kind: "square"; side: number };
+
+function area(shape: Shape) {
+  if (shape.kind === "circle") {
+    return Math.PI * shape.radius ** 2;
+  }
+  return shape.side ** 2;
+}
+
+area({ kind: "circle", side: 5 });`}
+  options={[
+    "Compile error — ο circle δεν έχει side",
+    "Τρέχει και επιστρέφει NaN",
+    "Compile ΟΚ, runtime error",
+    "Επιστρέφει 25"
+  ]}
+  correctOptionIndex={0}
+  answer="Compile error"
+  explanation="Το { kind: 'circle', side: 5 } δεν ταιριάζει σε κανένα μέλος: ο circle απαιτεί radius. Ο compiler το κόβει ΠΡΙΝ τρέξει — αυτή είναι η αξία των discriminated unions."
+/>
+
+<Exercise
+  question="Τι κάνει μια function με return type `value is User`;"
+  options={[
+    "Μετατρέπει το value σε User στη runtime.",
+    "Είναι custom type guard: αν επιστρέψει true, ο compiler κάνει narrow το value σε User.",
+    "Πετάει error αν το value δεν είναι User."
+  ]}
+  correctOptionIndex={1}
+  explanation="Είναι type predicate (custom type guard). Δεν μετατρέπει τίποτα — απλώς πληροφορεί τον compiler ότι, στο branch όπου επέστρεψε true, ο τύπος είναι στενεμένος σε User. Εσύ γράφεις τη runtime λογική (π.χ. 'name' in value)."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you model state safely in TypeScript?»
+
+> Literal unions over enums — they're plain strings at runtime, zero overhead, easy JSON, no import needed; when I need the values as an object too I use `as const` and derive the type from it, so there's one source of truth. For state with variants I reach for discriminated unions: a shared literal field like `status` means the compiler narrows each branch and makes invalid combinations — loading and error at once — impossible to even write. I add an exhaustiveness check by assigning the leftover to `never` in the default case, so adding a new variant turns every unhandled switch into a compile error. And when narrowing isn't automatic, I write a custom type guard — a function returning `x is Foo` — to teach the compiler the shape.
+
+<Flashcards
+  title="Unions & narrowing — interview drills"
+  cards={[
+    {
+      question: "Γιατί literal unions αντί για enum;",
+      answer: "Σκέτα strings στη runtime (μηδενικό overhead, εύκολο JSON), structural σύγκριση, χωρίς import. Τα enums παράγουν runtime object & number enums έχουν reverse mapping. Σύσταση: literal unions ή as const objects."
+    },
+    {
+      question: "Τι κάνει το as const;",
+      answer: "'Παγώνει' μια τιμή στον πιο στενό τύπο (literal, readonly) αντί να την πλατύνει (string/string[]). Σου δίνει values + types από ένα source of truth: type X = (typeof ARR)[number]."
+    },
+    {
+      question: "Τι είναι discriminated union;",
+      answer: "Union όπου κάθε μέλος έχει κοινό literal field (discriminant, π.χ. status). Ο compiler narrow-άρει ανά branch· invalid συνδυασμοί (loading+error) γίνονται αδύνατο να γραφτούν. Ιδανικό για UI/API states."
+    },
+    {
+      question: "Τι είναι το never & exhaustiveness checking;",
+      answer: "never = ο τύπος του αδύνατου. Αναθέτεις το 'υπόλοιπο' union σε never στο default ενός switch· αν προστεθεί νέο μέλος που ξέχασες, γίνεται compile error. Έτσι ο compiler σε αναγκάζει να χειριστείς κάθε case."
+    },
+    {
+      question: "Τι είναι custom type guard;",
+      answer: "Function με return type 'param is Type' (type predicate). Αν επιστρέψει true, ο compiler κάνει narrow τον τύπο στο αντίστοιχο branch. Χρήσιμο όπου το typeof/in δεν αρκεί ή για επαναχρησιμοποιήσιμο narrowing."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Μοντελοποίησε states που δεν σπάνε"
+  scenario="Πάρε ένα data-fetching flow και μοντελοποίησέ το με discriminated union ώστε ο compiler να κάνει τα invalid states αδύνατα."
+  outcomes={[
+    "Να ορίζεις literal unions / as const αντί για enum.",
+    "Να χτίζεις discriminated unions με exhaustiveness.",
+    "Να γράφεις custom type guards όπου χρειάζεται."
+  ]}
+  steps={[
+    "Όρισε ApiResult ως discriminated union (loading | success | error).",
+    "Γράψε render με switch και default: const _: never = result.",
+    "Πρόσθεσε νέο state (π.χ. 'empty') και δες πού σε αναγκάζει ο compiler.",
+    "Όρισε STATUS με as const και παράγαγε τον τύπο από αυτό.",
+    "Γράψε ένα custom type guard isError(result) και χρησιμοποίησέ το."
+  ]}
+  checkpoints={[
+    "Invalid συνδυασμοί states δεν γράφονται καν.",
+    "Νέο state σπάει το build μέχρι να το χειριστείς (never).",
+    "Ο τύπος του status παράγεται από ένα source of truth.",
+    "Το type guard κάνει σωστά narrow τον τύπο."
+  ]}
+  mistakes={[
+    "Το 'αφελές' { loading, data?, error? } που επιτρέπει invalid states.",
+    "enum εκεί που literal union/as const είναι απλούστερο.",
+    "Να ξεχνάς το never default → χάνεις το exhaustiveness.",
+    "Να γράφεις casts (as) αντί για σωστό narrowing/type guard."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μοντελοποιείς states με discriminated unions, εξασφαλίζεις exhaustiveness με never, και γράφεις custom type guards."
+/>

@@ -1,0 +1,172 @@
+# Typing Functions & Async
+
+Οι functions είναι το σημείο όπου το TypeScript δίνει τη μεγαλύτερη αξία: το signature είναι το «συμβόλαιο» — τι μπαίνει, τι βγαίνει. Αυτό το μάθημα καλύπτει typing παραμέτρων (optional/default/rest), return types, function types ως values, overloads, και — κρίσιμο για fullstack — το typing του **async** κώδικα με `Promise<T>` και `Awaited<T>`.
+
+## Παράμετροι: optional, default, rest
+
+```ts
+function createUser(
+  name: string,
+  age?: number,                // optional — γίνεται number | undefined
+  role: string = "user",       // default — ο τύπος συμπεραίνεται (string)
+  ...tags: string[]            // rest — μαζεύει τα υπόλοιπα σε array
+): void {}
+
+createUser("Ada");
+createUser("Ada", 30, "admin", "vip", "beta");
+```
+
+Δύο κανόνες: τα **optional** (`?`) και τα **default** params μπαίνουν μετά τα required· ένα optional param έχει τύπο `T | undefined`, άρα ο compiler σε αναγκάζει να το χειριστείς.
+
+## Return types: άσε το inference, εκτός από τα όρια
+
+Ο compiler συμπεραίνει το return type. Καλό για τοπικές functions· για **exported / public** functions βάλε explicit return type — λειτουργεί ως συμβόλαιο και πιάνει λάθη μέσα στη function:
+
+```ts
+function add(a: number, b: number): number {
+  return a + b;
+}
+
+function logMessage(msg: string): void {} // δεν επιστρέφει τίποτα χρήσιμο
+function fail(): never { throw new Error(); } // δεν επιστρέφει ΠΟΤΕ (throw/infinite)
+```
+
+`void` = «δεν επιστρέφει χρήσιμη τιμή». `never` = «δεν επιστρέφει καθόλου» (throw ή ατέρμονο).
+
+## Function types ως values
+
+Μια function είναι τιμή — έχει και αυτή τύπο. Χρήσιμο για callbacks/handlers:
+
+```ts
+type Transformer = (input: string) => string;
+
+const upper: Transformer = (s) => s.toUpperCase(); // το s είναι string από το type
+function apply(fn: (n: number) => number, x: number) {
+  return fn(x);
+}
+```
+
+## Overloads — διαφορετικά signatures για ίδια function
+
+Όταν μια function συμπεριφέρεται διαφορετικά ανά είσοδο, δηλώνεις πολλαπλά **overload signatures** πάνω από μία implementation:
+
+```ts
+function parse(value: string): string[];
+function parse(value: number): number;
+function parse(value: string | number): string[] | number {
+  return typeof value === "string" ? value.split(",") : value * 2;
+}
+
+const a = parse("a,b,c"); // τύπος: string[]
+const b = parse(10);      // τύπος: number
+```
+
+Συχνά ένα union/generic είναι απλούστερο από overloads — κράτα τα overloads για όταν η σχέση input→output δεν εκφράζεται αλλιώς.
+
+## Typing async κώδικα
+
+Μια `async` function επιστρέφει **πάντα** `Promise<T>`. Το `await` «ξετυλίγει» το `T`:
+
+```ts
+async function getUser(id: string): Promise<User> {
+  const res = await fetch(`/api/users/${id}`);
+  return res.json() as Promise<User>;
+}
+
+const user = await getUser("1"); // τύπος: User (το Promise ξετυλίχτηκε)
+```
+
+Το `Awaited<T>` παίρνει τον «ξετυλιγμένο» τύπο ενός Promise — χρήσιμο σε generics και utility types:
+
+```ts
+type User = Awaited<ReturnType<typeof getUser>>; // User (όχι Promise<User>)
+```
+
+> Συχνό λάθος: να ξεχνάς ότι το return type μιας `async` function είναι `Promise<T>`, όχι `T`. Αν γράψεις `: User` σε async function, ο compiler διαμαρτύρεται — βάλε `: Promise<User>`.
+
+<PredictOutput
+  title="Async return type"
+  code={`async function load(): Promise<number> {
+  return 42;
+}
+
+const result = load();
+// Τι τύπο έχει το result (χωρίς await);`}
+  options={["number", "Promise<number>", "42", "void"]}
+  correctOptionIndex={1}
+  answer="Promise<number>"
+  explanation="Χωρίς await, το result είναι Promise<number> — η async function πάντα τυλίγει την τιμή σε Promise. Μόνο μετά από await (ή .then) παίρνεις το number. Γι' αυτό το return type μιας async function δηλώνεται ως Promise<T>."
+/>
+
+<Exercise
+  question="Πότε χρησιμοποιείς never ως return type;"
+  options={[
+    "Όταν η function δεν επιστρέφει χρήσιμη τιμή (π.χ. log).",
+    "Όταν η function δεν επιστρέφει ΠΟΤΕ — πάντα throw ή ατέρμονος βρόχος.",
+    "Όταν η function είναι async."
+  ]}
+  correctOptionIndex={1}
+  explanation="void = δεν επιστρέφει χρήσιμη τιμή (αλλά τελειώνει κανονικά). never = δεν επιστρέφει ποτέ: είτε πετάει πάντα exception είτε δεν τερματίζει. Το never χρησιμεύει και στο exhaustiveness checking."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you type functions, especially async ones?»
+
+> The signature is the contract: I type the parameters and, for exported functions, the return type too — it documents intent and catches mistakes inside the body. Optional and default params come after required ones, and an optional param is `T | undefined`, so the compiler forces me to handle the missing case. `void` means no useful return; `never` means it never returns — it always throws or loops. For async, the key thing is that an `async` function always returns `Promise<T>`, so I annotate it `Promise<User>`, not `User`; `await` unwraps it, and `Awaited<T>` gives me the unwrapped type when I need it in a generic. I reach for overloads only when the input-to-output relationship can't be expressed with a union or generic.
+
+<Flashcards
+  title="Typing functions & async — interview drills"
+  cards={[
+    {
+      question: "optional vs default param;",
+      answer: "optional (age?: number) → τύπος number | undefined, μπορεί να λείπει. default (role = 'user') → αν λείπει παίρνει την default τιμή, ο τύπος συμπεραίνεται. Και τα δύο μετά τα required params."
+    },
+    {
+      question: "void vs never ως return type;",
+      answer: "void: τελειώνει κανονικά αλλά δεν επιστρέφει χρήσιμη τιμή (π.χ. log). never: δεν επιστρέφει ΠΟΤΕ — πάντα throw ή ατέρμονος βρόχος. Το never χρησιμεύει και σε exhaustiveness checks."
+    },
+    {
+      question: "Τι return type έχει μια async function;",
+      answer: "Πάντα Promise<T>. async function getUser(): Promise<User>. Το await ξετυλίγει το Promise σε User. Λάθος: να γράφεις : User σε async (ο compiler το κόβει)."
+    },
+    {
+      question: "Τι κάνει το Awaited<T>;",
+      answer: "Παίρνει τον 'ξετυλιγμένο' τύπο ενός Promise: Awaited<Promise<User>> = User. Χρήσιμο σε generics/utility, π.χ. Awaited<ReturnType<typeof getUser>>."
+    },
+    {
+      question: "Πότε function overloads;",
+      answer: "Όταν η function έχει διαφορετικό output ανά input type και η σχέση δεν εκφράζεται με union/generic. Δηλώνεις πολλαπλά signatures πάνω από μία implementation. Συχνά ένα generic είναι απλούστερο."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Τύπωσε ένα data layer"
+  scenario="Φτιάξε ένα μικρό typed data layer (fetch + transform) με σωστά typed functions, optional params και async return types."
+  outcomes={[
+    "Να τυπώνεις params (optional/default/rest) και return types.",
+    "Να τυπώνεις async functions με Promise<T>.",
+    "Να χρησιμοποιείς function types για callbacks."
+  ]}
+  steps={[
+    "Γράψε async getItems(query?: string): Promise<Item[]> με fetch.",
+    "Γράψε ένα transform callback type και πέρασέ το σε function.",
+    "Πρόσθεσε default param για page size και rest για extra filters.",
+    "Χρησιμοποίησε Awaited<ReturnType<typeof getItems>> για να πάρεις τον τύπο.",
+    "Δοκίμασε να βάλεις : Item[] (αντί Promise) σε async και δες το error."
+  ]}
+  checkpoints={[
+    "Οι async functions δηλώνουν Promise<T>.",
+    "Τα optional/default params είναι μετά τα required.",
+    "Το callback type κάνει το input typed χωρίς annotation στο call site.",
+    "Παράγεις τον τύπο των δεδομένων με Awaited αντί να τον ξαναγράφεις."
+  ]}
+  mistakes={[
+    "Να γράφεις : T αντί : Promise<T> σε async function.",
+    "Να βάζεις optional param πριν από required.",
+    "Να αφήνεις any σε callback parameters.",
+    "Overloads εκεί που ένα generic/union θα ήταν απλούστερο."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν τυπώνεις functions ως καθαρά συμβόλαια και χειρίζεσαι σωστά τα async return types."
+/>
