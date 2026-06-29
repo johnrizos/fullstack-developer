@@ -74,11 +74,16 @@ export function useSheetSync() {
         setStatus("syncing");
         const remote = await fetchProgressFromSheet(clean);
         if (remote === null) {
-          // Το fetch απέτυχε — μην προχωρήσεις σιωπηλά σαν να μην υπάρχει πρόοδος.
+          // Το fetch απέτυχε (offline/CORS/timeout) — μην προχωρήσεις σιωπηλά σαν
+          // να μην υπάρχει πρόοδος. Δείξε error και μη συνδέσεις.
           setStatus("error");
           return;
         }
         if (remote.length) mergeCompleted(remote);
+        // Το restore ολοκληρώθηκε. ΠΑΝΤΑ κλείσε το status — αλλιώς αν το remote ήταν
+        // κενό (και ο guard κόψει το auto-push) θα έμενε κολλημένο στο "syncing".
+        setStatus("success");
+        setLastSyncedAt(Date.now());
       }
 
       setSyncEmail(clean);

@@ -7,6 +7,16 @@ const SYNC_URL = process.env.NEXT_PUBLIC_SHEET_SYNC_URL;
 
 const EMAIL_KEY = "syncEmail";
 
+// Όριο για κάθε request ώστε το UI να μην κολλάει σε ατέρμονο "syncing" αν το
+// δίκτυο/Apps Script δεν απαντά.
+const REQUEST_TIMEOUT_MS = 12000;
+
+function withTimeout(ms: number): { signal: AbortSignal; clear: () => void } {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), ms);
+  return { signal: controller.signal, clear: () => clearTimeout(id) };
+}
+
 export type SheetSyncPayload = {
   email: string;
   completed: string[];
@@ -51,6 +61,7 @@ export async function syncProgressToSheet(email: string, completed: string[]): P
     updatedAt: new Date().toISOString(),
   };
 
+  const t = withTimeout(REQUEST_TIMEOUT_MS);
   try {
     const res = await fetch(SYNC_URL, {
       method: "POST",
@@ -58,11 +69,14 @@ export async function syncProgressToSheet(email: string, completed: string[]): P
       body: JSON.stringify(payload),
       redirect: "follow",
       keepalive: true,
+      signal: t.signal,
     });
     return res.ok;
   } catch {
     // π.χ. offline ή CORS στο response — το write μπορεί να πέτυχε ούτως ή άλλως.
     return false;
+  } finally {
+    t.clear();
   }
 }
 
@@ -78,9 +92,10 @@ export async function syncProgressToSheet(email: string, completed: string[]): P
 export async function fetchProgressFromSheet(email: string): Promise<string[] | null> {
   if (!SYNC_URL || !email) return null;
 
+  const t = withTimeout(REQUEST_TIMEOUT_MS);
   try {
     const url = `${SYNC_URL}?email=${encodeURIComponent(email.trim())}`;
-    const res = await fetch(url, { method: "GET", redirect: "follow" });
+    const res = await fetch(url, { method: "GET", redirect: "follow", signal: t.signal });
     if (!res.ok) return null;
     const data = await res.json();
     if (!data || data.ok === false) return null;
@@ -89,5 +104,7 @@ export async function fetchProgressFromSheet(email: string): Promise<string[] | 
       : [];
   } catch {
     return null;
+  } finally {
+    t.clear();
   }
 }
