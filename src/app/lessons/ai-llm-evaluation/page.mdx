@@ -1,0 +1,127 @@
+# Evaluation: πώς ξέρεις ότι το AI feature δουλεύει
+
+Σε κανονικό κώδικα γράφεις tests: ίδιο input → ίδιο output, πέρασε ή απέτυχε. Σε ένα LLM feature αυτό σπάει — η έξοδος είναι **μη ντετερμινιστική** και «σωστό» σημαίνει «αρκετά καλό», όχι «ακριβώς ίσο». Πώς, λοιπόν, ξέρεις ότι μια αλλαγή στο prompt βελτίωσε ή χάλασε το feature; Με **evaluation (evals)**: ένα συστηματικό τρόπο να μετράς ποιότητα. Είναι αυτό που ξεχωρίζει το «έπαιξε στο demo» από το «το εμπιστεύομαι σε production», και ρωτιέται όλο και πιο πολύ σε συνεντεύξεις.
+
+## Γιατί δεν αρκούν τα κλασικά tests
+
+- **Μη ντετερμινισμός**: η ίδια κλήση δίνει διαφορετική διατύπωση κάθε φορά → `assert output === expected` αποτυγχάνει άδικα.
+- **«Σωστό» = ασαφές**: μια σύνοψη μπορεί να είναι σωστή με χίλιους τρόπους.
+- **Regressions είναι αόρατα**: αλλάζεις το prompt για να φτιάξεις ένα case και χαλάς σιωπηλά πέντε άλλα. Χωρίς evals δεν το βλέπεις.
+
+## Το eval dataset: η καρδιά της δουλειάς
+
+Ένα eval ξεκινά από ένα **dataset** αντιπροσωπευτικών περιπτώσεων: input + κριτήριο επιτυχίας. Δεν χρειάζεται να είναι τεράστιο — 20-50 καλά διαλεγμένα cases (συμπεριλαμβανομένων edge cases και παλιών bugs) πιάνουν τις περισσότερες regressions.
+
+```txt
+case 1: input "Γιάννης, g@x.com"      → expect: name="Γιάννης", email="g@x.com"
+case 2: input "χωρίς email"           → expect: email=null (όχι hallucination)
+case 3: input "δύο emails"            → expect: το πρώτο / σωστός χειρισμός
+...
+```
+
+## Τρόποι βαθμολόγησης (graders)
+
+Ανάλογα με το task:
+
+- **Exact / structured match** — όταν η έξοδος είναι δομημένη (structured output): ελέγχεις πεδία. Ντετερμινιστικό, φθηνό, αξιόπιστο. Προτίμησέ το όπου γίνεται.
+- **Programmatic checks** — κανόνες: «περιέχει το όνομα προϊόντος;», «είναι έγκυρο JSON;», «μήκος < 200;», regex.
+- **LLM-as-judge** — για ελεύθερο κείμενο (σύνοψη, τόνος): ένα **δεύτερο** LLM call βαθμολογεί την έξοδο με βάση ρητό rubric («1-5, βασίζεται στις πηγές; χωρίς hallucinations;»). Χρήσιμο αλλά πιο ακριβό/θορυβώδες — γράψε σαφή, μετρήσιμα κριτήρια.
+
+> Κανόνας: όσο πιο **δομημένη** κάνεις την έξοδο (μάθημα prompting), τόσο πιο φθηνά και αξιόπιστα την αξιολογείς. Το LLM-as-judge είναι το τελευταίο καταφύγιο για το πραγματικά ελεύθερο κείμενο.
+
+## Το eval loop στην πράξη
+
+```txt
+1. Φτιάξε dataset (cases + κριτήρια)
+2. Τρέξε το feature σε όλα τα cases
+3. Βαθμολόγησε (exact / programmatic / LLM-judge)
+4. Δες το score (π.χ. 42/50) — αυτό είναι το baseline
+5. Άλλαξε prompt/model → ξανατρέξε → σύγκρινε score
+6. Κράτα την αλλαγή ΜΟΝΟ αν το συνολικό score ανέβηκε
+```
+
+Έτσι η βελτίωση γίνεται **μετρήσιμη** αντί για «μου φάνηκε καλύτερο». Και πιάνεις τα regressions: αν φτιάχνεις το case 7 αλλά το score έπεσε, χάλασες κάτι αλλού.
+
+<PredictOutput
+  title="Γιατί σπάει το κλασικό test;"
+  code={`Γράφεις: assert summary === "Το προϊόν είναι καλό."
+Τρέχεις το feature 3 φορές, παίρνεις:
+"Καλό προϊόν." / "Είναι ένα καλό προϊόν." / "Το προϊόν είναι καλό."`}
+  options={["Περνάει και τις 3 φορές", "Αποτυγχάνει άδικα — μη ντετερμινιστική διατύπωση", "Ρίχνει syntax error"]}
+  correctOptionIndex={1}
+  answer="Αποτυγχάνει άδικα — μη ντετερμινιστική διατύπωση"
+  explanation="Η έξοδος είναι σωστή αλλά διατυπωμένη διαφορετικά κάθε φορά, οπότε το exact-match assert αποτυγχάνει άδικα. Γι' αυτό χρειάζεσαι evals: structured/programmatic checks ή LLM-as-judge με rubric, αντί για '=== expected' σε ελεύθερο κείμενο."
+/>
+
+<Exercise
+  question="Πότε χρησιμοποιείς LLM-as-judge αντί για programmatic check;"
+  options={[
+    "Πάντα — είναι το πιο ακριβές.",
+    "Όταν η έξοδος είναι ελεύθερο κείμενο που δεν αξιολογείται με απλούς κανόνες (π.χ. ποιότητα σύνοψης/τόνος).",
+    "Ποτέ — τα LLM δεν μπορούν να βαθμολογήσουν."
+  ]}
+  correctOptionIndex={1}
+  explanation="Για δομημένη/ελέγξιμη έξοδο προτιμάς exact ή programmatic checks (φθηνά, αξιόπιστα). Το LLM-as-judge το κρατάς για ελεύθερο κείμενο όπου χρειάζεσαι κρίση ποιότητας/τόνου — με σαφές, μετρήσιμο rubric, γιατί είναι πιο ακριβό και θορυβώδες."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you test an LLM-powered feature?»
+
+> Classic assertions break because the output is non-deterministic and "correct" is fuzzy — the same call phrases the answer differently each time. So I build an eval: a dataset of representative cases, each with input and a success criterion, including edge cases and past bugs. I run the feature over all of them and score with the cheapest grader that fits — exact or field-level match when the output is structured, programmatic rules and regex where I can express the criterion, and LLM-as-judge with an explicit rubric only for genuinely free text like summaries. The whole point is to make quality a number: I get a baseline score, change the prompt or model, re-run, and keep the change only if the overall score went up. That's also how I catch regressions — fixing one case while silently breaking five others shows up immediately as a lower score.
+
+<Flashcards
+  title="Evaluation — interview drills"
+  cards={[
+    {
+      question: "Γιατί δεν αρκούν τα κλασικά tests σε LLM feature;",
+      answer: "Μη ντετερμινιστική έξοδος + 'σωστό' = ασαφές → exact-match assert αποτυγχάνει άδικα. Και τα regressions είναι αόρατα: φτιάχνεις ένα case και χαλάς σιωπηλά άλλα."
+    },
+    {
+      question: "Τι είναι eval dataset;",
+      answer: "Σύνολο αντιπροσωπευτικών cases (input + κριτήριο επιτυχίας), με edge cases & παλιά bugs. 20-50 καλά cases αρκούν για να πιάσεις τις περισσότερες regressions."
+    },
+    {
+      question: "Ποιοι είναι οι βασικοί graders;",
+      answer: "Exact/structured match (δομημένη έξοδος — φθηνό, αξιόπιστο)· programmatic checks (κανόνες/regex)· LLM-as-judge (ελεύθερο κείμενο, με rubric — πιο ακριβό/θορυβώδες)."
+    },
+    {
+      question: "Πώς βελτιώνεις ένα feature μετρήσιμα;",
+      answer: "Baseline score στο dataset → άλλαξε prompt/model → ξανατρέξε → σύγκρινε. Κράτα την αλλαγή μόνο αν το συνολικό score ανέβηκε. Έτσι πιάνεις και τα regressions."
+    },
+    {
+      question: "Πώς κάνεις την αξιολόγηση φθηνή & αξιόπιστη;",
+      answer: "Κάνε την έξοδο όσο πιο δομημένη γίνεται (structured output) ώστε να την ελέγχεις με exact/programmatic checks. Κράτα το LLM-as-judge για το πραγματικά ελεύθερο κείμενο."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Φτιάξε ένα eval για το feature σου"
+  scenario="Πάρε ένα AI feature που έφτιαξες (π.χ. το extraction του prompting lesson) και χτίσε ένα eval που μετρά αν μια αλλαγή το βελτιώνει."
+  outcomes={[
+    "Να φτιάχνεις eval dataset με κριτήρια.",
+    "Να διαλέγεις κατάλληλο grader ανά case.",
+    "Να συγκρίνεις scores για να αποφασίζεις αλλαγές."
+  ]}
+  steps={[
+    "Μάζεψε 20-30 cases (input + αναμενόμενο), με edge cases & παλιά bugs.",
+    "Διάλεξε grader: structured/exact για τα δομημένα, LLM-judge για ελεύθερο κείμενο.",
+    "Τρέξε το feature σε όλα, βγάλε baseline score.",
+    "Άλλαξε κάτι (prompt ή model), ξανατρέξε, σύγκρινε score.",
+    "Κράτα την αλλαγή μόνο αν ανέβηκε το συνολικό score."
+  ]}
+  checkpoints={[
+    "Έχεις αριθμητικό baseline, όχι 'μου φάνηκε καλό'.",
+    "Κάθε case έχει σαφές κριτήριο επιτυχίας.",
+    "Πιάνεις regression: αν φτιάξεις ένα case αλλά πέσει το score, το βλέπεις.",
+    "Χρησιμοποιείς LLM-judge μόνο όπου χρειάζεται."
+  ]}
+  mistakes={[
+    "Exact-match assert σε ελεύθερο κείμενο.",
+    "Να κρίνεις αλλαγές 'με το μάτι' σε 2-3 cases.",
+    "LLM-as-judge χωρίς σαφές, μετρήσιμο rubric.",
+    "Να ξεχνάς τα edge cases και τα παλιά bugs στο dataset."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μπορείς να στήσεις ένα eval, να βγάλεις baseline score, και να αποφασίζεις αλλαγές με βάση μετρήσιμη βελτίωση αντί για εντύπωση."
+/>

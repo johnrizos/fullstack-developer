@@ -1,0 +1,173 @@
+# Streaming responses στο UI
+
+Μια μεγάλη LLM απάντηση μπορεί να αργήσει δευτερόλεπτα. Αν περιμένεις όλο το κείμενο πριν δείξεις οτιδήποτε, ο χρήστης βλέπει «παγωμένη» οθόνη και νομίζει ότι κόλλησε. Το **streaming** στέλνει την απάντηση **token-token**, ώστε το UI να τη γράφει σαν να «πληκτρολογείται» — η εμπειρία που ξέρεις από κάθε AI chat. Αυτό το μάθημα δείχνει το πλήρες end-to-end pattern: LLM → backend route → browser, αξιοποιώντας ακριβώς τα concepts που ήδη ξέρεις (route handlers, `ReadableStream`, `fetch` με reader, React state).
+
+## Γιατί streaming (και τι ΔΕΝ λύνει)
+
+- **Λύνει το perceived latency**: η πρώτη λέξη εμφανίζεται σε ~1 δευτερόλεπτο αντί να περιμένεις 10s για όλη την απάντηση. Time-to-first-token, όχι time-to-full-answer.
+- **ΔΕΝ μειώνει το κόστος** ούτε τον συνολικό χρόνο παραγωγής — απλώς τον **κρύβει** δείχνοντας πρόοδο.
+- **Είναι σχεδόν υποχρεωτικό** για interactive chat και για μεγάλες απαντήσεις (αλλιώς ρισκάρεις και HTTP timeouts σε πολύ μεγάλα outputs).
+
+## Πώς δουλεύει το stream στο API
+
+Αντί για ένα response object, το SDK σου δίνει μια ροή από **events**. Τα events που σε ενδιαφέρουν για το κείμενο είναι τα `content_block_delta` με `delta.type === "text_delta"` — το καθένα φέρνει ένα μικρό κομμάτι κειμένου:
+
+```txt
+message_start          → ξεκινά η απάντηση
+content_block_start    → ξεκινά ένα text block
+content_block_delta    → "Γ"      ┐
+content_block_delta    → "ει"     ├─ τα κομμάτια που γράφεις στο UI
+content_block_delta    → "ά σου"  ┘
+content_block_stop     → τέλος block
+message_stop           → τέλος απάντησης
+```
+
+## Backend: stream από το LLM, προώθηση στον client
+
+Ένα Next.js route handler κάνει stream από το LLM και προωθεί τα text deltas στον browser ως `ReadableStream`:
+
+```ts
+// app/api/chat/route.ts
+import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic();
+
+export async function POST(req: Request) {
+  const { messages } = await req.json();
+
+  const stream = client.messages.stream({
+    model: "claude-opus-4-8",
+    max_tokens: 1024,
+    messages,
+  });
+
+  // Μετέτρεψε τα text deltas σε ReadableStream για τον browser
+  const encoder = new TextEncoder();
+  const body = new ReadableStream({
+    async start(controller) {
+      for await (const event of stream) {
+        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+          controller.enqueue(encoder.encode(event.delta.text));
+        }
+      }
+      controller.close();
+    },
+  });
+
+  return new Response(body, {
+    headers: { "Content-Type": "text/plain; charset=utf-8" },
+  });
+}
+```
+
+> Εδώ προωθώ **σκέτο κείμενο**. Σε production συχνά στέλνεις δομημένα events (SSE / JSON lines) ώστε να μπορείς να στείλεις και metadata (π.χ. tool calls, usage, error). Για το βασικό chat, το plain text αρκεί.
+
+## Frontend: διάβασε το stream και ενημέρωνε state
+
+Στον client διαβάζεις το body με reader και ενημερώνεις το state σε κάθε chunk — έτσι το κείμενο «πληκτρολογείται»:
+
+```tsx
+async function send(messages) {
+  const res = await fetch("/api/chat", {
+    method: "POST",
+    body: JSON.stringify({ messages }),
+  });
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    text += decoder.decode(value, { stream: true });
+    setAnswer(text); // ενημερώνεται σε κάθε chunk → "πληκτρολογείται"
+  }
+}
+```
+
+Το `{ stream: true }` στο `decode` είναι σημαντικό: τα chunks μπορεί να κόβονται στη μέση ενός multi-byte χαρακτήρα (π.χ. ελληνικό γράμμα), και ο decoder κρατά το «μισό» μέχρι να έρθει το υπόλοιπο.
+
+<PredictOutput
+  title="Τι κρύβει το streaming;"
+  code={`Μια απάντηση παίρνει 8 δευτερόλεπτα να παραχθεί πλήρως.
+Με streaming, η πρώτη λέξη εμφανίζεται στο ~1ο δευτερόλεπτο.
+Πόσο κοστίζει η κλήση σε σχέση με χωρίς streaming;`}
+  options={["Λιγότερο — το streaming μειώνει tokens", "Το ίδιο — απλώς κρύβει το latency", "Περισσότερο — λόγω overhead"]}
+  correctOptionIndex={1}
+  answer="Το ίδιο — απλώς κρύβει το latency"
+  explanation="Το streaming δεν αλλάζει πόσα tokens παράγονται ή πόσο κοστίζουν. Παράγεται ακριβώς το ίδιο κείμενο· απλώς το βλέπεις σταδιακά. Βελτιώνει το perceived latency (UX), όχι το κόστος ή τον πραγματικό χρόνο παραγωγής."
+/>
+
+<Exercise
+  question="Ποια events του stream γράφεις στο UI ως κείμενο;"
+  options={[
+    "message_start και message_stop",
+    "content_block_delta με delta.type === 'text_delta'",
+    "Όλα τα events αυτούσια"
+  ]}
+  correctOptionIndex={1}
+  explanation="Τα κομμάτια κειμένου έρχονται ως content_block_delta με delta.type === 'text_delta' (το delta.text έχει το κομμάτι). Τα message_start/stop και content_block_start/stop είναι δομικά events — σηματοδοτούν αρχή/τέλος, δεν περιέχουν κείμενο προς εμφάνιση."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you stream an AI response to the browser?»
+
+> The model produces tokens incrementally, so I stream instead of waiting for the full text. On the backend I open a streaming request to the LLM, iterate its events, and forward each text delta — the `content_block_delta` events with a `text_delta` — into a `ReadableStream` that I return from my route handler. On the client I read the response body with a reader, decode each chunk with the streaming flag set so multi-byte characters aren't split, and append it to React state, which re-renders so the text appears as it's typed. It improves perceived latency — first token in about a second instead of waiting for the whole answer — but it doesn't change cost or total generation time; it just hides the wait. For richer UIs I'd forward structured events (SSE/JSON lines) so I can also stream tool calls, usage, and errors.
+
+<Flashcards
+  title="Streaming — interview drills"
+  cards={[
+    {
+      question: "Τι βελτιώνει το streaming;",
+      answer: "Το perceived latency (UX): η πρώτη λέξη εμφανίζεται γρήγορα αντί για παγωμένη οθόνη. ΔΕΝ μειώνει κόστος ή πραγματικό χρόνο παραγωγής — απλώς κρύβει το latency δείχνοντας πρόοδο."
+    },
+    {
+      question: "Ποια events φέρνουν το κείμενο;",
+      answer: "content_block_delta με delta.type === 'text_delta'· το delta.text έχει το κομμάτι. Τα message_start/stop, content_block_start/stop είναι δομικά (αρχή/τέλος), χωρίς κείμενο."
+    },
+    {
+      question: "Πώς προωθείς το stream από backend σε browser;",
+      answer: "Iterate τα events του LLM stream και enqueue τα text deltas σε ένα ReadableStream που επιστρέφεις από το route handler (Content-Type text/plain ή SSE)."
+    },
+    {
+      question: "Πώς διαβάζεις το stream στον client;",
+      answer: "res.body.getReader() + TextDecoder. Loop reader.read()· decode(value, { stream: true }) (για να μην κόβονται multi-byte χαρακτήρες)· append στο state σε κάθε chunk."
+    },
+    {
+      question: "Γιατί { stream: true } στο decode;",
+      answer: "Τα chunks μπορεί να κόβονται στη μέση ενός multi-byte χαρακτήρα (π.χ. ελληνικό). Το flag κρατά το ημιτελές byte sequence μέχρι να έρθει το υπόλοιπο, αποφεύγοντας σκουπίδια στο κείμενο."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Streaming chat end-to-end"
+  scenario="Χτίσε ένα chat UI όπου η απάντηση εμφανίζεται σταδιακά καθώς έρχεται από το LLM, με σωστό handling των chunks."
+  outcomes={[
+    "Να κάνεις stream από το LLM και να το προωθείς ως ReadableStream.",
+    "Να διαβάζεις το stream στον client και να ενημερώνεις state σταδιακά.",
+    "Να χειρίζεσαι σωστά τα chunks (multi-byte, τέλος stream)."
+  ]}
+  steps={[
+    "Route handler: client.messages.stream(...) και enqueue τα text_delta σε ReadableStream.",
+    "Επέστρεψε Response με το stream body και κατάλληλο Content-Type.",
+    "Client: fetch → res.body.getReader(), loop με reader.read().",
+    "decode(value, { stream: true }) και append στο state σε κάθε chunk.",
+    "Δοκίμασε με μεγάλη απάντηση και με ελληνικά για να δεις σωστά multi-byte."
+  ]}
+  checkpoints={[
+    "Η απάντηση εμφανίζεται σταδιακά, όχι μονομιάς στο τέλος.",
+    "Τα ελληνικά εμφανίζονται σωστά (όχι σπασμένοι χαρακτήρες).",
+    "Όταν τελειώνει το stream (done) σταματάς το loop καθαρά.",
+    "Το key παραμένει μόνο στο backend."
+  ]}
+  mistakes={[
+    "Να περιμένεις όλη την απάντηση πριν δείξεις οτιδήποτε (κακό UX).",
+    "Να ξεχάσεις το { stream: true } → σπασμένοι ελληνικοί χαρακτήρες.",
+    "Να γράφεις στο UI και τα δομικά events (message_start κ.λπ.).",
+    "Να νομίζεις ότι το streaming μειώνει κόστος/χρόνο."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μπορείς να στήσεις streaming chat end-to-end και να εξηγείς ότι βελτιώνει perceived latency, όχι κόστος."
+/>

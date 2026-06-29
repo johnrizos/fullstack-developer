@@ -1,0 +1,128 @@
+# RAG: δώσε στο μοντέλο τα ΔΙΚΑ σου δεδομένα
+
+Το μοντέλο δεν ξέρει το περιεχόμενο της εταιρείας/εφαρμογής σου, ούτε τα πιο πρόσφατα δεδομένα. **RAG** (Retrieval-Augmented Generation) λύνει αυτό: αντί να «ξέρει», του **δίνεις** το σχετικό κείμενο μέσα στο prompt τη στιγμή της ερώτησης. Είναι το πιο συχνό production AI pattern — chat πάνω στα docs σου, customer support, internal knowledge search. Αυτό το μάθημα εξηγεί το pattern, τα embeddings/vector search που το τροφοδοτούν, και τις παγίδες που ρωτάνε στις συνεντεύξεις.
+
+## Το pattern σε 4 βήματα
+
+```txt
+1. Ο χρήστης ρωτά κάτι.
+2. Ψάχνεις στα δικά σου docs τα πιο σχετικά κομμάτια      (retrieval)
+3. Τα βάζεις στο prompt ως context:
+   "Με βάση ΜΟΝΟ αυτά τα έγγραφα: [...], απάντησε: <ερώτηση>"
+4. Το μοντέλο απαντά γειωμένο στα δεδομένα σου            (augmented generation)
+```
+
+Η ουσία του RAG ως concept είναι το **grounding**: η απάντηση βασίζεται σε πραγματικά, ελεγμένα δεδομένα αντί για ό,τι «θυμάται» το μοντέλο. Αυτό (α) μειώνει τα hallucinations, (β) δίνει ενημερωμένη γνώση χωρίς retraining, και (γ) σου επιτρέπει να δείξεις **πηγές** (citations).
+
+## Πώς βρίσκεις τα «σχετικά» κομμάτια: embeddings + vector search
+
+Το «βρες τα σχετικά κομμάτια» δεν γίνεται με keyword matching (χάνεις συνώνυμα και νόημα). Γίνεται με **σημασιολογική** αναζήτηση:
+
+- **Embedding**: μετατρέπεις ένα κείμενο σε vector (λίστα αριθμών) που αποτυπώνει το **νόημά** του. Κείμενα με παρόμοιο νόημα έχουν «κοντινά» vectors.
+- **Vector search**: μετατρέπεις και την ερώτηση σε vector και βρίσκεις τα πιο «κοντινά» chunks (cosine similarity). Αυτά είναι τα σχετικά.
+- **Vector DB**: αποθηκεύεις τα vectors σε ειδική βάση (pgvector, Pinecone, Qdrant…) που κάνει γρήγορα nearest-neighbor search.
+
+```txt
+Offline (indexing, μία φορά):
+  docs → chunks → embedding κάθε chunk → αποθήκευση vectors στο vector DB
+
+Online (σε κάθε ερώτηση):
+  ερώτηση → embedding → vector search (top-k κοντινά chunks) → context στο prompt
+```
+
+## Chunking: το «αόρατο» κρίσιμο βήμα
+
+Δεν βάζεις ολόκληρα έγγραφα — τα σπας σε **chunks** (π.χ. παραγράφους ή ~500 tokens με μικρό overlap). Γιατί:
+
+- **Ακρίβεια**: μικρότερα chunks → πιο στοχευμένο retrieval (το vector αποτυπώνει ένα θέμα, όχι 10).
+- **Κόστος/όρια**: βάζεις στο prompt μόνο τα top-k σχετικά chunks, όχι όλη τη βάση — λιγότερα tokens.
+
+Κακό chunking (πολύ μεγάλα ή πολύ μικρά chunks) είναι από τις πιο συχνές αιτίες κακού RAG.
+
+## RAG δεν είναι fine-tuning
+
+Συχνή ερώτηση συνέντευξης. **RAG** = δίνεις γνώση στο prompt τη στιγμή της ερώτησης (δυναμικό, φθηνό, ενημερώνεται αμέσως, δείχνει πηγές). **Fine-tuning** = αλλάζεις τα βάρη του μοντέλου με training (ακριβό, για στυλ/συμπεριφορά, όχι για «φρέσκα» δεδομένα). Για «να ξέρει τα docs μας» → RAG, σχεδόν πάντα.
+
+<PredictOutput
+  title="Πότε διαλέγεις RAG;"
+  code={`Θέλεις ένα chatbot που απαντά ερωτήσεις πάνω στα
+εσωτερικά έγγραφα της εταιρείας, που αλλάζουν κάθε εβδομάδα.
+Τι κάνεις;`}
+  options={["Fine-tune το μοντέλο κάθε εβδομάδα", "RAG: retrieval από τα docs + context στο prompt", "Βάζεις όλα τα docs στο system prompt"]}
+  correctOptionIndex={1}
+  answer="RAG: retrieval από τα docs + context στο prompt"
+  explanation="Τα δεδομένα αλλάζουν συχνά και είναι πολλά. Fine-tuning είναι ακριβό και δεν χωνεύει 'φρέσκα' δεδομένα. Όλα τα docs στο system prompt δεν χωράνε/κοστίζουν τρελά. RAG: ανακτάς ΜΟΝΟ τα σχετικά chunks ανά ερώτηση και τα βάζεις ως context — φθηνό, ενημερωμένο, με πηγές."
+/>
+
+<Exercise
+  question="Τι ρόλο παίζουν τα embeddings στο RAG;"
+  options={[
+    "Συμπιέζουν την απάντηση του μοντέλου.",
+    "Μετατρέπουν κείμενο σε vectors ώστε να βρίσκεις σημασιολογικά σχετικά chunks (vector search).",
+    "Εκπαιδεύουν το μοντέλο στα δεδομένα σου."
+  ]}
+  correctOptionIndex={1}
+  explanation="Τα embeddings μετατρέπουν κείμενο σε vectors που αποτυπώνουν νόημα. Κείμενα με παρόμοιο νόημα έχουν κοντινά vectors, οπότε με vector search (cosine similarity) βρίσκεις τα πιο σχετικά chunks για την ερώτηση — όχι απλό keyword matching."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How would you build a chatbot that answers questions about our internal docs?»
+
+> RAG. Offline I chunk the documents, embed each chunk into a vector, and store the vectors in a vector database. At query time I embed the user's question, run a vector search to pull the top-k most semantically similar chunks, and put those into the prompt as context — "answer using only these documents." The model's answer is grounded in real, retrieved data instead of what it happens to remember, which cuts hallucinations, keeps knowledge current without retraining, and lets me cite sources. The details that make or break it are chunking — chunks small enough to be focused but with a little overlap — and retrieval quality. And to be clear, this is retrieval, not fine-tuning: fine-tuning changes the model's weights and is for style or behavior, not for feeding it fresh, frequently-changing facts.
+
+<Flashcards
+  title="RAG — interview drills"
+  cards={[
+    {
+      question: "Τι είναι RAG και τι λύνει;",
+      answer: "Retrieval-Augmented Generation: βρίσκεις σχετικά κομμάτια από τα docs σου και τα βάζεις στο prompt ως context. Γειώνει (grounding) την απάντηση σε δικά σου/πρόσφατα δεδομένα → λιγότερα hallucinations, ενημερωμένη γνώση, πηγές."
+    },
+    {
+      question: "Πώς βρίσκεις τα σχετικά chunks;",
+      answer: "Embeddings + vector search. Κάνεις embed τα chunks (vectors νοήματος) σε vector DB· στην ερώτηση κάνεις embed και βρίσκεις τα top-k κοντινά (cosine similarity). Σημασιολογικά, όχι keyword."
+    },
+    {
+      question: "Τι είναι chunking και γιατί έχει σημασία;",
+      answer: "Σπας τα docs σε κομμάτια (π.χ. ~500 tokens με μικρό overlap). Μικρότερα chunks → πιο στοχευμένο retrieval + λιγότερα tokens στο prompt. Κακό chunking = κακό RAG."
+    },
+    {
+      question: "RAG vs fine-tuning;",
+      answer: "RAG: γνώση στο prompt τη στιγμή της ερώτησης — δυναμικό, φθηνό, ενημερώνεται αμέσως, δείχνει πηγές. Fine-tuning: αλλάζεις βάρη με training — ακριβό, για στυλ/συμπεριφορά, όχι για φρέσκα δεδομένα."
+    },
+    {
+      question: "Πού μένει το vector DB στην αρχιτεκτονική;",
+      answer: "Στο backend. Index offline (docs→chunks→embeddings→DB). Online: ερώτηση→embedding→nearest-neighbor search (pgvector/Pinecone/Qdrant) → context στο prompt."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Στήσε ένα RAG flow"
+  scenario="Φτιάξε ένα ερωτο-απαντητικό feature πάνω σε ένα σύνολο εγγράφων: index offline, retrieve + answer online, με grounding και πηγές."
+  outcomes={[
+    "Να κάνεις chunk + embed έγγραφα σε vector store.",
+    "Να ανακτάς top-k σχετικά chunks ανά ερώτηση.",
+    "Να γειώνεις την απάντηση και να δείχνεις πηγές."
+  ]}
+  steps={[
+    "Σπάσε τα docs σε chunks (~500 tokens, μικρό overlap) και κάνε embed το καθένα.",
+    "Αποθήκευσε τα vectors (+ μεταδεδομένα: doc id, θέση) σε vector store.",
+    "Σε κάθε ερώτηση: embed την ερώτηση, vector search για top-k chunks.",
+    "Βάλε τα chunks στο prompt ως context με οδηγία 'απάντησε ΜΟΝΟ από αυτά'.",
+    "Επέστρεψε την απάντηση + τις πηγές (ποια chunks χρησιμοποιήθηκαν)."
+  ]}
+  checkpoints={[
+    "Η απάντηση βασίζεται στα ανακτημένα chunks (grounding), όχι σε γενική γνώση.",
+    "Όταν η απάντηση δεν υπάρχει στα docs, το μοντέλο λέει 'δεν το βρίσκω'.",
+    "Μπορείς να δείξεις από ποια έγγραφα προήλθε η απάντηση.",
+    "Στέλνεις μόνο τα top-k chunks, όχι όλη τη βάση."
+  ]}
+  mistakes={[
+    "Keyword search αντί για semantic (vector) search.",
+    "Πολύ μεγάλα ή πολύ μικρά chunks → κακό retrieval.",
+    "Να ζητάς fine-tuning εκεί που χρειάζεται RAG.",
+    "Να μη βάζεις οδηγία grounding → το μοντέλο 'συμπληρώνει' με δικά του."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μπορείς να σχεδιάσεις ένα RAG flow end-to-end, να εξηγήσεις embeddings/vector search/chunking, και να ξεχωρίζεις RAG από fine-tuning."
+/>

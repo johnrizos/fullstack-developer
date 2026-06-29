@@ -1,0 +1,173 @@
+# Prompt design & Structured outputs
+
+Σε ένα LLM, το «πώς ρωτάς» αλλάζει δραματικά το αποτέλεσμα. Δύο πράγματα ξεχωρίζουν τον ερασιτέχνη από τον επαγγελματία: (1) ξέρει να δομεί το input με **system prompt** + σαφές user prompt, και (2) όταν χρειάζεται **μηχαναγνώσιμη** έξοδο, δεν κάνει parsing ελεύθερου κειμένου — ζητάει **structured output** με schema. Αυτό το μάθημα καλύπτει και τα δύο, γιατί μαζί κάνουν ένα AI feature αξιόπιστο αντί για «λοταρία».
+
+## System prompt vs user prompt
+
+- **System prompt** — οδηγίες ρόλου/συμπεριφοράς που ισχύουν για **όλη** τη συνομιλία: τόνος, μορφή, όρια, γλώσσα. Μπαίνει στο ξεχωριστό πεδίο `system`, όχι μέσα στα `messages`.
+- **User prompt** — το συγκεκριμένο αίτημα. Πες τι θες, σε τι μορφή, με παραδείγματα όπου βοηθά.
+
+```ts
+const response = await client.messages.create({
+  model: "claude-opus-4-8",
+  max_tokens: 1024,
+  system: "Είσαι βοηθός που απαντά πάντα στα Ελληνικά, σύντομα και χωρίς preamble.",
+  messages: [{ role: "user", content: "Εξήγησε τι είναι το REST σε 2 προτάσεις." }],
+});
+```
+
+Γιατί ξεχωριστό πεδίο και όχι «βάλ' το στο πρώτο message»; Γιατί το system prompt είναι **σταθερό** σε όλη τη συνομιλία και αντιμετωπίζεται ως οδηγία υψηλότερης προτεραιότητας — επίσης παίζει ρόλο στο prompt caching (το βλέπεις στο production lesson).
+
+## Αρχές καλού prompt design
+
+- **Να είσαι συγκεκριμένος** για τη μορφή: «3 bullet points», «μία πρόταση», «JSON με πεδία x, y».
+- **Δώσε παραδείγματα** (few-shot) όταν το task είναι ασαφές — δείξε 1-2 ζευγάρια input→output.
+- **Βάλε τα όρια ρητά**: «αν δεν ξέρεις, πες "δεν ξέρω"», «μην εφεύρεις δεδομένα».
+- **Πες τον ρόλο**: «είσαι senior code reviewer» καλιμπράρει τον τόνο και το βάθος.
+- **Πρόσφατα μοντέλα είναι κυριολεκτικά**: μην γράφεις επιθετικά «CRITICAL!!! ΠΡΕΠΕΙ!!!» — ακολουθούν το prompt πιστά, οπότε ήρεμες σαφείς οδηγίες δουλεύουν καλύτερα.
+
+## Structured outputs: σταμάτα το parsing ελεύθερου κειμένου
+
+Όταν θες να γεμίσεις ένα form, να αποθηκεύσεις σε DB, ή να τρέξεις λογική με βάση την απάντηση, χρειάζεσαι **εγγυημένα έγκυρο JSON** — όχι «συνήθως JSON». Αν κάνεις `JSON.parse()` σε ελεύθερο κείμενο, αργά ή γρήγορα θα σκάσει σε «Φυσικά! Ορίστε το JSON: \`\`\`json ...».
+
+Η λύση: **structured output** με `output_config.format` και JSON schema. Το μοντέλο εγγυάται ότι η απάντηση ταιριάζει στο schema:
+
+```ts
+const response = await client.messages.create({
+  model: "claude-opus-4-8",
+  max_tokens: 1024,
+  messages: [{ role: "user", content: "Βγάλε όνομα και email: 'Γιάννης, g@x.com'" }],
+  output_config: {
+    format: {
+      type: "json_schema",
+      schema: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          email: { type: "string" },
+        },
+        required: ["name", "email"],
+        additionalProperties: false,
+      },
+    },
+  },
+});
+```
+
+Πλεονεκτήματα έναντι του «ζήτα JSON στο prompt και κάνε parse»:
+
+- **Εγγύηση εγκυρότητας** — η έξοδος ταιριάζει στο schema, χωρίς preamble ή markdown fences.
+- **Λιγότερος defensive κώδικας** — δεν χρειάζεται try/catch γύρω από κάθε parse και regex καθαρισμού.
+- **Σαφές contract** — το schema είναι η τεκμηρίωση του τι περιμένεις.
+
+> Πότε ΟΧΙ structured output; Όταν θες ελεύθερο κείμενο για τον άνθρωπο (chat απάντηση, σύνοψη). Το schema είναι για **μηχαναγνώσιμα** δεδομένα που θα τα φάει κώδικας.
+
+## Classification με enum
+
+Ένα κλασικό use case: ταξινόμηση σε σταθερές κατηγορίες. Το `enum` στο schema εγγυάται ότι η απάντηση είναι μία από τις επιτρεπτές τιμές:
+
+```ts
+output_config: {
+  format: {
+    type: "json_schema",
+    schema: {
+      type: "object",
+      properties: {
+        sentiment: { type: "string", enum: ["positive", "negative", "neutral"] },
+      },
+      required: ["sentiment"],
+      additionalProperties: false,
+    },
+  },
+}
+```
+
+Έτσι δεν θα πάρεις ποτέ «μάλλον θετικό;» — μόνο `"positive"`, `"negative"` ή `"neutral"`.
+
+<PredictOutput
+  title="Parsing ελεύθερου κειμένου"
+  code={`Ζητάς JSON μόνο μέσα στο prompt (χωρίς schema).
+Το μοντέλο απαντά:
+"Φυσικά! Ορίστε:
+\\\`\\\`\\\`json
+{ \\"name\\": \\"Γιάννης\\" }
+\\\`\\\`\\\`"
+Κάνεις JSON.parse() στο raw string.`}
+  options={["Δουλεύει κανονικά", "Σκάει — το string δεν είναι καθαρό JSON", "Επιστρέφει null"]}
+  correctOptionIndex={1}
+  answer="Σκάει — το string δεν είναι καθαρό JSON"
+  explanation="Το preamble ('Φυσικά! Ορίστε:') και τα markdown ``` fences κάνουν το JSON.parse() να αποτύχει. Γι' αυτό χρησιμοποιείς structured output με schema (output_config.format) — εγγυάται καθαρό, έγκυρο JSON χωρίς preamble/fences."
+/>
+
+<Exercise
+  question="Πού μπαίνει το system prompt;"
+  options={[
+    "Ως το πρώτο αντικείμενο μέσα στο messages array με role 'system'.",
+    "Στο ξεχωριστό πεδίο system της κλήσης — ισχύει για όλη τη συνομιλία.",
+    "Δεν υπάρχει· όλα μπαίνουν στο user message."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το system prompt μπαίνει στο ξεχωριστό πεδίο 'system' (όχι μέσα στα messages). Είναι σταθερό για όλη τη συνομιλία, ορίζει ρόλο/τόνο/μορφή/όρια, και αντιμετωπίζεται ως οδηγία υψηλότερης προτεραιότητας."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you make an LLM's output reliable enough to use in code?»
+
+> Two levers. First, prompt design: I set behavior, tone, format, and limits in the system prompt — which is separate from the messages and applies to the whole conversation — and keep the user prompt specific about what I want and in what shape, with a few-shot example when the task is ambiguous. Second, and more importantly for anything a program consumes: I don't parse free text. I use structured outputs with a JSON schema, so the response is guaranteed to match the shape — no preamble, no markdown fences, no `JSON.parse` blowing up on "Sure, here's the JSON:". For classification I put the allowed labels in an enum so I can never get an off-list value. Free-text prompting is for human-facing answers; schemas are for machine-readable data.
+
+<Flashcards
+  title="Prompting & structured outputs — interview drills"
+  cards={[
+    {
+      question: "System prompt vs user prompt;",
+      answer: "System (ξεχωριστό πεδίο): ρόλος/τόνος/μορφή/όρια για ΟΛΗ τη συνομιλία, υψηλότερη προτεραιότητα. User: το συγκεκριμένο αίτημα. Για μηχαναγνώσιμη έξοδο → structured output, όχι parsing ελεύθερου κειμένου."
+    },
+    {
+      question: "Γιατί structured output αντί για 'ζήτα JSON';",
+      answer: "Εγγυάται έγκυρο JSON που ταιριάζει στο schema — χωρίς preamble/markdown fences. Λιγότερος defensive κώδικας, σαφές contract. Το 'ζήτα JSON & parse' σκάει σε preamble/fences."
+    },
+    {
+      question: "Πώς ζητάς structured output;",
+      answer: "output_config.format με type 'json_schema' και schema (properties, required, additionalProperties: false). Η απάντηση ταιριάζει εγγυημένα."
+    },
+    {
+      question: "Πώς κάνεις αξιόπιστο classification;",
+      answer: "JSON schema με enum στις επιτρεπτές κατηγορίες. Έτσι η έξοδος είναι πάντα μία από τις valid τιμές — ποτέ 'μάλλον θετικό;'."
+    },
+    {
+      question: "Tip για prompts σε πρόσφατα μοντέλα;",
+      answer: "Είναι κυριολεκτικά — απόφυγε επιθετικό 'CRITICAL!!! ΠΡΕΠΕΙ!!!' (overtriggering). Σαφείς, ήρεμες, συγκεκριμένες οδηγίες + few-shot παραδείγματα όπου το task είναι ασαφές."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Αξιόπιστο extraction με schema"
+  scenario="Φτιάξε ένα endpoint που παίρνει ελεύθερο κείμενο (π.χ. ένα email) και επιστρέφει δομημένα πεδία (όνομα, email, intent) ως εγγυημένα έγκυρο JSON."
+  outcomes={[
+    "Να ορίζεις system prompt για ρόλο/μορφή/όρια.",
+    "Να ζητάς structured output με JSON schema.",
+    "Να χρησιμοποιείς enum για κατηγορίες."
+  ]}
+  steps={[
+    "Γράψε system prompt: ρόλος + 'αν λείπει πεδίο, βάλε null, μην εφεύρεις'.",
+    "Όρισε schema με name, email, intent (enum: 'sales' | 'support' | 'other').",
+    "Κάλεσε με output_config.format = { type: 'json_schema', schema }.",
+    "Επέστρεψε το δομημένο αποτέλεσμα — χωρίς try/catch γύρω από parse.",
+    "Δοκίμασε με κείμενο που λείπει το email και δες ότι παίρνεις null, όχι εφευρημένο."
+  ]}
+  checkpoints={[
+    "Η έξοδος είναι πάντα έγκυρο JSON που ταιριάζει στο schema.",
+    "Το intent είναι πάντα μία από τις enum τιμές.",
+    "Όταν λείπει δεδομένο, παίρνεις null αντί για hallucination.",
+    "Δεν υπάρχει preamble ή markdown fences στην έξοδο."
+  ]}
+  mistakes={[
+    "JSON.parse σε ελεύθερο κείμενο αντί για structured output.",
+    "System prompt χωμένο μέσα στο user message.",
+    "Να αφήνεις ανοιχτές κατηγορίες αντί για enum σε classification.",
+    "Επιθετικά prompts ('ΠΡΕΠΕΙ!!!') που κάνουν overtriggering."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μπορείς να μετατρέψεις ελεύθερο κείμενο σε εγγυημένα έγκυρο, δομημένο JSON και να εξηγείς πότε χρειάζεσαι schema vs ελεύθερο κείμενο."
+/>

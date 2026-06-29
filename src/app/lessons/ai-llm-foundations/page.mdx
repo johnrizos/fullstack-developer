@@ -1,0 +1,173 @@
+# AI & LLM Foundations
+
+Το 2026, το «βάζω AI feature στην app» είναι mainstream fullstack δουλειά — chat, summarization, semantic search, AI-assisted forms. **Δεν χρειάζεται να εκπαιδεύσεις μοντέλο**: καλείς ένα **LLM API** (εδώ το Claude API της Anthropic) σαν οποιοδήποτε άλλο τρίτο API, με μία κρίσιμη διαφορά — η απάντηση είναι κείμενο που παράγεται **token-token** και **πληρώνεις ανά token**. Αυτό το πρώτο μάθημα του track χτίζει το mental model: πώς δομείται μια κλήση, πού μένει το key, γιατί το API είναι stateless, και πώς διαλέγεις μοντέλο. Τα επόμενα μαθήματα μπαίνουν βαθιά σε streaming, prompting, tool use, RAG, evaluation και production.
+
+## Το mental model: LLM = ένα metered text API
+
+Ένα LLM endpoint δέχεται μια **συνομιλία** (λίστα μηνυμάτων) και επιστρέφει το επόμενο μήνυμα του assistant. Δεν είναι μαγικό — είναι HTTP request/response όπως ξέρεις, με τρεις ιδιαιτερότητες:
+
+- **Μη ντετερμινιστικό**: η ίδια είσοδος μπορεί να δώσει διαφορετική έξοδο.
+- **Χρεώσιμο ανά token**: πληρώνεις input tokens (ό,τι στέλνεις) + output tokens (ό,τι παράγει).
+- **Με latency ανάλογο του μήκους**: μεγάλη απάντηση = δευτερόλεπτα (γι' αυτό υπάρχει το streaming — επόμενο μάθημα).
+
+## Ο κανόνας #1: το key ΜΕΝΕΙ στο backend
+
+Ένα LLM API key είναι μυστικό **με χρέωση**. Αν το βάλεις στο frontend, ο καθένας το βλέπει στο Network tab και ξοδεύει τα λεφτά σου. Άρα η αρχιτεκτονική είναι **πάντα**:
+
+```txt
+React UI  ──fetch──►  το ΔΙΚΟ σου backend (route handler)  ──API key──►  LLM API
+          ◄──json────                                       ◄──tokens──
+```
+
+Το frontend μιλά μόνο στο δικό σου server· ο server κρατά το key (σε env var) και μιλά στο LLM. Ποτέ `ANTHROPIC_API_KEY` σε client component ή σε `NEXT_PUBLIC_` μεταβλητή. Το backend σου είναι το ασφαλές **proxy** ανάμεσα στον χρήστη και το μοντέλο — και είναι επίσης το σημείο όπου θα βάλεις αργότερα auth, rate limiting, logging και κόστος-έλεγχο.
+
+## Η πιο απλή κλήση (backend)
+
+Με το επίσημο SDK, μια κλήση είναι ένα request/response. Το `client` διαβάζει το `ANTHROPIC_API_KEY` από το environment:
+
+```ts
+import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic(); // key από env — ποτέ hardcoded
+
+const response = await client.messages.create({
+  model: "claude-opus-4-8",
+  max_tokens: 1024,
+  messages: [{ role: "user", content: "Σύνοψε σε μία πρόταση: ..." }],
+});
+
+// Το content είναι λίστα από blocks — διάλεξε τα text blocks
+const text = response.content
+  .filter((b) => b.type === "text")
+  .map((b) => b.text)
+  .join("");
+```
+
+Τρία πράγματα που ισχύουν σε **κάθε** LLM call:
+
+- **`messages`** — η συνομιλία ως λίστα `{ role: "user" | "assistant", content }`.
+- **`max_tokens`** — ανώτατο όριο μήκους **απάντησης** (κόβει αν το ξεπεράσει· δεν είναι το ίδιο με το context window).
+- **`model`** — ποιο μοντέλο. Διάλεγε το πιο ικανό (`claude-opus-4-8`) εκτός αν θες φθηνότερο/ταχύτερο για απλά tasks.
+
+> Πρόσεξε ότι το `content` της απάντησης είναι **λίστα από blocks**, όχι σκέτο string. Αυτό γιατί μια απάντηση μπορεί να περιέχει text, tool calls ή thinking — γι' αυτό φιλτράρεις τα `type === "text"`.
+
+## Το API είναι stateless: στέλνεις όλο το ιστορικό κάθε φορά
+
+Το πιο συχνό λάθος αρχαρίων: νομίζουν ότι ο server «θυμάται» τη συνομιλία. Δεν τη θυμάται. **Το API είναι stateless** — όπως ένα REST API. Για μια συνομιλία πολλών γύρων, στέλνεις **ολόκληρο** το ιστορικό σε κάθε request:
+
+```ts
+const messages = [
+  { role: "user", content: "Με λένε Γιάννη." },
+  { role: "assistant", content: "Γεια σου Γιάννη!" },
+  { role: "user", content: "Πώς με λένε;" }, // χωρίς τα προηγούμενα, δεν ξέρει
+];
+
+const response = await client.messages.create({
+  model: "claude-opus-4-8",
+  max_tokens: 1024,
+  messages,
+});
+```
+
+Συνέπειες που πρέπει να ξέρεις:
+
+- Όσο μεγαλώνει η συνομιλία, **μεγαλώνουν τα input tokens** (άρα κόστος + latency) σε κάθε γύρο.
+- Εσύ κρατάς το state (στο DB ή στο client). Το μοντέλο δεν κρατά τίποτα.
+- Αυτό είναι και το «πάτημα» για RAG (δίνεις context μέσα στα messages) και για memory patterns — τα βλέπεις παρακάτω στο track.
+
+<Exercise
+  question="Γιατί το LLM API key δεν μπαίνει ποτέ στο frontend;"
+  options={[
+    "Γιατί το frontend δεν υποστηρίζει env vars.",
+    "Γιατί θα ήταν ορατό στον browser (Network/source) και ο καθένας θα ξόδευε το (χρεώσιμο) key σου.",
+    "Γιατί το API δεν δέχεται requests από browsers."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το key είναι μυστικό με χρέωση. Στο frontend εκτίθεται σε όποιον ανοίξει DevTools. Πάντα: React → δικό σου backend (κρατά το key) → LLM API. Το backend είναι το ασφαλές 'proxy'."
+/>
+
+## Διάλεξε μοντέλο ανά task
+
+Δεν χρειάζεσαι πάντα το πιο ικανό (και ακριβό) μοντέλο. Σκέψου το σαν επιλογή instance type:
+
+- **Μεγάλο/ικανό** (π.χ. `claude-opus-4-8`) — σύνθετο reasoning, agentic workflows, δύσκολο coding.
+- **Ισορροπημένο** (Sonnet) — οι περισσότερες εφαρμογές: chat, content generation.
+- **Μικρό/γρήγορο** (Haiku) — απλά, μεγάλου όγκου tasks: classification, extraction, routing.
+
+Ο κανόνας: **μην πληρώνεις premium για κάτι τετριμμένο**. Ένα classification «spam ή όχι;» δεν χρειάζεται το top μοντέλο. Στο production lesson θα δεις πώς αυτό συνδέεται με κόστος και latency.
+
+<PredictOutput
+  title="Stateless API — τι θυμάται;"
+  code={`// Request 1
+messages: [{ role: "user", content: "Με λένε Άννα." }]
+// ...παίρνεις απάντηση...
+
+// Request 2 (νέα κλήση, ΜΟΝΟ αυτό το message)
+messages: [{ role: "user", content: "Πώς με λένε;" }]`}
+  options={["Θα απαντήσει 'Άννα'", "Δεν θα ξέρει το όνομα", "Θα ρίξει error"]}
+  correctOptionIndex={1}
+  answer="Δεν θα ξέρει το όνομα"
+  explanation="Το API είναι stateless. Το request 2 δεν περιέχει το προηγούμενο μήνυμα, άρα το μοντέλο δεν έχει ιδέα για το όνομα. Για να 'θυμάται', πρέπει ΕΣΥ να στείλεις όλο το ιστορικό messages σε κάθε κλήση."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «Walk me through adding a basic AI feature to a web app.»
+
+> I treat the LLM as a metered text API. The React client never calls the model directly — the API key is a billable secret, so it stays server-side. The client calls my own backend route, which holds the key in an env var and calls the LLM. A request is just `model`, `max_tokens`, and a `messages` array — the conversation as a list of user/assistant turns. The response `content` is a list of blocks, so I filter the text blocks out. The key thing to remember is that the API is stateless: it doesn't remember anything between calls, so I send the full conversation history every request, which means input tokens — and cost and latency — grow with the conversation. And I pick the model per task: the most capable one for hard reasoning, a smaller, cheaper one for simple classification or extraction.
+
+<Flashcards
+  title="AI/LLM foundations — interview drills"
+  cards={[
+    {
+      question: "Πού μένει το LLM API key και γιατί;",
+      answer: "Πάντα στο backend (env var). Στο frontend θα ήταν ορατό στο Network tab και ο καθένας θα ξόδευε το χρεώσιμο key. Ροή: React → δικό σου server (κρατά key) → LLM API."
+    },
+    {
+      question: "Τι περιέχει μια βασική LLM κλήση;",
+      answer: "model (ποιο μοντέλο), max_tokens (όριο μήκους απάντησης), και messages (η συνομιλία ως λίστα {role, content}). Η απάντηση έχει content = λίστα από blocks· φιλτράρεις τα text blocks."
+    },
+    {
+      question: "Γιατί λέμε ότι το LLM API είναι stateless;",
+      answer: "Δεν θυμάται προηγούμενες κλήσεις. Για multi-turn συνομιλία στέλνεις ΟΛΟ το ιστορικό messages κάθε φορά. Συνέπεια: input tokens (κόστος + latency) μεγαλώνουν όσο μεγαλώνει η συνομιλία."
+    },
+    {
+      question: "Πώς διαλέγεις μοντέλο;",
+      answer: "Ανά task. Μεγάλο/ικανό για σύνθετο reasoning & agentic work· ισορροπημένο για τα περισσότερα· μικρό/γρήγορο/φθηνό για classification/extraction. Μην πληρώνεις premium για τετριμμένα."
+    },
+    {
+      question: "max_tokens vs context window;",
+      answer: "max_tokens = ανώτατο όριο της ΑΠΑΝΤΗΣΗΣ (output). Context window = συνολικό όριο input+output που χωράει το μοντέλο. Αν η απάντηση χτυπήσει το max_tokens κόβεται· το αυξάνεις ή κάνεις stream."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Φτιάξε το πρώτο σου AI endpoint"
+  scenario="Χτίσε ένα backend route που δέχεται μια ερώτηση, καλεί το LLM, και επιστρέφει την απάντηση ως JSON. Κράτα το key ασφαλές και κάνε το multi-turn."
+  outcomes={[
+    "Να καλείς ένα LLM API από backend με το key σε env var.",
+    "Να εξάγεις σωστά το text από το content (λίστα blocks).",
+    "Να στέλνεις ιστορικό messages για multi-turn."
+  ]}
+  steps={[
+    "Φτιάξε route handler που δέχεται { messages } στο body.",
+    "Κάλεσε client.messages.create με model, max_tokens, messages (key από env).",
+    "Φίλτραρε τα text blocks και επέστρεψε { text } ως JSON.",
+    "Στο client, κράτα array με όλο το ιστορικό και στείλε το ολόκληρο σε κάθε ερώτηση.",
+    "Δοκίμασε δεύτερη ερώτηση που εξαρτάται από την πρώτη (π.χ. 'και σε ευρώ;')."
+  ]}
+  checkpoints={[
+    "Το key δεν εμφανίζεται ΠΟΥΘΕΝΑ στο frontend (έλεγξε Network/source).",
+    "Η δεύτερη ερώτηση 'θυμάται' την πρώτη επειδή έστειλες όλο το ιστορικό.",
+    "Αν αφαιρέσεις το ιστορικό, το μοντέλο χάνει το context (stateless).",
+    "Διάλεξες μοντέλο κατάλληλο για το task."
+  ]}
+  mistakes={[
+    "API key σε client component ή NEXT_PUBLIC_ μεταβλητή.",
+    "Να διαβάζεις response.content[0].text χωρίς να φιλτράρεις type === 'text'.",
+    "Να περιμένεις ότι το API 'θυμάται' — δεν στέλνεις ιστορικό.",
+    "Να βάζεις πανάκριβο μοντέλο σε ένα απλό classification."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μπορείς να εξηγήσεις το LLM σαν stateless metered API, να κάνεις μια ασφαλή κλήση από backend, και να δικαιολογήσεις την επιλογή μοντέλου."
+/>

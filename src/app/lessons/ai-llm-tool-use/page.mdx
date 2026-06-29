@@ -1,0 +1,153 @@
+# Tool use & Agents
+
+Από μόνο του το μοντέλο μόνο **παράγει κείμενο** — δεν ξέρει τον καιρό σου, δεν διαβάζει τη βάση σου, δεν στέλνει email. Με **tool use** (γνωστό και ως function calling) του δίνεις «εργαλεία»: το μοντέλο **ζητά** να καλέσεις μια συνάρτηση με συγκεκριμένα ορίσματα, **εσύ** την εκτελείς, και του επιστρέφεις το αποτέλεσμα ώστε να συνεχίσει. Πάνω σε αυτό το pattern χτίζονται οι **agents**. Αυτό το μάθημα δείχνει πώς δουλεύει ο κύκλος, ποιος ελέγχει τι, και πού βάζεις τα όρια ασφαλείας.
+
+## Ο κύκλος του tool use
+
+```txt
+1. Ορίζεις tool: getWeather(city)         (όνομα + JSON schema του input)
+2. Μοντέλο: "θέλω getWeather('Αθήνα')"     → stop_reason: "tool_use"
+3. ΕΣΥ τρέχεις τη getWeather, παίρνεις 28°C
+4. Επιστρέφεις tool_result → το μοντέλο γράφει την τελική απάντηση
+```
+
+Το κρίσιμο σημείο: **το μοντέλο δεν εκτελεί τίποτα**. Ζητάει· εσύ αποφασίζεις αν και πώς θα εκτελέσεις. Ο έλεγχος μένει στον δικό σου κώδικα.
+
+```ts
+const tools = [{
+  name: "get_weather",
+  description: "Καιρός για μια πόλη. Κάλεσέ το όταν ο χρήστης ρωτά για καιρό.",
+  input_schema: {
+    type: "object",
+    properties: { city: { type: "string" } },
+    required: ["city"],
+  },
+}];
+
+const response = await client.messages.create({
+  model: "claude-opus-4-8",
+  max_tokens: 1024,
+  tools,
+  messages: [{ role: "user", content: "Τι καιρό κάνει στην Αθήνα;" }],
+});
+
+if (response.stop_reason === "tool_use") {
+  // βρες το tool_use block, τρέξε τη συνάρτηση, στείλε tool_result πίσω...
+}
+```
+
+## Καλά tool descriptions = σωστές κλήσεις
+
+Το μοντέλο διαλέγει εργαλείο **βάσει του description**. Γράψε **πότε** να το καλέσει, όχι μόνο τι κάνει: «Call this when the user asks about current prices or recent events». Σαφή ονόματα (`get_weather`, όχι `weather`), περιγραφές ανά πεδίο, `enum` όπου υπάρχουν σταθερές τιμές. Κακό description → λάθος ή ξεχασμένες κλήσεις.
+
+## Από tool use σε agent
+
+Ένας **agent** είναι απλώς αυτός ο κύκλος σε **loop**: το μοντέλο μπορεί να ζητήσει πολλά εργαλεία, διαδοχικά, αποφασίζοντας μόνο του τη διαδρομή του μέχρι να ολοκληρώσει το task.
+
+```txt
+loop:
+  response = call LLM (με tools + όλο το ιστορικό)
+  if stop_reason == "tool_use":
+      τρέξε το/τα tool(s), πρόσθεσε tool_result στο ιστορικό
+      continue
+  else (end_turn):
+      τέλος — έχεις την τελική απάντηση
+```
+
+Πρακτικά σημεία:
+
+- **Πρόσθεσε ΟΛΟ το assistant content** (μαζί με τα tool_use blocks) στο ιστορικό πριν στείλεις τα tool_results — αλλιώς σπάει το context.
+- **Parallel tools**: ένα μήνυμα μπορεί να ζητήσει πολλά tools· εκτέλεσέ τα και γύρισε **όλα** τα tool_results σε **ένα** user message.
+- **Όριο επαναλήψεων**: βάλε max iterations για να μην μπει σε ατέρμονο loop.
+- Πολλά SDKs έχουν **tool runner** που τρέχει αυτόν τον loop αυτόματα — χρήσιμο, αλλά ο χειροκίνητος loop σου δίνει σημεία για validation/approval.
+
+## Ασφάλεια: εσύ εκτελείς, εσύ βάζεις όρια
+
+Επειδή ο δικός σου κώδικας εκτελεί τα tools, **εκεί** βάζεις τα όρια:
+
+- **Validation** των ορισμάτων πριν την εκτέλεση (μην εμπιστεύεσαι τυφλά το input του μοντέλου).
+- **Confirmation** για μη αναστρέψιμες ενέργειες (delete, πληρωμή, αποστολή email).
+- **Least privilege**: το tool να κάνει το ελάχιστο — όχι ένα γενικό «run any SQL».
+
+<PredictOutput
+  title="Ποιος εκτελεί το tool;"
+  code={`Ορίζεις ένα tool 'deleteUser(id)' και το μοντέλο ζητά
+να το καλέσει. Ποιος τρέχει πραγματικά τον κώδικα διαγραφής;`}
+  options={["Το LLM, στους servers της Anthropic", "Ο ΔΙΚΟΣ σου backend κώδικας", "Ο browser του χρήστη"]}
+  correctOptionIndex={1}
+  answer="Ο ΔΙΚΟΣ σου backend κώδικας"
+  explanation="Το μοντέλο μόνο ΖΗΤΑ την κλήση (stop_reason: 'tool_use') με τα ορίσματα. Ο δικός σου κώδικας αποφασίζει αν/πώς θα την εκτελέσει — γι' αυτό βάζεις validation και confirmation σε επικίνδυνες ενέργειες. Ο έλεγχος μένει σε σένα."
+/>
+
+<Exercise
+  question="Πώς ξεχωρίζεις ότι το μοντέλο θέλει να καλέσει tool;"
+  options={[
+    "Η απάντηση περιέχει τη λέξη 'tool' στο κείμενο.",
+    "Το stop_reason είναι 'tool_use' και υπάρχει tool_use block με όνομα + input.",
+    "Το API επιστρέφει HTTP 202."
+  ]}
+  correctOptionIndex={1}
+  explanation="Όταν το μοντέλο θέλει εργαλείο, το stop_reason γίνεται 'tool_use' και το content περιέχει tool_use block(s) με το όνομα του tool και τα ορίσματα. Εσύ εκτελείς και επιστρέφεις tool_result με το matching tool_use_id."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How does tool use / function calling work, and how do you build an agent on top of it?»
+
+> A tool is a name plus a JSON schema for its input that I pass to the model. When the model decides it needs it, the response comes back with `stop_reason: "tool_use"` and a tool_use block naming the tool and its arguments. The model doesn't execute anything — my backend does. I run the function, then send a tool_result back with the matching id, and the model continues. An agent is just that loop: the model can request tools repeatedly, deciding its own path until it's done. I append the full assistant content including tool_use blocks before sending results, return all parallel tool_results in one message, and cap the iterations so it can't loop forever. Because my code is the executor, that's where safety lives — I validate arguments, require confirmation for irreversible actions like deletes or payments, and keep each tool least-privilege.
+
+<Flashcards
+  title="Tool use & agents — interview drills"
+  cards={[
+    {
+      question: "Τι είναι tool use (function calling);",
+      answer: "Δίνεις στο μοντέλο 'εργαλεία' (όνομα + JSON schema). Το μοντέλο ΖΗΤΑ κλήση με ορίσματα (stop_reason: tool_use)· ΕΣΥ την εκτελείς στο backend και επιστρέφεις tool_result. Έλεγχος & ασφάλεια μένουν σε σένα."
+    },
+    {
+      question: "Τι είναι agent σε σχέση με tool use;",
+      answer: "Ο κύκλος tool use σε loop: το μοντέλο ζητά πολλά εργαλεία διαδοχικά, αποφασίζοντας μόνο του τη διαδρομή, μέχρι end_turn. Βάζεις max iterations για να μην κολλήσει."
+    },
+    {
+      question: "Πώς γράφεις καλό tool description;",
+      answer: "Πες ΠΟΤΕ να το καλέσει, όχι μόνο τι κάνει. Σαφή ονόματα, περιγραφές ανά πεδίο, enum για σταθερές τιμές. Το μοντέλο διαλέγει εργαλείο βάσει του description."
+    },
+    {
+      question: "Πού βάζεις ασφάλεια στο tool use;",
+      answer: "Στον δικό σου executor: validation ορισμάτων, confirmation για μη αναστρέψιμες ενέργειες (delete/πληρωμή/email), least privilege. Το μοντέλο μόνο ζητά — εσύ ελέγχεις."
+    },
+    {
+      question: "Τι προσέχεις στον agent loop;",
+      answer: "Πρόσθεσε ΟΛΟ το assistant content (με tool_use blocks) πριν τα results· γύρνα parallel tool_results σε ΕΝΑ message· matching tool_use_id· max iterations."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Agent με ένα ασφαλές tool"
+  scenario="Φτιάξε έναν μικρό agent loop με ένα tool (π.χ. lookup σε δικά σου δεδομένα), με σωστό handling του κύκλου και ένα όριο ασφαλείας."
+  outcomes={[
+    "Να ορίζεις tool με σαφές schema + description.",
+    "Να χειρίζεσαι τον tool_use κύκλο σε loop.",
+    "Να βάζεις validation/confirmation και max iterations."
+  ]}
+  steps={[
+    "Όρισε tool π.χ. get_order(id) με input_schema και περιγραφή 'πότε' να κληθεί.",
+    "Loop: κάλεσε το LLM με tools + ιστορικό.",
+    "Αν stop_reason === 'tool_use': validate το input, τρέξε τη συνάρτηση, πρόσθεσε tool_result (matching id).",
+    "Συνέχισε μέχρι end_turn· βάλε max 5 iterations.",
+    "Πρόσθεσε ένα δεύτερο tool με μη αναστρέψιμη ενέργεια και βάλε confirmation."
+  ]}
+  checkpoints={[
+    "Το μοντέλο καλεί το σωστό tool με έγκυρα ορίσματα.",
+    "Επιστρέφεις tool_result με το σωστό tool_use_id.",
+    "Ο loop τερματίζει σε end_turn και δεν ξεπερνά το max iterations.",
+    "Η επικίνδυνη ενέργεια απαιτεί ρητή επιβεβαίωση πριν εκτελεστεί."
+  ]}
+  mistakes={[
+    "Να εκτελείς tool calls χωρίς validation/confirmation σε επικίνδυνες ενέργειες.",
+    "Να μην προσθέτεις το assistant content (tool_use blocks) στο ιστορικό.",
+    "Να σπας τα parallel tool_results σε πολλά messages.",
+    "Να αφήνεις τον loop χωρίς όριο iterations."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μπορείς να εξηγήσεις ποιος εκτελεί τα tools, να στήσεις έναν agent loop, και να δείξεις πού βάζεις τα όρια ασφαλείας."
+/>

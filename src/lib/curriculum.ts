@@ -132,7 +132,13 @@ export const lessonDurationsMinutes: Record<string, number> = {
   "laravel-testing-production": 80,
   "websockets-realtime": 75,
   "api-integrations": 70,
-  "ai-llm-integration": 75,
+  "ai-llm-foundations": 55,
+  "ai-llm-streaming": 50,
+  "ai-llm-prompting": 55,
+  "ai-llm-tool-use": 60,
+  "ai-llm-rag": 65,
+  "ai-llm-evaluation": 55,
+  "ai-llm-production": 65,
   "architecture-monolith-microservices": 80,
   "db-relational-modeling": 75,
   "db-sql-queries": 80,
@@ -1332,13 +1338,75 @@ export const curriculum: CurriculumSection[] = [
         href: "/lessons/api-integrations",
       },
       {
-        id: "ai-llm-integration",
+        id: "ai-llm",
         title: "AI & LLM Integration",
         description:
-          "Πώς βάζεις AI feature σε fullstack app: κλήση LLM API, streaming responses στο UI, prompt design, tool use, RAG basics και cost/latency.",
-        project: "Endpoint που καλεί LLM και κάνει stream την απάντηση σε React UI.",
-        skills: ["LLM API", "streaming", "RAG"],
-        href: "/lessons/ai-llm-integration",
+          "Πλήρης διαδρομή για production AI features σε fullstack app: από την πρώτη ασφαλή κλήση μέχρι streaming, prompting, tool use/agents, RAG, evaluation και production (cost/observability/security).",
+        lessons: [
+          {
+            id: "ai-llm-foundations",
+            title: "AI & LLM Foundations",
+            description:
+              "Το LLM ως stateless metered API: key στο backend, πρώτη κλήση, ιστορικό messages, επιλογή μοντέλου.",
+            project: "Ασφαλές backend endpoint που καλεί LLM με multi-turn ιστορικό.",
+            skills: ["LLM API", "stateless", "model choice"],
+            href: "/lessons/ai-llm-foundations",
+          },
+          {
+            id: "ai-llm-streaming",
+            title: "Streaming responses στο UI",
+            description:
+              "End-to-end streaming: LLM events → ReadableStream στο route handler → reader + state στο React.",
+            project: "Streaming chat UI με σταδιακή εμφάνιση απάντησης.",
+            skills: ["streaming", "ReadableStream", "SSE"],
+            href: "/lessons/ai-llm-streaming",
+          },
+          {
+            id: "ai-llm-prompting",
+            title: "Prompt design & Structured outputs",
+            description:
+              "System vs user prompt, αρχές prompt design, και εγγυημένα έγκυρο JSON με output_config.format (schema + enum).",
+            project: "Endpoint extraction που επιστρέφει δομημένο, έγκυρο JSON.",
+            skills: ["system prompt", "structured output", "JSON schema"],
+            href: "/lessons/ai-llm-prompting",
+          },
+          {
+            id: "ai-llm-tool-use",
+            title: "Tool use & Agents",
+            description:
+              "Function calling: ο κύκλος tool_use, ποιος εκτελεί, ο agent loop, και τα όρια ασφαλείας (validation/confirmation).",
+            project: "Agent loop με ένα ασφαλές tool και confirmation σε επικίνδυνη ενέργεια.",
+            skills: ["tool use", "agents", "function calling"],
+            href: "/lessons/ai-llm-tool-use",
+          },
+          {
+            id: "ai-llm-rag",
+            title: "RAG & Vector Search",
+            description:
+              "Grounding σε δικά σου δεδομένα: embeddings, vector search, chunking, και RAG vs fine-tuning.",
+            project: "RAG flow: index offline, retrieve + answer με πηγές.",
+            skills: ["RAG", "embeddings", "vector DB"],
+            href: "/lessons/ai-llm-rag",
+          },
+          {
+            id: "ai-llm-evaluation",
+            title: "Evaluation & Testing",
+            description:
+              "Πώς μετράς ποιότητα σε μη ντετερμινιστικό feature: eval datasets, graders, LLM-as-judge, baseline & regressions.",
+            project: "Eval με dataset + scoring που αποφασίζει αν μια αλλαγή βελτιώνει το feature.",
+            skills: ["evals", "LLM-as-judge", "regression"],
+            href: "/lessons/ai-llm-evaluation",
+          },
+          {
+            id: "ai-llm-production",
+            title: "Cost, Observability & Security",
+            description:
+              "Production-ready AI: κόστος ανά token, prompt caching, latency, observability, rate limits/retries και άμυνα σε prompt injection.",
+            project: "Σκλήρυνση ενός AI feature: caching, metrics, backoff, anti-injection.",
+            skills: ["cost", "prompt caching", "prompt injection"],
+            href: "/lessons/ai-llm-production",
+          },
+        ],
       },
     ],
   },
