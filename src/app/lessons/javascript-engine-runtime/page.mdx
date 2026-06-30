@@ -1,0 +1,238 @@
+# JavaScript Engine & Runtime
+
+Μέχρι τώρα έγραφες JavaScript. Εδώ μαθαίνεις **τι συμβαίνει κάτω από το καπό** όταν τρέχει — η ερώτηση που χωρίζει τον junior από τον mid σε συνέντευξη. Θα δεις πώς ο engine μετατρέπει τον κώδικά σου σε εκτελέσιμο, πού ζουν τα δεδομένα, πώς καθαρίζεται η μνήμη, και τι είναι «runtime» σε σχέση με τη γλώσσα.
+
+## Engine vs Runtime — η βασική διάκριση
+
+Δύο όροι που μπερδεύονται συνεχώς:
+
+- **JavaScript Engine**: το πρόγραμμα που **διαβάζει και εκτελεί** JS. Π.χ. **V8** (Chrome, Node.js, Edge), **SpiderMonkey** (Firefox), **JavaScriptCore** (Safari). Ο engine ξέρει μόνο τη γλώσσα — call stack, heap, εκτέλεση.
+- **Runtime**: ο engine **μαζί με το περιβάλλον** γύρω του — τα extra APIs που *δεν* είναι μέρος της γλώσσας. Στον browser το runtime δίνει `document`, `fetch`, `setTimeout`. Στο **Node.js** το runtime δίνει `fs`, `http`, `process`. Ίδιος engine (V8), διαφορετικό runtime.
+
+Γι' αυτό το `setTimeout` δεν είναι «JavaScript» — είναι API του runtime. Η γλώσσα από μόνη της δεν ξέρει τι είναι χρόνος ή δίκτυο.
+
+## Μέσα στον engine: Interpreter, Compiler & JIT
+
+Παλιά οι γλώσσες χωρίζονταν αυστηρά:
+
+- **Interpreter**: διαβάζει και εκτελεί τον κώδικα **γραμμή-γραμμή**. Ξεκινά γρήγορα, αλλά είναι αργός σε κώδικα που επαναλαμβάνεται.
+- **Compiler**: μεταφράζει **όλο** τον κώδικα σε machine code **πριν** τρέξει. Αργό ξεκίνημα, αλλά γρήγορη εκτέλεση.
+
+Η σύγχρονη JavaScript κάνει **και τα δύο** με μια τεχνική που λέγεται **JIT (Just-In-Time) compilation**:
+
+1. Ο κώδικας γίνεται **parse** → φτιάχνεται ένα **AST** (Abstract Syntax Tree, η δομή του κώδικα ως δέντρο).
+2. Ένας **interpreter** (στο V8 λέγεται *Ignition*) ξεκινά αμέσως να εκτελεί — γρήγορο boot.
+3. Παράλληλα, ένας **profiler** παρακολουθεί ποιος κώδικας τρέχει πολλές φορές («hot» code).
+4. Ο **optimizing compiler** (στο V8 *TurboFan*) μεταγλωττίζει αυτόν τον hot κώδικα σε **βελτιστοποιημένο machine code**.
+5. Αν μια υπόθεση του compiler σπάσει (π.χ. ένα νούμερο γίνει ξαφνικά string), γίνεται **deoptimization** — επιστροφή στον interpreter.
+
+Έτσι παίρνεις γρήγορο ξεκίνημα *και* γρήγορη εκτέλεση στα κρίσιμα σημεία.
+
+## Writing Optimized Code
+
+Επειδή ο JIT στηρίζεται σε **υποθέσεις**, ο κώδικας που τον βοηθάει να προβλέπει τρέχει ταχύτερα. Οι πρακτικές που μετράνε:
+
+- **Κράτα σταθερό το «σχήμα» των objects (hidden classes).** Ο V8 φτιάχνει εσωτερικά μια κρυφή κλάση για κάθε δομή object. Αν προσθέτεις properties με **ίδια σειρά** πάντα, τα objects μοιράζονται hidden class και ο κώδικας γίνεται γρήγορος. Αν αλλάζεις δυναμικά τη μορφή, ο V8 ξαναφτιάχνει hidden classes και χάνεις την optimization.
+- **Μην ανακατεύεις τύπους** στην ίδια μεταβλητή/array (monomorphic > polymorphic). Ένας `add(a, b)` που πάντα δέχεται numbers βελτιστοποιείται· αν τον καλέσεις και με strings, ο engine κάνει deopt.
+- **Απόφυγε `delete` σε hot objects** — αλλάζει το hidden class.
+- **Αρχικοποίησε όλα τα properties στον constructor**, ακόμη κι αν είναι `null`, ώστε το σχήμα να είναι σταθερό από την αρχή.
+
+Κανόνας: μην κάνεις micro-optimization πρόωρα — αλλά **σταθερές μορφές & σταθεροί τύποι** είναι «δωρεάν» ταχύτητα.
+
+```js
+// ❌ διαφορετική σειρά → δύο διαφορετικά hidden classes
+const a = {};
+a.x = 1; a.y = 2;
+const b = {};
+b.y = 2; b.x = 1;
+
+// ✅ ίδια μορφή, ίδια σειρά → κοινό hidden class, γρήγορο
+function Point(x, y) {
+  this.x = x;
+  this.y = y;
+}
+```
+
+## Call Stack & Memory Heap
+
+Ο engine έχει δύο βασικούς χώρους μνήμης:
+
+- **Call Stack**: η στοίβα που κρατά **ποια function τρέχει τώρα** και ποια την κάλεσε. Λειτουργεί LIFO (Last In, First Out): κάθε κλήση μπαίνει πάνω-πάνω (frame), και βγαίνει όταν τελειώσει. Εδώ ζουν οι **primitive** τιμές και οι **references**.
+- **Memory Heap**: ο μεγάλος, μη-δομημένος χώρος όπου αποθηκεύονται τα **objects, arrays και functions**. Στη stack υπάρχει μόνο ο *δείκτης* (reference) προς το object στο heap.
+
+```js
+function multiply(a, b) {
+  return a * b;
+}
+function square(n) {
+  return multiply(n, n); // η square σπρώχνει την multiply πάνω της στη stack
+}
+square(5);
+// Stack: [square] → [square, multiply] → [square] → []
+```
+
+Αυτό συνδέεται άμεσα με το μάθημα *JavaScript Arrays & Objects*: τα primitives αντιγράφονται (stack), τα objects περνιούνται by reference (δείκτης στο heap).
+
+## Stack Overflow & Memory Leaks
+
+Δύο κλασικά προβλήματα — και δύο σίγουρες ερωτήσεις:
+
+**Stack Overflow**: η call stack έχει **όριο**. Αν μια function καλεί τον εαυτό της χωρίς base case, η stack γεμίζει και ο engine πετάει `RangeError: Maximum call stack size exceeded`.
+
+```js
+function loopForever() {
+  return loopForever(); // καμία έξοδος → η stack ξεχειλίζει
+}
+```
+
+**Memory Leak**: μνήμη στο heap που **δεν χρειάζεται πια αλλά δεν ελευθερώνεται**, γιατί κάτι ακόμα την κρατάει. Συχνές αιτίες:
+
+- Event listeners που δεν αφαιρούνται ποτέ (`removeEventListener`).
+- Timers (`setInterval`) που δεν γίνονται `clearInterval`.
+- Καταχωρήσεις σε global μεταβλητές / caches που μεγαλώνουν ατέρμονα.
+- Closures (*Scope, Hoisting & Closures*) που κρατούν ζωντανά μεγάλα objects περισσότερο απ' όσο πρέπει.
+
+## Garbage Collection
+
+Σε αντίθεση με γλώσσες όπως η C, στη JavaScript **δεν** ελευθερώνεις μνήμη χειροκίνητα. Ο **Garbage Collector** βρίσκει αυτόματα μνήμη που δεν είναι πια προσβάσιμη και την επιστρέφει.
+
+Ο κυρίαρχος αλγόριθμος είναι **Mark-and-Sweep**:
+
+1. Ξεκινά από τις «ρίζες» (global object, τρέχουσα call stack).
+2. **Mark**: σημαδεύει ό,τι είναι προσβάσιμο ακολουθώντας τις references.
+3. **Sweep**: ό,τι δεν σημαδεύτηκε είναι «σκουπίδι» → ελευθερώνεται.
+
+Η λέξη-κλειδί είναι **reachability** (προσβασιμότητα), όχι «αν χρησιμοποιείται». Όσο υπάρχει *έστω μία* αλυσίδα references από μια ρίζα προς ένα object, αυτό **δεν** συλλέγεται — ακριβώς αυτό προκαλεί τα memory leaks παραπάνω.
+
+<Exercise
+  question="Γιατί ένα object δεν γίνεται garbage collected, αν και δεν το χρησιμοποιείς πια στη λογική σου;"
+  options={[
+    "Γιατί κάτι ακόμα κρατά reference σε αυτό (π.χ. listener, global, closure) — παραμένει reachable.",
+    "Γιατί ο garbage collector τρέχει μόνο μία φορά στην αρχή.",
+    "Γιατί τα objects δεν συλλέγονται ποτέ στη JavaScript."
+  ]}
+  correctOptionIndex={0}
+  explanation="Ο GC βασίζεται στο reachability: όσο υπάρχει αλυσίδα references από μια ρίζα, το object μένει ζωντανό. 'Δεν το χρησιμοποιώ' δεν σημαίνει 'δεν είναι reachable'."
+/>
+
+## Το Runtime ως σύνολο: Single-Threaded μοντέλο
+
+Η JavaScript είναι **single-threaded**: μία call stack, μία εντολή τη φορά. Πώς, τότε, χειρίζεται δίκτυο και timers χωρίς να «παγώνει»; Με τη συνεργασία **engine + runtime APIs + queues + event loop** — ακριβώς το θέμα του μαθήματος *Async JavaScript & Event Loop*:
+
+- Ο engine τρέχει τον synchronous κώδικα στη stack.
+- Τα **runtime APIs** (Web APIs / Node APIs) αναλαμβάνουν τις «αργές» δουλειές εκτός thread.
+- Όταν τελειώσουν, βάζουν τα callbacks σε **callback (macrotask) queue** ή **microtask queue**.
+- Το **event loop** μεταφέρει callbacks στη stack μόνο **όταν αυτή αδειάσει**.
+
+## Concurrency vs Parallelism
+
+Λεπτή αλλά αγαπημένη ερώτηση:
+
+- **Concurrency** = πολλές εργασίες **σε εξέλιξη** που εναλλάσσονται σε **ένα** thread. Αυτό κάνει η JavaScript: ο event loop ζογκλάρει tasks, αλλά μόνο ένα τρέχει κάθε στιγμή.
+- **Parallelism** = πολλές εργασίες τρέχουν **ταυτόχρονα** σε **πολλούς** πυρήνες/threads.
+
+Άρα το async/await σου δίνει **concurrency**, όχι parallelism. Για πραγματικό parallelism χρειάζεσαι **Web Workers** (browser) ή **Worker Threads / cluster** (Node) — ξεχωριστά threads με δικό τους memory.
+
+## Static vs Dynamically Typed
+
+- **Statically typed** (Java, C#, TypeScript στο compile): οι τύποι ελέγχονται **πριν** τρέξει ο κώδικας. Λάθος τύπος = compile error.
+- **Dynamically typed** (JavaScript): οι τύποι ελέγχονται **κατά την εκτέλεση**, και μια μεταβλητή μπορεί να αλλάξει τύπο.
+
+```js
+let value = 42;       // number
+value = "now string"; // απολύτως νόμιμο σε JS
+```
+
+Πλεονέκτημα: ευελιξία. Μειονέκτημα: λάθη τύπων εμφανίζονται μόνο σε runtime. Γι' αυτό υπάρχει το **TypeScript** — προσθέτει static typing *πάνω* στη δυναμική JS. (Δες το track TypeScript.) Σχετίζεται και με το type coercion (*JavaScript Logic*): επειδή η JS είναι δυναμική, μετατρέπει τύπους σιωπηλά.
+
+## ES6–ES10: τι έφερε κάθε έκδοση
+
+Η γλώσσα ονομάζεται επίσημα **ECMAScript** και από το 2015 παίρνει μία έκδοση **κάθε χρόνο**. Τα ονόματα ανά αριθμό vs έτος μπερδεύουν — να ένας πρακτικός χάρτης:
+
+- **ES6 / ES2015** — η μεγάλη αναβάθμιση: `let`/`const`, arrow functions, template literals, **destructuring**, **spread/rest**, default params, `class`, **modules** (`import`/`export`), `Promise`, `Map`/`Set`, `Symbol`.
+- **ES7 / ES2016** — μικρή: `Array.prototype.includes`, `**` (exponentiation).
+- **ES8 / ES2017** — **`async`/`await`**, `Object.entries`/`values`, string padding (`padStart`/`padEnd`).
+- **ES9 / ES2018** — **rest/spread σε objects** (`{...obj}`), async iteration (`for await`), `Promise.finally`.
+- **ES10 / ES2019** — `Array.flat`/`flatMap`, `Object.fromEntries`, `String.trimStart`/`trimEnd`, optional `catch` binding.
+
+(Μετά: ES2020 → optional chaining `?.` & nullish coalescing `??`, `BigInt`, `Promise.allSettled` — τα είδες στο *JavaScript Logic*.)
+
+Σε συνέντευξη δεν χρειάζεται να αποστηθίσεις πίνακα — αρκεί να ξέρεις ότι **ES6 = 2015 = το ορόσημο** και ότι έκτοτε υπάρχει ετήσιος κύκλος.
+
+<PredictOutput
+  title="Engine & runtime drill"
+  code={`console.log("A");
+setTimeout(() => console.log("B"), 0);
+Promise.resolve().then(() => console.log("C"));
+console.log("D");`}
+  options={['A D C B', 'A B C D', 'A D B C', 'A C D B']}
+  correctOptionIndex={0}
+  answer="A D C B"
+  explanation="Sync πρώτα: A, D. Μετά αδειάζει η microtask queue (Promise): C. Τελευταίο το macrotask (setTimeout): B. Το setTimeout(…,0) ΔΕΝ σημαίνει 'αμέσως' — σημαίνει 'στο επόμενο macrotask, αφού αδειάσει η stack και οι microtasks'."
+/>
+
+<Flashcards
+  title="Engine & Runtime — γρήγορο repaso"
+  cards={[
+    {
+      question: "Engine vs Runtime;",
+      answer: "Engine (V8, SpiderMonkey): εκτελεί καθαρή JS — call stack, heap. Runtime: engine + APIs του περιβάλλοντος (document/fetch/setTimeout στον browser, fs/http στο Node). Το setTimeout δεν είναι γλώσσα — είναι runtime API."
+    },
+    {
+      question: "Τι είναι ο JIT compiler;",
+      answer: "Συνδυασμός interpreter + compiler. Ο interpreter (Ignition) ξεκινά αμέσως· ο profiler βρίσκει 'hot' κώδικα· ο optimizing compiler (TurboFan) τον μεταγλωττίζει σε γρήγορο machine code, με deoptimization αν σπάσει μια υπόθεση τύπου."
+    },
+    {
+      question: "Call Stack vs Memory Heap;",
+      answer: "Stack: LIFO δομή με τα frames των functions που τρέχουν + primitives/references. Heap: μη-δομημένος χώρος για objects/arrays/functions· στη stack μένει μόνο ο δείκτης προς αυτά."
+    },
+    {
+      question: "Πώς δουλεύει το Garbage Collection;",
+      answer: "Mark-and-Sweep: ξεκινά από τις ρίζες (global, stack), σημαδεύει ό,τι είναι reachable μέσω references, και σαρώνει/ελευθερώνει ό,τι δεν σημαδεύτηκε. Κλειδί: reachability, όχι 'αν χρησιμοποιείται'."
+    },
+    {
+      question: "Concurrency vs Parallelism στη JavaScript;",
+      answer: "Concurrency: πολλές εργασίες εναλλάσσονται σε ΕΝΑ thread (event loop) — αυτό κάνει το async. Parallelism: ταυτόχρονη εκτέλεση σε πολλούς πυρήνες — χρειάζεται Web Workers / Worker Threads."
+    },
+    {
+      question: "Στατικά vs δυναμικά typed;",
+      answer: "Static (Java, TS): έλεγχος τύπων στο compile. Dynamic (JS): έλεγχος σε runtime, μεταβλητή αλλάζει τύπο ελεύθερα. Το TypeScript προσθέτει static typing πάνω στη δυναμική JS."
+    },
+    {
+      question: "Τι έφερε το ES6 (ES2015);",
+      answer: "Το μεγάλο ορόσημο: let/const, arrow functions, template literals, destructuring, spread/rest, classes, modules (import/export), Promises, Map/Set. Από τότε ετήσιος κύκλος εκδόσεων."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Εξήγησε το 'κάτω από το καπό'"
+  scenario="Πάρε ένα μικρό async snippet και αφηγήσου τη διαδρομή του: parse → AST → stack → runtime API → queue → event loop → πίσω στη stack."
+  outcomes={[
+    "Να εξηγείς τη διαφορά engine/runtime με παράδειγμα.",
+    "Να περιγράφεις stack vs heap και πού ζει τι.",
+    "Να συνδέεις memory leaks με reachability & GC."
+  ]}
+  steps={[
+    "Γράψε ένα snippet με sync log, setTimeout και Promise.then.",
+    "Σχεδίασε σε χαρτί τη stack, τις queues και το event loop.",
+    "Δείξε πότε ένα object γίνεται unreachable → υποψήφιο για GC.",
+    "Βρες ένα memory leak (listener/interval) και διόρθωσέ το.",
+    "Διατύπωσε σε 4 προτάσεις 'τι κάνει ο engine όταν τρέχει ο κώδικάς μου'."
+  ]}
+  checkpoints={[
+    "Εξηγείς τη διαφορά engine/runtime με συγκεκριμένο API (π.χ. setTimeout).",
+    "Περιγράφεις τι μπαίνει στη stack και τι στο heap.",
+    "Προβλέπεις σωστά τη σειρά output sync → microtask → macrotask."
+  ]}
+  mistakes={[
+    "Να λες ότι το setTimeout(…,0) τρέχει 'αμέσως' — τρέχει στο επόμενο macrotask.",
+    "Να μπερδεύεις concurrency (ένα thread, εναλλαγή) με parallelism (πολλά threads).",
+    "Να νομίζεις ότι 'δεν το χρησιμοποιώ' σημαίνει 'θα γίνει garbage collected' — μετράει το reachability."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να αφηγηθείς τη διαδρομή ενός async snippet (parse → stack → runtime API → queue → event loop) και να εξηγήσεις γιατί ένα leak κρατά μνήμη ζωντανή."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> JavaScript runs on an engine like V8, which parses my code into an AST and runs it through a JIT pipeline — an interpreter starts immediately while an optimizing compiler recompiles hot code into fast machine code. The engine has a call stack for execution and a heap for objects; memory is reclaimed automatically by a mark-and-sweep garbage collector based on reachability. The engine alone only knows the language — the runtime (browser or Node) adds APIs like timers and fetch, plus the event loop that makes a single-threaded language handle async work concurrently.

@@ -181,6 +181,59 @@ caller();
 
 Η `whoAmI` γράφτηκε στο global scope, άρα βλέπει το global `name`. Το ότι κλήθηκε μέσα από την `caller` δεν αλλάζει τίποτα. Αυτό λέγεται **lexical (static) scoping**.
 
+### Οι όροι που ρωτιούνται: execution context, scope chain, dynamic vs lexical
+
+Τέσσερις λέξεις που μπερδεύονται — ξεκαθάρισέ τες και ξεχωρίζεις σε συνέντευξη:
+
+- **Execution Context**: το «περιβάλλον» μέσα στο οποίο τρέχει ένα κομμάτι κώδικα. Υπάρχει ένα **global** execution context και ένα νέο **function** context σε **κάθε κλήση** function. Κάθε context κρατά: τις μεταβλητές του (lexical environment), την τιμή του `this`, και έναν σύνδεσμο προς το γονικό scope. Όταν καλείται μια function, το context της μπαίνει στην call stack· όταν τελειώνει, βγαίνει.
+- **Scope Chain**: όταν ζητάς μια μεταβλητή, η JS ψάχνει πρώτα στο τρέχον scope και, αν δεν τη βρει, **ανεβαίνει** στο γονικό, μετά στο παππού, μέχρι το global. Αυτή η σειρά αναζήτησης είναι το scope chain — και ορίζεται από το **πού γράφτηκε** ο κώδικας (lexical).
+- **Lexical vs Dynamic scope**: στο **lexical** scope (αυτό που έχει η JS) το τι βλέπει μια function καθορίζεται από τη **θέση της στον κώδικα**. Σε ένα υποθετικό **dynamic** scope, θα καθοριζόταν από το **ποιος την κάλεσε** — γι' αυτό στο παράδειγμα πάνω η `whoAmI` τυπώνει `"Ada"` (lexical) και όχι `"Grace"` (που θα έδινε το dynamic scope).
+- **Context vs Scope**: δύο διαφορετικά πράγματα! **Scope** = ποιες **μεταβλητές** είναι ορατές (το ρυθμίζει το πού γράφτηκε ο κώδικας). **Context** = η τιμή του **`this`** (το ρυθμίζει το πώς **καλείται** η function — δες *this, Prototypes & Classes*). Μπερδεύονται γιατί ακούγονται συνώνυμα, αλλά το ένα αφορά μεταβλητές και το άλλο το `this`.
+
+## Λεξιλόγιο συναρτήσεων: anonymous, higher-order, IIFE
+
+Πριν τα closures, τρεις όροι που ρωτιούνται διαρκώς — και που θα συναντήσεις αμέσως παρακάτω.
+
+**Anonymous function** = συνάρτηση **χωρίς όνομα**. Τη γράφεις εκεί που τη χρειάζεσαι, συνήθως ως όρισμα. Η αντίθεσή της είναι η *named* function:
+
+```js
+function named() {}                 // named — εμφανίζεται στα stack traces
+const fn = function () {};           // anonymous function expression
+[1, 2, 3].map((n) => n * 2);         // arrow = επίσης anonymous, inline
+```
+
+Πρακτικός κανόνας: anonymous για μικρά inline callbacks· named όταν θες καθαρότερα error stacks ή recursion.
+
+**Higher-order function (HOF)** = συνάρτηση που **δέχεται** συνάρτηση ως όρισμα ή/και **επιστρέφει** συνάρτηση. Δεν είναι θεωρία — τα `map`/`filter`/`reduce` είναι HOF, και το `createCounter`/`memoize` παρακάτω επιστρέφουν συναρτήσεις:
+
+```js
+// δέχεται συνάρτηση:
+[1, 2, 3].filter((n) => n > 1);
+
+// επιστρέφει συνάρτηση:
+function multiplier(factor) {
+  return (n) => n * factor; // closure πάνω στο factor
+}
+const double = multiplier(2);
+double(5); // 10
+```
+
+**IIFE** (*Immediately Invoked Function Expression*) = συνάρτηση που **ορίζεται και καλείται αμέσως**. Πριν τα modules ήταν ο κλασικός τρόπος να φτιάξεις ιδιωτικό scope ώστε να μη «μολύνεις» το global:
+
+```js
+(function () {
+  const secret = 42; // δεν διαρρέει στο global scope
+  console.log(secret);
+})();
+
+// με arrow, το ίδιο:
+(() => {
+  // ...
+})();
+```
+
+Τα παρενθετικά `(...)` κάνουν τη δήλωση να διαβαστεί ως **expression**, και το τελικό `()` την εκτελεί στη στιγμή. Σήμερα τα ES modules δίνουν scope από μόνα τους, οπότε το IIFE σπανίζει — αλλά σε παλιό κώδικα και σε ερωτήσεις συνέντευξης το βλέπεις συνεχώς.
+
 ## Closures
 
 **Closure** είναι όταν μια function κρατάει πρόσβαση στις μεταβλητές του lexical scope της, ακόμα κι αφού το outer function έχει ολοκληρωθεί:

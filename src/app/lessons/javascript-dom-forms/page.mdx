@@ -135,6 +135,22 @@ list.addEventListener("click", (event) => {
 
 Δουλεύει επειδή τα events κάνουν **bubbling** προς τα πάνω — και λειτουργεί αυτόματα και για στοιχεία που θα προστεθούν αργότερα. Κλασική ερώτηση συνέντευξης για DOM.
 
+### Capturing & bubbling: οι δύο φάσεις
+
+Κάθε event ταξιδεύει σε **δύο φάσεις**. Πρώτα η **capture** φάση: κατεβαίνει από το `document` προς τα κάτω, μέχρι το στοιχείο-στόχο. Μετά η **bubble** φάση: ανεβαίνει πάλι πίσω στους γονείς. Από προεπιλογή οι listeners τρέχουν στη **bubble** φάση — γι' αυτό δουλεύει το delegation παραπάνω.
+
+Αν θες να πιάσεις το event στο **κατέβασμα** (capture), δίνεις τρίτο όρισμα `true`:
+
+```js
+parent.addEventListener("click", handler, true);  // capture φάση — τρέχει ΠΡΙΝ τα παιδιά
+parent.addEventListener("click", handler);          // bubble φάση (default) — ΜΕΤΑ τα παιδιά
+```
+
+Σχετικά εργαλεία μέσα στον handler:
+
+- `event.stopPropagation()` — σταματά τη διάδοση, δεν συνεχίζει σε γονείς (χρήσιμο αλλά «σπάει» το delegation, χρησιμοποίησέ το με μέτρο).
+- `event.target` — το στοιχείο που **πραγματικά** πατήθηκε· `event.currentTarget` — το στοιχείο στο οποίο **κρέμασες** τον listener.
+
 ## Mini checklist
 
 - Το form έχει submit listener.
@@ -182,8 +198,8 @@ list.addEventListener("click", (event) => {
       answer: "textContent: βάζει σκέτο κείμενο — ό,τι κι αν περιέχει, ΔΕΝ εκτελείται ως HTML (ασφαλές για user input). innerHTML: κάνει parse ως HTML — χρήσιμο για δικό σου markup, επικίνδυνο (XSS) για κείμενο χρηστών."
     },
     {
-      question: "Τι είναι το event bubbling;",
-      answer: "Ένα event (π.χ. click) ξεκινά από το στοιχείο-στόχο και 'ανεβαίνει' στους γονείς του μέχρι το document. Πάνω σε αυτό βασίζεται το event delegation: ένας listener στον γονέα πιάνει clicks από όλα τα παιδιά — και τα μελλοντικά."
+      question: "Event bubbling vs capturing;",
+      answer: "Το event ταξιδεύει σε 2 φάσεις: capture (document → στόχος, από πάνω προς τα κάτω) και bubble (στόχος → γονείς, από κάτω προς τα πάνω). Default οι listeners τρέχουν στη bubble φάση· για capture δίνεις 3ο όρισμα true στο addEventListener. Στο bubbling στηρίζεται το event delegation."
     },
     {
       question: "localStorage vs sessionStorage vs cookies;",

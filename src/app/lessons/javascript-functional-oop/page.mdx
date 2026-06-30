@@ -1,0 +1,280 @@
+# Functional & Object-Oriented Programming
+
+Η JavaScript είναι **multi-paradigm**: μπορείς να γράψεις τον ίδιο κώδικα με αντικειμενοστρεφή (OOP) ή με συναρτησιακό (FP) τρόπο. Οι καλοί developers ξέρουν **και τα δύο** και διαλέγουν ανά περίπτωση. Αυτό το μάθημα βάζει σε σειρά όλους τους όρους που πέφτουν σε συνεντεύξεις — pure functions, immutability, composition, currying, OOP — και δείχνει πότε χρησιμοποιείς τι.
+
+## Λίγη ιστορία: Scheme + Java σε μία γλώσσα
+
+Δεν είναι trivia — εξηγεί γιατί η γλώσσα μοιάζει «διπλή». Όταν φτιάχτηκε η JavaScript (1995, σε 10 μέρες), δανείστηκε:
+
+- από τη **Scheme** (διάλεκτος της Lisp) → **first-class functions** και **closures**: οι συναρτήσεις είναι τιμές που τις περνάς τριγύρω. Αυτός είναι ο functional πυρήνας.
+- από τη **Java** → το **συντακτικό** (curly braces, `for`, `new`) και η αρχική αίσθηση OOP.
+
+Γι' αυτό η JavaScript υποστηρίζει φυσικά **και** τα δύο paradigms. Το `class` ήρθε αργότερα (ES6) ως «βιτρίνα» πάνω στο prototype system — δες το μάθημα *this, Prototypes & Classes*.
+
+## Imperative vs Declarative
+
+Η πιο θεμελιώδης διάκριση στο **πώς** γράφεις:
+
+- **Imperative** = λες **βήμα-βήμα το ΠΩΣ**. Διαχειρίζεσαι μόνος σου loops, indices, προσωρινές μεταβλητές.
+- **Declarative** = δηλώνεις **ΤΙ** θέλεις και αφήνεις τις λεπτομέρειες στη γλώσσα/βιβλιοθήκη.
+
+```js
+// Imperative: εσύ οδηγείς κάθε βήμα
+const doubled = [];
+for (let i = 0; i < nums.length; i++) {
+  doubled.push(nums[i] * 2);
+}
+
+// Declarative: δηλώνεις την πρόθεση
+const doubled = nums.map((n) => n * 2);
+```
+
+Το `map`/`filter`/`reduce` (το *JavaScript Arrays & Objects*) και η React (`<ul>` από data) είναι **declarative**. Ο declarative κώδικας διαβάζεται καλύτερα και αφήνει λιγότερο χώρο για bugs — αλλά πίσω από κάθε declarative API υπάρχει imperative υλοποίηση.
+
+## Functional Programming: ο πυρήνας
+
+Το FP χτίζει προγράμματα από **καθαρές, συνθέσιμες συναρτήσεις** που αποφεύγουν το shared mutable state. Τρεις πυλώνες:
+
+### 1. Pure Functions
+
+Μια **pure function** (το είδες στο *Modules & Code Organization*): (α) ίδια inputs → πάντα ίδιο output, (β) **κανένα side effect** (δεν αλλάζει τίποτα έξω, δεν κάνει I/O).
+
+```js
+// ✅ pure
+const add = (a, b) => a + b;
+
+// ❌ impure: εξαρτάται από εξωτερικό state ΚΑΙ το αλλάζει
+let total = 0;
+const addToTotal = (n) => { total += n; return total; };
+```
+
+### 2. Immutability
+
+Αντί να **μεταλλάσσεις** δεδομένα, φτιάχνεις **νέα**. Έτσι κανείς δεν «πατάει» κρυφά πάνω στα δεδομένα σου — κρίσιμο στη React.
+
+```js
+// ❌ mutation
+user.role = "admin";
+// ✅ νέο object (spread — το *JavaScript Arrays & Objects*)
+const updated = { ...user, role: "admin" };
+```
+
+### 3. Referential Transparency
+
+Μια έκφραση είναι **referentially transparent** όταν μπορείς να την **αντικαταστήσεις με την τιμή της** χωρίς να αλλάξει η συμπεριφορά του προγράμματος. Ισχύει **μόνο** για pure functions:
+
+```js
+const square = (n) => n * n;
+// square(5) είναι παντού ανταλλάξιμο με το 25 — referentially transparent
+const x = square(5) + square(5); // == 25 + 25, εγγυημένα
+```
+
+Αν μια function τυπώνει στην κονσόλα ή διαβάζει `Date.now()`, **δεν** είναι referentially transparent — δεν μπορείς να την αντικαταστήσεις με μία σταθερή τιμή. Αυτή η ιδιότητα είναι που κάνει τον FP κώδικα ευκολότερο να συλλογιστείς και να τεστάρεις.
+
+## Higher-Order Functions, Currying & Partial Application
+
+Οι **higher-order functions** (δέχονται ή επιστρέφουν συναρτήσεις — δες το *Scope, Hoisting & Closures*) είναι το εργαλείο που κάνει εφικτά τα παρακάτω.
+
+**Currying**: μετατροπή μιας function με πολλά ορίσματα σε **αλυσίδα** functions με ένα όρισμα η καθεμία:
+
+```js
+const multiply = (a) => (b) => a * b;
+multiply(2)(3); // 6
+const double = multiply(2); // "κλείδωσα" το πρώτο όρισμα
+double(10); // 20
+```
+
+**Partial Application**: «κλειδώνεις» **μερικά** ορίσματα τώρα και δίνεις τα υπόλοιπα αργότερα. Συγγενικό με το currying, αλλά δεν επιβάλλει ένα-ένα όρισμα:
+
+```js
+const greet = (greeting, name) => `${greeting}, ${name}!`;
+const sayHi = greet.bind(null, "Hi"); // κλείδωσα το greeting
+sayHi("Ada"); // "Hi, Ada!"
+```
+
+Διαφορά σε μία πρόταση: **currying** σπάει τα πάντα σε μονο-ορισματικές κλήσεις· **partial application** απλώς προ-γεμίζει κάποια ορίσματα.
+
+## Compose & Pipe
+
+Το «κολλάς μικρές functions για να φτιάξεις μεγάλη» λέγεται **function composition**. Δύο μορφές:
+
+- **`compose`** — εφαρμόζει **από δεξιά προς αριστερά** (όπως στα μαθηματικά, `f(g(x))`).
+- **`pipe`** — εφαρμόζει **από αριστερά προς δεξιά** (σειρά ανάγνωσης· πιο διαδομένο σε JS).
+
+```js
+const compose = (...fns) => (x) => fns.reduceRight((acc, fn) => fn(acc), x);
+const pipe = (...fns) => (x) => fns.reduce((acc, fn) => fn(acc), x);
+
+const trim = (s) => s.trim();
+const lower = (s) => s.toLowerCase();
+const exclaim = (s) => s + "!";
+
+const shout = pipe(trim, lower, exclaim);
+shout("  Hello  "); // "hello!"
+```
+
+Πρόσεξε ότι το `pipe`/`compose` είναι απλώς ένα `reduce` (*JavaScript Arrays & Objects*) πάνω σε συναρτήσεις — και δουλεύει καθαρά **μόνο** με pure functions.
+
+## Object-Oriented Programming
+
+Το OOP οργανώνει τον κώδικα γύρω από **objects** που συνδυάζουν **δεδομένα + συμπεριφορά**. Τέσσερις έννοιες-κλειδιά:
+
+- **Encapsulation**: τα δεδομένα και οι methods που τα διαχειρίζονται ζουν μαζί· τα εσωτερικά κρύβονται πίσω από ένα API.
+- **Inheritance**: μια class κληρονομεί από μια άλλη (`extends`) — δες το μάθημα *this, Prototypes & Classes*.
+- **Polymorphism**: η ίδια method (π.χ. `area()`) συμπεριφέρεται διαφορετικά ανά subclass.
+- **Abstraction**: εκθέτεις μόνο ό,τι χρειάζεται· κρύβεις την πολυπλοκότητα.
+
+### Private vs Public properties
+
+Από προεπιλογή ό,τι βάζεις στο `this` είναι **public**. Για **πραγματικά private** πεδία/methods, χρησιμοποιείς το πρόθεμα `#` (ES2022):
+
+```js
+class BankAccount {
+  #balance = 0;            // private — προσβάσιμο ΜΟΝΟ μέσα στην class
+  constructor(initial) { this.#balance = initial; }
+  deposit(amount) {        // public API
+    if (amount > 0) this.#balance += amount;
+    return this.#balance;
+  }
+  get balance() { return this.#balance; }
+}
+
+const acc = new BankAccount(100);
+acc.deposit(50); // 150
+acc.#balance;    // ❌ SyntaxError — δεν υπάρχει πρόσβαση απ' έξω
+```
+
+Πριν το `#`, η ίδια ιδιωτικότητα επιτυγχανόταν με **closures** (δες το `createWallet` στο το *Scope, Hoisting & Closures*) — που είναι και η γέφυρα ανάμεσα σε FP και OOP.
+
+## Functions vs Objects: οι functions ΕΙΝΑΙ objects
+
+Κρίσιμη ιδέα που εξηγεί πολλά: στη JavaScript **οι functions είναι objects** (πρώτης τάξης). Μπορείς να τις περάσεις ως ορίσματα, να τις επιστρέψεις, **και να τους βάλεις properties**:
+
+```js
+function track() { track.calls = (track.calls || 0) + 1; }
+track(); track();
+track.calls;        // 2 — η function κρατά δικό της property
+typeof track;       // "function" (ειδικός τύπος object που είναι callable)
+```
+
+Αυτό είναι που κάνει εφικτά τα closures, τα HOF και το currying — και ο λόγος που το `typeof function` είναι `"function"` και όχι `"object"`, αν και τεχνικά είναι callable object.
+
+## Composition vs Inheritance
+
+Η πιο «ώριμη» αρχιτεκτονική ερώτηση. Η **inheritance** λέει *«το X **είναι** Y»* (Admin **is a** User). Η **composition** λέει *«το X **έχει** ικανότητες»* — συνθέτεις συμπεριφορές αντί να κληρονομείς ιεραρχία.
+
+```js
+// Inheritance: βαθιά ιεραρχία, εύθραυστη αν αλλάξει ο γονέας
+class Animal {}
+class Dog extends Animal {}
+
+// Composition: μικρές ικανότητες που "κολλάς"
+const canBark = (state) => ({ bark: () => `${state.name} says woof` });
+const canEat  = (state) => ({ eat: () => `${state.name} eats` });
+const createDog = (name) => {
+  const state = { name };
+  return { ...canBark(state), ...canEat(state) };
+};
+createDog("Rex").bark(); // "Rex says woof"
+```
+
+Ο κανόνας που θα ακούσεις παντού: **«favor composition over inheritance»** — η σύνθεση είναι πιο ευέλικτη και αποφεύγει τα προβλήματα βαθιών ιεραρχιών. Δεν σημαίνει «ποτέ inheritance», αλλά «η σύνθεση είναι το default».
+
+<Exercise
+  question="Ποιο είναι το βασικό πλεονέκτημα του composition έναντι του inheritance;"
+  options={[
+    "Συνθέτεις μικρές ανεξάρτητες ικανότητες, αποφεύγοντας εύθραυστες βαθιές ιεραρχίες κλάσεων.",
+    "Είναι πάντα γρηγορότερο σε runtime.",
+    "Δεν χρειάζεται καθόλου functions."
+  ]}
+  correctOptionIndex={0}
+  explanation="Η composition αποφεύγει τις βαθιές, στενά συνδεδεμένες ιεραρχίες: συνδυάζεις μικρές, επαναχρησιμοποιήσιμες συμπεριφορές. Γι' αυτό 'favor composition over inheritance'."
+/>
+
+## Πότε FP και πότε OOP;
+
+Δεν είναι «ή/ή». Στην πράξη:
+
+- **FP** για **μετασχηματισμούς δεδομένων**, pipelines, λογική χωρίς state (το «business logic» που τεστάρεται εύκολα).
+- **OOP** όταν μοντελοποιείς **οντότητες με ταυτότητα και συμπεριφορά** (ένα `User`, ένα `Connection`) ή όταν το framework το επιβάλλει.
+- Σύγχρονη React = κυρίως **FP** (pure components, immutability, composition με hooks). NestJS/Angular = περισσότερο **OOP** (classes, DI).
+
+<PredictOutput
+  title="Currying & composition drill"
+  code={`const pipe = (...fns) => (x) => fns.reduce((acc, fn) => fn(acc), x);
+const inc = (n) => n + 1;
+const dbl = (n) => n * 2;
+
+const f = pipe(inc, dbl);
+console.log(f(3));`}
+  options={['8', '7', '12', '9']}
+  correctOptionIndex={0}
+  answer="8"
+  explanation="pipe τρέχει αριστερά→δεξιά: inc(3)=4, μετά dbl(4)=8. (Με compose θα ήταν δεξιά→αριστερά: dbl πρώτα, μετά inc → inc(dbl(3))=inc(6)=7.)"
+/>
+
+<Flashcards
+  title="FP & OOP — γρήγορο repaso"
+  cards={[
+    {
+      question: "Imperative vs Declarative;",
+      answer: "Imperative: γράφεις βήμα-βήμα το ΠΩΣ (loops, indices). Declarative: δηλώνεις το ΤΙ θέλεις (map/filter, JSX). Ο declarative είναι πιο ευανάγνωστος· από κάτω υπάρχει imperative υλοποίηση."
+    },
+    {
+      question: "Τι είναι pure function & referential transparency;",
+      answer: "Pure: ίδια inputs → ίδιο output, χωρίς side effects. Referential transparency: μπορείς να αντικαταστήσεις την κλήση με την τιμή της χωρίς αλλαγή συμπεριφοράς — ισχύει μόνο για pures. Κάνει τον κώδικα testable & predictable."
+    },
+    {
+      question: "Currying vs Partial Application;",
+      answer: "Currying: μετατροπή f(a,b,c) σε αλυσίδα μονο-ορισματικών f(a)(b)(c). Partial application: προ-γεμίζεις ΜΕΡΙΚΑ ορίσματα (π.χ. με bind) και δίνεις τα υπόλοιπα αργότερα. Και τα δύο στηρίζονται σε closures."
+    },
+    {
+      question: "compose vs pipe;",
+      answer: "Και τα δύο συνθέτουν functions. compose: δεξιά→αριστερά f(g(x)). pipe: αριστερά→δεξιά (σειρά ανάγνωσης). Υλοποιούνται με reduce/reduceRight και δουλεύουν καθαρά με pure functions."
+    },
+    {
+      question: "Composition vs Inheritance;",
+      answer: "Inheritance: 'το X ΕΙΝΑΙ Y' (extends, ιεραρχία). Composition: 'το X ΕΧΕΙ ικανότητες' (συνδυάζεις μικρές συμπεριφορές). «Favor composition over inheritance»: πιο ευέλικτο, αποφεύγει εύθραυστες βαθιές ιεραρχίες."
+    },
+    {
+      question: "Private vs public properties στη class;",
+      answer: "Default public (ό,τι μπαίνει στο this). Πραγματικά private με πρόθεμα #field — προσβάσιμο μόνο μέσα στην class (αλλιώς SyntaxError). Πριν το #, η ιδιωτικότητα γινόταν με closures."
+    },
+    {
+      question: "Γιατί λέμε ότι 'οι functions είναι objects';",
+      answer: "Είναι first-class: τις περνάς ως ορίσματα, τις επιστρέφεις, τους βάζεις properties (fn.x = 1). Γι' αυτό υπάρχουν HOF/closures/currying. Το typeof είναι 'function' — ειδικός callable τύπος object."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Γράψε το ίδιο feature σε FP και OOP"
+  scenario="Πάρε ένα μικρό domain (π.χ. shopping cart) και υλοποίησέ το δύο φορές: μία με pure functions + composition, μία με class + private state."
+  outcomes={[
+    "Να αναγνωρίζεις πότε ταιριάζει FP και πότε OOP.",
+    "Να εξηγείς pure functions, immutability και composition με κώδικα.",
+    "Να μετατρέπεις imperative loop σε declarative pipeline."
+  ]}
+  steps={[
+    "Γράψε addItem/total ως pure functions πάνω σε immutable state.",
+    "Ξαναγράψε το ίδιο ως class Cart με #items private.",
+    "Φτιάξε ένα pipe(applyDiscount, addTax, format) για το total.",
+    "Μετάτρεψε ένα for-loop υπολογισμού σε map/filter/reduce.",
+    "Σημείωσε ποια εκδοχή τεστάρεται ευκολότερα και γιατί."
+  ]}
+  checkpoints={[
+    "Οι FP functions σου είναι pure: ίδιο input → ίδιο output, χωρίς mutation.",
+    "Στην OOP εκδοχή το state είναι πραγματικά private (#) πίσω από public API.",
+    "Το pipe διαβάζεται αριστερά→δεξιά και κάθε βήμα είναι μικρή pure function."
+  ]}
+  mistakes={[
+    "Να 'μολύνεις' pure function με mutation ή console.log (χάνεις referential transparency).",
+    "Να μπερδεύεις currying (μονο-ορισματική αλυσίδα) με partial application (προ-γέμισμα ορισμάτων).",
+    "Να φτιάχνεις βαθιά ιεραρχία κλάσεων εκεί που μια απλή composition θα ήταν πιο ευέλικτη."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν μπορείς να υλοποιήσεις το ίδιο feature και στα δύο paradigms και να δικαιολογήσεις πότε διαλέγεις FP και πότε OOP."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> JavaScript is multi-paradigm. I lean functional for data transformation — pure functions, immutability, and composition with map/filter/reduce — because referential transparency makes that code trivial to test and reason about. I reach for OOP when modeling entities with identity and behavior, using classes with private `#` fields for encapsulation. For reuse I favor composition over inheritance: combining small capabilities is more flexible than deep, fragile class hierarchies. In modern React the functional style dominates; in frameworks like NestJS the OOP style fits better.

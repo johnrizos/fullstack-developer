@@ -234,6 +234,72 @@ var x = 1;
   explanation="Το var x είναι hoisted ως undefined → typeof undefined = 'undefined'. Το typeof είναι ο ΜΟΝΟΣ τελεστής που δεν πετάει error για εντελώς αδήλωτες μεταβλητές — επιστρέφει 'undefined'. (Με let x αντί για var, το typeof x θα πετούσε ReferenceError λόγω TDZ!)"
 />
 
+## Drill 8: ο τελεστής `delete`
+
+Το `delete` **αφαιρεί ένα property** από object — δεν είναι το ίδιο με το να το κάνεις `undefined`:
+
+```js
+const user = { name: "Ada", role: "admin" };
+
+delete user.role;
+user.role;                 // undefined
+"role" in user;            // false — το key ΕΦΥΓΕ εντελώς
+
+const u2 = { name: "Grace", role: undefined };
+"role" in u2;              // true — το key υπάρχει, απλώς έχει τιμή undefined
+```
+
+Δύο παγίδες που ρωτιούνται:
+
+- Σε **arrays** το `delete arr[1]` αφήνει «τρύπα» (empty slot) και **ΔΕΝ** μικραίνει το `length` — γι' αυτό χρησιμοποιείς `splice` ή `filter`, ποτέ `delete`, για στοιχεία array.
+- Επιστρέφει `true`/`false` αν πέτυχε, και σε strict mode πετάει error αν προσπαθήσεις να σβήσεις non-configurable property.
+
+## Drill 9: πώς συγκρίνεις δύο objects
+
+Κλασική παγίδα: το `===` σε objects συγκρίνει **reference**, όχι περιεχόμενο:
+
+```js
+{ a: 1 } === { a: 1 };   // false — δύο διαφορετικά objects στη μνήμη
+
+const x = { a: 1 };
+const y = x;
+x === y;                 // true — ΙΔΙΑ reference
+```
+
+Για σύγκριση **περιεχομένου** (structural / deep equal):
+
+```js
+// Γρήγορο για flat, JSON-safe objects με ΙΔΙΑ σειρά keys:
+JSON.stringify(a) === JSON.stringify(b);
+// ⚠️ σπάει σε διαφορετική σειρά keys, undefined, functions, Date, NaN
+
+// Σωστό: αναδρομική σύγκριση (ή lodash isEqual σε πραγματικό project)
+function deepEqual(a, b) {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a == null || b == null)
+    return false;
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  return keysA.every((k) => deepEqual(a[k], b[k]));
+}
+```
+
+Στη συνέντευξη: πες ότι το `===` είναι reference equality, ότι το `JSON.stringify` είναι το γρήγορο hack με τα όριά του, και ότι σε production χρησιμοποιείς δοκιμασμένο `isEqual`.
+
+## Drill 10: naming & conventions
+
+Δεν είναι trivia — δείχνει ότι γράφεις κώδικα που διαβάζεται από ομάδα:
+
+- **`camelCase`** → μεταβλητές & functions: `userName`, `getUserById`.
+- **`PascalCase`** → classes & React components: `class UserModel`, `function ProfileCard()`.
+- **`UPPER_SNAKE_CASE`** → σταθερές «μαγικές» τιμές: `const MAX_RETRIES = 3`.
+- **`_prefix`** → σύμβαση για «ιδιωτικό» (ή πραγματικά private με `#field` σε class).
+- **boolean** ονόματα ξεκινούν με `is`/`has`/`can`: `isActive`, `hasAccess`.
+- Functions = **ρήμα + ουσιαστικό** (`fetchOrders`), μεταβλητές = ουσιαστικά (`orders`). Όχι συντομογραφίες (`usrCnt` → `userCount`).
+
+Ο χρυσός κανόνας: **συνέπεια μέσα στο project** μετράει περισσότερο από το ποια σύμβαση διάλεξες.
+
 ## Πώς δομείς κάθε απάντηση στη συνέντευξη
 
 Η δομή που ξεχωρίζει τους καλούς υποψηφίους:
@@ -281,6 +347,14 @@ var x = 1;
     {
       question: "Τι είναι το optional chaining και το nullish coalescing;",
       answer: "?. σταματά με undefined αν κάτι στην αλυσίδα είναι null/undefined (user?.address?.city). ?? δίνει default ΜΟΝΟ για null/undefined — σε αντίθεση με το || που 'πατάει' και πάνω σε 0, '' και false."
+    },
+    {
+      question: "delete obj.key vs obj.key = undefined;",
+      answer: "delete αφαιρεί ΕΝΤΕΛΩΣ το property — μετά 'key' in obj είναι false. Το = undefined κρατά το key (in → true) με τιμή undefined. Σε arrays ΜΗΝ χρησιμοποιείς delete: αφήνει τρύπα και δεν αλλάζει το length — βάλε splice/filter."
+    },
+    {
+      question: "Πώς συγκρίνεις δύο objects ως προς το περιεχόμενο;",
+      answer: "Το === είναι reference equality ({a:1} === {a:1} → false). Για περιεχόμενο: JSON.stringify(a) === JSON.stringify(b) (γρήγορο, αλλά σπάει σε διαφορετική σειρά keys/undefined/functions/Date) ή αναδρομικό deepEqual / lodash isEqual σε production."
     }
   ]}
 />

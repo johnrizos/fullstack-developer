@@ -100,6 +100,28 @@ const copy = [...names];
 const merged = [...names, ...otherNames];
 ```
 
+### Rest: το αντίστροφο του spread
+
+Το ίδιο σύμβολο `...` έχει **δεύτερη χρήση**. Όταν είναι στη μεριά της λήψης (αριστερά σε destructuring ή ως παράμετρος συνάρτησης), **μαζεύει** ό,τι περισσεύει σε ένα array — γι' αυτό λέγεται *rest*:
+
+```js
+// rest σε array destructuring — "πρώτο και όλα τα υπόλοιπα"
+const [winner, ...others] = ["Ada", "Grace", "Linus"];
+winner; // "Ada"
+others; // ["Grace", "Linus"]
+
+// rest σε object destructuring — "βγάλε το password, κράτα τα υπόλοιπα"
+const { password, ...safeUser } = user;
+
+// rest parameters — δέξου άγνωστο πλήθος ορισμάτων ως array
+function sum(...numbers) {
+  return numbers.reduce((total, n) => total + n, 0);
+}
+sum(1, 2, 3); // 6
+```
+
+Ο κανόνας για να μην μπερδεύεσαι: **spread = «άπλωσε/σκόρπισε»** (το `...` σε τιμή που δίνεις), **rest = «μάζεψε τα υπόλοιπα»** (το `...` εκεί που λαμβάνεις). Το rest πάει **πάντα τελευταίο**.
+
 Η πιο χρήσιμη μορφή στα πραγματικά apps: **array από objects** —
 
 ```js

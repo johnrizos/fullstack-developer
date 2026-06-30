@@ -285,6 +285,21 @@ admin.greet(); // "Hi, Grace (admin level 9)"
 // Αναζήτηση: admin → Admin.prototype → User.prototype → Object.prototype
 ```
 
+### `instanceof` — έλεγχος στην αλυσίδα
+
+Το `instanceof` ρωτάει: «βρίσκεται το `prototype` αυτού του constructor **κάπου στην αλυσίδα** του object;» Γι' αυτό ένα `Admin` είναι ταυτόχρονα και `User` και `Object`:
+
+```js
+admin instanceof Admin;  // true
+admin instanceof User;   // true — ο γονέας είναι κι αυτός στην αλυσίδα
+admin instanceof Object; // true — όλα καταλήγουν εκεί
+```
+
+Προσοχή σε δύο παγίδες που ρωτιούνται:
+
+- Δουλεύει με **objects/instances**, όχι με primitives: `"hi" instanceof String` → `false` (το string literal δεν είναι object). Για primitives χρησιμοποιείς `typeof`.
+- Ελέγχει την αλυσίδα τη **στιγμή** της κλήσης — αν αλλάξεις το `prototype` ή περνάς objects από άλλο iframe/realm, μπορεί να σε ξεγελάσει. Για arrays προτίμησε το σταθερό `Array.isArray(x)` αντί για `x instanceof Array`.
+
 <PredictOutput
   title="Prototype chain drill"
   code={`class A {
