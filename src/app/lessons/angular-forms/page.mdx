@@ -1,0 +1,187 @@
+# Forms: Reactive & Template-driven
+
+Η Angular προσφέρει **δύο** προσεγγίσεις για forms: **template-driven** (απλές, στο HTML) και **reactive** (στην class, scalable). Σε πραγματική/enterprise δουλειά κυριαρχούν τα **reactive forms** — και αυτά ρωτιούνται.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να χτίζεις reactive form με `FormGroup`/`FormControl`,
+- να προσθέτεις validation & error messages,
+- να γράφεις custom validator,
+- να ξέρεις πότε αρκεί template-driven.
+
+## Template-driven: γρήγορο & απλό
+
+Με `[(ngModel)]` και το `FormsModule` στήνεις φόρμα κατευθείαν στο template — καλό για **μικρές, απλές** φόρμες:
+
+```ts
+@Component({
+  selector: "app-login",
+  standalone: true,
+  imports: [FormsModule],
+  template: `
+    <form #f="ngForm" (ngSubmit)="submit(f)">
+      <input name="email" [(ngModel)]="email" required email />
+      <button [disabled]="f.invalid">Είσοδος</button>
+    </form>
+  `,
+})
+export class LoginComponent {
+  email = "";
+  submit(form: NgForm) { console.log(form.value); }
+}
+```
+
+Η λογική ζει στο template (validation attributes σαν `required`, `email`). Καθαρό για λίγα πεδία, αλλά δύσκολο να κλιμακωθεί ή να τεσταριστεί.
+
+## Reactive forms: ο κανόνας για σοβαρές φόρμες
+
+Εδώ ορίζεις το **μοντέλο της φόρμας στην class**, ρητά και typed:
+
+```ts
+import { Component, inject } from "@angular/core";
+import { FormBuilder, ReactiveFormsModule, Validators } from "@angular/forms";
+
+@Component({
+  selector: "app-signup",
+  standalone: true,
+  imports: [ReactiveFormsModule],
+  template: `
+    <form [formGroup]="form" (ngSubmit)="submit()">
+      <input formControlName="name" />
+      @if (form.controls.name.invalid && form.controls.name.touched) {
+        <small>Το όνομα είναι υποχρεωτικό</small>
+      }
+
+      <input formControlName="email" />
+      <button [disabled]="form.invalid">Εγγραφή</button>
+    </form>
+  `,
+})
+export class SignupComponent {
+  private fb = inject(FormBuilder);
+
+  form = this.fb.group({
+    name: ["", [Validators.required, Validators.minLength(2)]],
+    email: ["", [Validators.required, Validators.email]],
+  });
+
+  submit() {
+    if (this.form.valid) console.log(this.form.value);
+  }
+}
+```
+
+Δομικά στοιχεία:
+
+- **`FormControl`** — ένα πεδίο (τιμή + validation + state).
+- **`FormGroup`** — ομάδα controls (όλη η φόρμα ή ένα τμήμα).
+- **`FormBuilder`** (`fb.group`) — συντομογραφία για να τα φτιάχνεις.
+- **`[formGroup]`** + **`formControlName`** — συνδέουν το template με το μοντέλο.
+
+Πλεονεκτήματα: το μοντέλο είναι **κεντρικό, typed, testable** χωρίς DOM, και η validation/state (`valid`, `touched`, `dirty`, `errors`) είναι προσβάσιμη προγραμματιστικά.
+
+## Validation & error messages
+
+Built-in validators: `Validators.required`, `minLength`, `maxLength`, `email`, `pattern`, `min`, `max`. Δείχνεις σφάλματα με βάση το state του control:
+
+```ts
+@if (form.controls.email.errors?.["required"] && form.controls.email.touched) {
+  <small>Το email είναι υποχρεωτικό</small>
+}
+@if (form.controls.email.errors?.["email"]) {
+  <small>Μη έγκυρο email</small>
+}
+```
+
+Το `touched` αποφεύγει να δείχνεις σφάλμα πριν καν αγγίξει ο χρήστης το πεδίο — βασικό για καλό UX.
+
+### Custom validator
+
+Όταν δεν φτάνουν οι built-in, γράφεις δική σου function που επιστρέφει `null` (έγκυρο) ή ένα error object:
+
+```ts
+import { AbstractControl, ValidationErrors } from "@angular/forms";
+
+function noSpaces(control: AbstractControl): ValidationErrors | null {
+  const hasSpace = (control.value ?? "").includes(" ");
+  return hasSpace ? { noSpaces: true } : null;
+}
+
+// χρήση: username: ["", [Validators.required, noSpaces]]
+```
+
+<Exercise
+  question="Φτιάχνεις μια μεγάλη φόρμα με dynamic πεδία, validation και unit tests. Ποια προσέγγιση;"
+  options={[
+    "Reactive forms — μοντέλο στην class, typed, testable χωρίς DOM, κλιμακώνεται.",
+    "Template-driven — όλα στο HTML με ngModel.",
+    "Καμία· οι φόρμες δεν χρειάζονται δομή."
+  ]}
+  correctOptionIndex={0}
+  explanation="Τα reactive forms ορίζουν το μοντέλο προγραμματιστικά: typed controls, εύκολη δυναμική προσθήκη πεδίων, validation state προσβάσιμο στην class, και testable χωρίς render. Template-driven ταιριάζει μόνο σε μικρές απλές φόρμες."
+/>
+
+<PredictOutput
+  title="Validation state drill"
+  code={`// form control 'name' με Validators.required, αρχική τιμή "".
+// Ο χρήστης ΔΕΝ έχει αγγίξει το πεδίο ακόμα.
+// Τι είναι: name.invalid και name.touched;`}
+  options={['invalid = true, touched = false', 'invalid = false, touched = true', 'και τα δύο true', 'και τα δύο false']}
+  correctOptionIndex={0}
+  answer="invalid = true, touched = false"
+  explanation="Με required και κενή τιμή, το control είναι invalid από την αρχή. Αλλά touched γίνεται true μόνο αφού ο χρήστης εστιάσει & φύγει (blur). Γι' αυτό δείχνουμε σφάλματα με invalid && touched — όχι πριν την αλληλεπίδραση."
+/>
+
+<Flashcards
+  title="Angular forms — repaso"
+  cards={[
+    {
+      question: "Template-driven vs reactive forms;",
+      answer: "Template-driven: [(ngModel)] + FormsModule, λογική στο HTML, καλό για μικρές φόρμες. Reactive: μοντέλο στην class (FormGroup/FormControl) + ReactiveFormsModule, typed/testable/scalable — ο κανόνας για σοβαρές φόρμες."
+    },
+    {
+      question: "FormControl vs FormGroup vs FormBuilder;",
+      answer: "FormControl: ένα πεδίο (value+validators+state). FormGroup: ομάδα controls. FormBuilder (fb.group): συντομογραφία δημιουργίας. Σύνδεση: [formGroup] + formControlName στο template."
+    },
+    {
+      question: "Πώς δείχνεις error messages σωστά;",
+      answer: "Με βάση το state του control: control.errors?.['required'] και έλεγξε control.touched ώστε να ΜΗΝ δείχνεις σφάλμα πριν αλληλεπιδράσει ο χρήστης. Built-in validators: required/minLength/email/pattern…"
+    },
+    {
+      question: "Πώς γράφεις custom validator;",
+      answer: "Function (control: AbstractControl) => ValidationErrors | null: επιστρέφει null αν έγκυρο, ή object { errorKey: true } αν όχι. Το βάζεις στο validators array του control."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Validated reactive form"
+  scenario="Φτιάξε μια reactive φόρμα εγγραφής (name, email, username) με built-in validators, ένα custom validator και σωστά error messages."
+  outcomes={[
+    "Να στήνεις FormGroup με typed controls & validators.",
+    "Να δείχνεις error messages με βάση το state.",
+    "Να γράφεις custom validator."
+  ]}
+  steps={[
+    "fb.group με name (required, minLength 2), email (required, email).",
+    "Πρόσθεσε username με custom noSpaces validator.",
+    "Δείξε errors μόνο όταν control.invalid && control.touched.",
+    "Κάνε disable το submit όταν form.invalid.",
+    "Σημείωσε γιατί τα reactive forms είναι testable."
+  ]}
+  checkpoints={[
+    "Το submit είναι disabled όσο η φόρμα είναι invalid.",
+    "Τα σφάλματα δεν εμφανίζονται πριν αγγίξει ο χρήστης τα πεδία.",
+    "Ο custom validator δουλεύει."
+  ]}
+  mistakes={[
+    "Να δείχνεις errors χωρίς έλεγχο touched (κακό UX).",
+    "Να χρησιμοποιείς template-driven για μεγάλη/δυναμική φόρμα.",
+    "Να ξεχνάς το ReactiveFormsModule στα imports."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν στήνεις reactive form με validation & custom validator και δείχνεις error messages με σωστό timing."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> Angular has template-driven forms with `[(ngModel)]` — fine for small forms — and reactive forms, which I default to for anything serious. Reactive forms define the model in the class with `FormGroup` and `FormControl` (via `FormBuilder`), so it's typed, testable without the DOM, and easy to extend dynamically. I attach `Validators` like `required` and `email`, write custom validators that return `null` or an error object, and show messages based on control state — gating on `touched` so errors don't appear before the user interacts.

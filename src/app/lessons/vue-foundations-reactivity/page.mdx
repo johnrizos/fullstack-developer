@@ -1,0 +1,182 @@
+# Vue Foundations & Reactivity
+
+Η Vue είναι ένα **progressive framework**: μπορείς να την προσθέσεις σε μία σελίδα ή να χτίσεις ολόκληρο SPA. Σε αυτό το track δουλεύουμε με **Vue 3** και το σύγχρονο **Composition API** μέσα σε `<script setup>` — ό,τι θα γράψεις σε πραγματική δουλειά σήμερα. Αν ξέρεις React, θα βρεις πολλά γνώριμα· θα σημειώνω τις διαφορές.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να διαβάζεις/γράφεις ένα **Single-File Component** (`.vue`),
+- να εξηγείς το **reactivity system** της Vue (`ref` vs `reactive`),
+- να καταλαβαίνεις γιατί η Vue ξανα-renderάρει αυτόματα,
+- να συνδέεις δεδομένα στο template με interpolation και bindings.
+
+## Single-File Components (SFC)
+
+Η μονάδα της Vue είναι το αρχείο `.vue`, που μαζεύει **template, logic και style** σε ένα μέρος:
+
+```vue
+<script setup>
+import { ref } from "vue";
+
+const count = ref(0);
+function increment() {
+  count.value++;
+}
+</script>
+
+<template>
+  <button @click="increment">Πατήθηκε {{ count }} φορές</button>
+</template>
+
+<style scoped>
+button { font-weight: 700; }
+</style>
+```
+
+Τρία πράγματα να προσέξεις:
+
+- **`<script setup>`** — εδώ ζει η λογική. Ό,τι δηλώνεις (μεταβλητές, functions) γίνεται **αυτόματα διαθέσιμο στο template**, χωρίς `return`.
+- **`<template>`** — το HTML με Vue σύνταξη. Το `{{ count }}` είναι **interpolation** (μουστάκια), το `@click` είναι event binding.
+- **`<style scoped>`** — CSS που εφαρμόζεται **μόνο** σε αυτό το component (δεν διαρρέει αλλού).
+
+> Σύγκριση με React: το SFC αντιστοιχεί σε ένα component αρχείο, αλλά η Vue ξεχωρίζει ρητά template/logic/style αντί για JSX που τα ανακατεύει.
+
+## Το reactivity system: `ref` & `reactive`
+
+Η «μαγεία» της Vue: όταν αλλάζεις ένα **reactive** δεδομένο, η Vue ενημερώνει **αυτόματα** το DOM. Δεν καλείς κάποιο `setState` — αλλάζεις την τιμή κατευθείαν.
+
+**`ref`** — για **οποιαδήποτε** τιμή (primitives ή objects). Επιστρέφει ένα object με property `.value`:
+
+```js
+import { ref } from "vue";
+
+const count = ref(0);
+count.value++;        // στη logic χρειάζεσαι .value
+console.log(count.value); // 1
+```
+
+> Στο **template** ΔΕΝ γράφεις `.value` — η Vue το «ξετυλίγει» μόνη της: `{{ count }}`.
+
+**`reactive`** — **μόνο** για objects/arrays. Δεν χρειάζεται `.value`, αλλά δεν δουλεύει με primitives:
+
+```js
+import { reactive } from "vue";
+
+const state = reactive({ count: 0, user: { name: "Ada" } });
+state.count++;            // χωρίς .value
+state.user.name = "Grace"; // reactive και σε βάθος (nested)
+```
+
+Πρακτικός κανόνας που θα ακούσεις σε συνέντευξη: **`ref` για τα πάντα** (ιδίως primitives και όταν θες να αντικαταστήσεις ολόκληρη την τιμή), **`reactive` για ομάδες σχετικών πεδίων**. Πολλές ομάδες προτιμούν να μένουν σταθερά στο `ref` για συνέπεια.
+
+### Πώς δουλεύει από κάτω
+
+Η Vue 3 τυλίγει τα reactive objects σε **Proxies** (ES6). Όταν διαβάζεις μια property, η Vue «καταγράφει» ότι το τρέχον component εξαρτάται από αυτήν (**track**)· όταν τη γράφεις, ειδοποιεί όσους εξαρτώνται (**trigger**) και προγραμματίζει re-render. Γι' αυτό δεν χρειάζεσαι immutable updates όπως στη React — αλλάζεις την τιμή και η Vue ξέρει.
+
+<Exercise
+  question="Γιατί γράφεις count.value στη logic αλλά σκέτο count στο template;"
+  options={[
+    "Το ref αποθηκεύει την τιμή στο .value· στο template η Vue κάνει αυτόματο unwrapping.",
+    "Είναι bug — πρέπει παντού .value.",
+    "Το template δεν μπορεί να διαβάσει refs καθόλου."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το ref είναι ένα wrapper object με .value. Στη JavaScript χρειάζεσαι ρητά το .value· στο template η Vue ξετυλίγει τα top-level refs αυτόματα για ευκολία."
+/>
+
+## Interpolation & βασικά bindings
+
+Μέσα στο template:
+
+```vue
+<template>
+  <!-- text interpolation -->
+  <h1>{{ title }}</h1>
+
+  <!-- attribute binding με v-bind (σύντμηση :) -->
+  <img :src="imageUrl" :alt="title" />
+
+  <!-- event binding με v-on (σύντμηση @) -->
+  <button @click="save">Αποθήκευση</button>
+
+  <!-- expressions επιτρέπονται, όχι statements -->
+  <p>{{ count * 2 }}</p>
+  <p>{{ isActive ? "Ενεργό" : "Ανενεργό" }}</p>
+</template>
+```
+
+- **`{{ }}`** για κείμενο.
+- **`:attr`** (v-bind) για να συνδέσεις δυναμικά attribute σε δεδομένο.
+- **`@event`** (v-on) για listeners.
+
+Μέσα στα μουστάκια μπαίνουν **expressions** (παράγουν τιμή), όχι μπλοκ κώδικα — όπως και στο JSX.
+
+<PredictOutput
+  title="Reactivity drill"
+  code={`import { ref, reactive } from "vue";
+
+const a = ref(1);
+const b = reactive({ n: 1 });
+
+a.value = a.value + 1;
+b.n = b.n + 1;
+
+console.log(a.value, b.n);`}
+  options={['2 2', '1 1', '2 1', 'undefined 2']}
+  correctOptionIndex={0}
+  answer="2 2"
+  explanation="Το a είναι ref → προσπελάζεται με a.value. Το b είναι reactive object → b.n χωρίς .value. Και τα δύο γίνονται 2. Αν ξεχνούσες το .value στο ref, θα έγραφες σε λάθος property."
+/>
+
+<Flashcards
+  title="Vue foundations — γρήγορο repaso"
+  cards={[
+    {
+      question: "Τι περιέχει ένα Single-File Component;",
+      answer: "Τρία blocks σε ένα .vue αρχείο: <script setup> (logic), <template> (HTML με Vue σύνταξη), <style scoped> (CSS μόνο για το component). Ό,τι δηλώνεις στο script setup είναι αυτόματα διαθέσιμο στο template."
+    },
+    {
+      question: "ref vs reactive;",
+      answer: "ref: για κάθε τιμή (primitives & objects), πρόσβαση με .value στη logic (auto-unwrap στο template). reactive: μόνο για objects/arrays, χωρίς .value, αλλά δεν δουλεύει με primitives. Κανόνας: ref by default."
+    },
+    {
+      question: "Πώς ξέρει η Vue πότε να ξανα-renderάρει;",
+      answer: "Reactivity system με Proxies: όταν διαβάζεις μια reactive property κάνει track την εξάρτηση, όταν τη γράφεις κάνει trigger τους εξαρτώμενους και προγραμματίζει re-render. Δεν χρειάζεται setState ή immutable updates."
+    },
+    {
+      question: "Τι σημαίνουν :src και @click;",
+      answer: ":src είναι σύντμηση του v-bind:src (δυναμικό attribute binding). @click είναι σύντμηση του v-on:click (event listener). Το {{ }} είναι text interpolation."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Φτιάξε το πρώτο σου reactive component"
+  scenario="Χτίσε ένα μικρό counter SFC και πειραματίσου με ref vs reactive ώστε να δεις πότε χρειάζεται .value και πότε όχι."
+  outcomes={[
+    "Να γράφεις ένα SFC με script setup, template και scoped style.",
+    "Να διαλέγεις σωστά ανάμεσα σε ref και reactive.",
+    "Να εξηγείς γιατί η αλλαγή μιας reactive τιμής ενημερώνει το DOM."
+  ]}
+  steps={[
+    "Δημίουργησε count = ref(0) και κουμπί που κάνει count.value++.",
+    "Πρόσθεσε ένα reactive({ name }) object και δείξε το name στο template.",
+    "Άλλαξε το name σε event handler χωρίς .value και επιβεβαίωσε ότι ενημερώνεται.",
+    "Δοκίμασε σκόπιμα να ξεχάσεις το .value στο ref και δες τι σπάει.",
+    "Γράψε 2 προτάσεις: 'γιατί η Vue ενημερώνει αυτόματα το UI'."
+  ]}
+  checkpoints={[
+    "Το component renderάρει και ενημερώνεται σε κάθε click.",
+    "Καταλαβαίνεις πού χρειάζεται .value και πού όχι.",
+    "Μπορείς να εξηγήσεις track/trigger με δικά σου λόγια."
+  ]}
+  mistakes={[
+    "Να ξεχνάς το .value σε ref μέσα στη logic.",
+    "Να βάζεις primitive σε reactive() (δεν γίνεται reactive).",
+    "Να νομίζεις ότι χρειάζεσαι immutable updates όπως στη React."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν γράφεις ένα reactive SFC χωρίς να σκέφτεσαι, εξηγείς ref vs reactive, και περιγράφεις πώς το reactivity system προκαλεί re-render."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> Vue is reactive by default: I declare state with `ref` for most values and `reactive` for grouped objects, then mutate it directly — no setState. Under the hood Vue 3 wraps reactive data in Proxies, tracking which component reads each property and re-rendering when it changes. A Single-File Component keeps template, logic in `<script setup>`, and scoped styles together, which I find cleaner than mixing markup into JSX.

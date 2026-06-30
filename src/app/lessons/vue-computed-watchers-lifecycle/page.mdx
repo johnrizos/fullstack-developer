@@ -1,0 +1,169 @@
+# Computed, Watchers & Lifecycle
+
+Το reactive state από μόνο του δεν φτάνει. Χρειάζεσαι **παράγωγες τιμές** (computed), **παρενέργειες** όταν αλλάζει κάτι (watchers), και αγκίστρωση σε **στιγμές της ζωής** του component (lifecycle). Εδώ ξεχωρίζεις πότε διαλέγεις το καθένα — κλασικό σημείο σύγχυσης.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να γράφεις `computed` και να ξέρεις γιατί διαφέρει από function/method,
+- να διαλέγεις ανάμεσα σε `watch` και `watchEffect`,
+- να χρησιμοποιείς lifecycle hooks (`onMounted`, `onUnmounted`),
+- να αποφεύγεις περιττούς watchers όταν φτάνει το computed.
+
+## Computed: παράγωγο, cached state
+
+Όταν μια τιμή **προκύπτει** από άλλο state, χρησιμοποιείς `computed`. Είναι **cached**: ξαναϋπολογίζεται **μόνο** όταν αλλάξει κάποια από τις reactive εξαρτήσεις του.
+
+```js
+import { ref, computed } from "vue";
+
+const items = ref([
+  { name: "Laptop", price: 1200 },
+  { name: "Mouse", price: 25 },
+]);
+
+const total = computed(() => items.value.reduce((s, i) => s + i.price, 0));
+// total.value === 1225 — και δεν ξαναϋπολογίζεται αν δεν αλλάξει το items
+```
+
+### Computed vs method
+
+Μπορείς να γράψεις και μια απλή function που επιστρέφει το ίδιο. Η διαφορά είναι το **caching**:
+
+- **`computed`** → cached. Αν το καλέσεις 10 φορές στο template χωρίς να αλλάξουν οι εξαρτήσεις, τρέχει **μία** φορά.
+- **method** (απλή function) → τρέχει **κάθε** re-render, κάθε φορά.
+
+Κανόνας: αν η τιμή εξαρτάται μόνο από reactive state και δεν έχει side effects → **computed**. Είναι και πιο δηλωτικό.
+
+<Exercise
+  question="Πότε ξαναϋπολογίζεται ένα computed;"
+  options={[
+    "Μόνο όταν αλλάξει κάποια από τις reactive εξαρτήσεις του (αλλιώς επιστρέφει το cached αποτέλεσμα).",
+    "Σε κάθε re-render του component.",
+    "Μόνο μία φορά, στο mount."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το computed είναι cached: παρακολουθεί τις reactive εξαρτήσεις και ξανατρέχει μόνο όταν αυτές αλλάξουν. Γι' αυτό προτιμάται έναντι method για παράγωγες τιμές."
+/>
+
+## Watchers: side effects σε αλλαγή
+
+Όταν θες να **κάνεις κάτι** (όχι να υπολογίσεις τιμή) ως αντίδραση σε αλλαγή — fetch, logging, αποθήκευση — χρησιμοποιείς watcher.
+
+**`watch`** — παρακολουθεί **συγκεκριμένη** πηγή και σου δίνει νέα/παλιά τιμή:
+
+```js
+import { ref, watch } from "vue";
+
+const query = ref("");
+
+watch(query, (newVal, oldVal) => {
+  console.log(`από "${oldVal}" σε "${newVal}"`);
+  // π.χ. fetch results για το newVal
+});
+```
+
+**`watchEffect`** — τρέχει **αμέσως** και ξανατρέχει όποτε αλλάξει **οποιαδήποτε** reactive τιμή διαβάζει μέσα του (αυτόματο tracking, χωρίς να δηλώσεις πηγή):
+
+```js
+import { ref, watchEffect } from "vue";
+
+const userId = ref(1);
+watchEffect(() => {
+  console.log(`Φόρτωσε user ${userId.value}`); // tracking αυτόματα το userId
+});
+```
+
+Πότε ποιο;
+
+- Ξέρεις **ακριβώς ποια** πηγή και θες **παλιά/νέα** τιμή ή lazy εκτέλεση → `watch`.
+- Θες να τρέξει **αμέσως** και να παρακολουθεί **ό,τι διαβάζει** → `watchEffect`.
+
+> Σύγκριση με React: το `watch`/`watchEffect` θυμίζει `useEffect`, αλλά η Vue κάνει **αυτόματο** dependency tracking — δεν γράφεις dependency array.
+
+## Lifecycle hooks
+
+Κάθε component περνά από στάδια: δημιουργία → mount στο DOM → updates → unmount. Αγκιστρώνεσαι με hooks μέσα στο `<script setup>`:
+
+```js
+import { onMounted, onUnmounted } from "vue";
+
+onMounted(() => {
+  // το DOM υπάρχει — εδώ βάζεις listeners, timers, αρχικό fetch
+  window.addEventListener("resize", onResize);
+});
+
+onUnmounted(() => {
+  // cleanup — απαραίτητο για να μην έχεις memory leaks
+  window.removeEventListener("resize", onResize);
+});
+```
+
+Οι πιο συχνοί: **`onMounted`** (αρχικοποίηση μετά το πρώτο render), **`onUnmounted`** (καθαρισμός), **`onUpdated`** (μετά από re-render). Το ζευγάρι mount/unmount είναι κρίσιμο: ό,τι ανοίγεις (listener, interval, subscription) πρέπει να το κλείνεις, αλλιώς διαρρέει μνήμη.
+
+<PredictOutput
+  title="Computed vs method drill"
+  code={`import { ref, computed } from "vue";
+const n = ref(2);
+const doubledComputed = computed(() => n.value * 2);
+
+// Το template διαβάζει doubledComputed 3 φορές χωρίς αλλαγή του n.
+// Πόσες φορές τρέχει η συνάρτηση μέσα στο computed;`}
+  options={['1', '3', '0', '6']}
+  correctOptionIndex={0}
+  answer="1"
+  explanation="Το computed είναι cached: αφού το n δεν άλλαξε, η συνάρτηση τρέχει μία φορά και οι επόμενες αναγνώσεις επιστρέφουν την cached τιμή. Με απλή method θα έτρεχε 3 φορές."
+/>
+
+<Flashcards
+  title="Computed/watch/lifecycle — repaso"
+  cards={[
+    {
+      question: "computed vs method;",
+      answer: "computed είναι cached — ξανατρέχει μόνο όταν αλλάξουν οι reactive εξαρτήσεις του. Method τρέχει σε κάθε re-render. Για παράγωγες τιμές χωρίς side effects → computed."
+    },
+    {
+      question: "watch vs watchEffect;",
+      answer: "watch: δηλώνεις ρητή πηγή, παίρνεις new/old value, lazy (δεν τρέχει στην αρχή by default). watchEffect: τρέχει αμέσως και κάνει αυτόματο tracking ό,τι reactive διαβάζει μέσα του."
+    },
+    {
+      question: "Computed ή watcher;",
+      answer: "Αν θες να ΥΠΟΛΟΓΙΣΕΙΣ τιμή από state → computed. Αν θες να ΚΑΝΕΙΣ κάτι (fetch, log, save) ως αντίδραση σε αλλαγή → watcher. Μην κάνεις με watcher ό,τι λύνεται με computed."
+    },
+    {
+      question: "Γιατί χρειάζεσαι onUnmounted;",
+      answer: "Για cleanup: αφαιρείς listeners, καθαρίζεις timers/intervals, ακυρώνεις subscriptions. Αλλιώς μένουν ζωντανά μετά το unmount → memory leak. Ζευγάρι με onMounted όπου τα δημιουργείς."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Derived state χωρίς περιττούς watchers"
+  scenario="Φτιάξε ένα μικρό καλάθι: το σύνολο είναι computed, ένα watcher αποθηκεύει σε localStorage, και ένας listener καθαρίζεται σωστά στο unmount."
+  outcomes={[
+    "Να εκφράζεις παράγωγες τιμές ως computed.",
+    "Να διαλέγεις watch/watchEffect μόνο για πραγματικά side effects.",
+    "Να κάνεις cleanup στο onUnmounted."
+  ]}
+  steps={[
+    "Κράτα items = ref([]) και total = computed(...).",
+    "Πρόσθεσε watch(items, ...) που σώζει σε localStorage.",
+    "Στο onMounted βάλε ένα window listener και καθάρισέ το στο onUnmounted.",
+    "Δοκίμασε να κάνεις το total με method και σύγκρινε re-runs.",
+    "Σημείωσε ποιο πρόβλημα λύνει computed και ποιο watcher."
+  ]}
+  checkpoints={[
+    "Το total είναι computed, όχι watcher.",
+    "Ο watcher κάνει μόνο side effect (save), όχι υπολογισμό τιμής.",
+    "Ο listener αφαιρείται στο unmount."
+  ]}
+  mistakes={[
+    "Να χρησιμοποιείς watcher για να υπολογίσεις παράγωγη τιμή (θέλει computed).",
+    "Να ξεχνάς το cleanup στο onUnmounted.",
+    "Να βάζεις αρχικό fetch πριν το onMounted (το DOM δεν υπάρχει ακόμα)."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν διαλέγεις σωστά computed vs watcher χωρίς δισταγμό και κάνεις πάντα cleanup στα side effects."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> For derived values I use `computed` — it's cached and only recomputes when its reactive dependencies change, unlike a method that runs on every render. For side effects reacting to change I use watchers: `watch` when I know the exact source and want old/new values, `watchEffect` when I want it to run immediately and auto-track whatever it reads. Vue tracks dependencies automatically, so unlike React's `useEffect` there's no dependency array. I set up listeners and timers in `onMounted` and always tear them down in `onUnmounted` to avoid leaks.

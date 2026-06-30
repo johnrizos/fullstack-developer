@@ -1,0 +1,199 @@
+# Components, Props & Events
+
+Μια Vue εφαρμογή είναι ένα **δέντρο από components**. Το πώς μιλάνε μεταξύ τους — δεδομένα προς τα κάτω, γεγονότα προς τα πάνω — είναι ο πυρήνας κάθε framework. Εδώ μαθαίνεις **props**, **events** και **slots** με το σύγχρονο `<script setup>`.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να ορίζεις typed props με `defineProps`,
+- να στέλνεις γεγονότα προς τον γονέα με `defineEmits`,
+- να περνάς markup μέσα σε component με **slots**,
+- να εξηγείς το **one-way data flow** της Vue.
+
+## Props: δεδομένα προς τα κάτω
+
+Ο γονέας περνά δεδομένα στο παιδί μέσω **props**. Στο παιδί τα δηλώνεις με `defineProps`:
+
+```vue
+<!-- UserCard.vue (παιδί) -->
+<script setup>
+const props = defineProps({
+  name: { type: String, required: true },
+  role: { type: String, default: "member" },
+});
+</script>
+
+<template>
+  <article>
+    <h3>{{ name }}</h3>
+    <span>{{ role }}</span>
+  </article>
+</template>
+```
+
+Ο γονέας τα δίνει σαν attributes (με `:` αν είναι δυναμικά):
+
+```vue
+<template>
+  <UserCard name="Ada" role="admin" />
+  <UserCard :name="currentUser.name" />
+</template>
+```
+
+Με TypeScript η σύνταξη γίνεται πιο καθαρή — δηλώνεις τους τύπους generic:
+
+```vue
+<script setup lang="ts">
+const props = defineProps<{
+  name: string;
+  role?: string;
+}>();
+</script>
+```
+
+> **Props are read-only.** Το παιδί **δεν** αλλάζει props — αυτό είναι one-way data flow, ίδιο concept με τη React. Αν χρειαστείς αλλαγή, στέλνεις event στον γονέα.
+
+## Events: γεγονότα προς τα πάνω
+
+Το παιδί ειδοποιεί τον γονέα εκπέμποντας **custom events** με `defineEmits`:
+
+```vue
+<!-- TodoItem.vue (παιδί) -->
+<script setup>
+const props = defineProps<{ id: number; title: string }>();
+const emit = defineEmits<{
+  remove: [id: number];
+  toggle: [id: number];
+}>();
+</script>
+
+<template>
+  <li>
+    {{ title }}
+    <button @click="emit('toggle', id)">✓</button>
+    <button @click="emit('remove', id)">✕</button>
+  </li>
+</template>
+```
+
+Ο γονέας ακούει με `@event`:
+
+```vue
+<template>
+  <TodoItem
+    v-for="todo in todos"
+    :key="todo.id"
+    :id="todo.id"
+    :title="todo.title"
+    @remove="removeTodo"
+    @toggle="toggleTodo"
+  />
+</template>
+```
+
+Το pattern είναι σταθερό: **props down, events up**. Ο γονέας κατέχει το state· το παιδί ζητά αλλαγές μέσω events.
+
+<Exercise
+  question="Το παιδί θέλει να αλλάξει μια τιμή που πήρε ως prop. Τι κάνει;"
+  options={[
+    "Εκπέμπει event στον γονέα, ο οποίος κατέχει και αλλάζει το state.",
+    "Αλλάζει κατευθείαν το prop μέσα του.",
+    "Δημιουργεί νέο global μεταβλητή."
+  ]}
+  correctOptionIndex={0}
+  explanation="Props are read-only (one-way data flow). Το παιδί εκπέμπει event· ο γονέας — που κατέχει το state — κάνει την αλλαγή. Έτσι η ροή δεδομένων μένει προβλέψιμη."
+/>
+
+## Slots: περνάς markup, όχι μόνο δεδομένα
+
+Τα **slots** επιτρέπουν στον γονέα να βάλει **περιεχόμενο** μέσα στο παιδί — σαν τα `children` στη React:
+
+```vue
+<!-- Card.vue -->
+<template>
+  <div class="card">
+    <header><slot name="header" /></header>
+    <div class="body"><slot /></div>
+  </div>
+</template>
+```
+
+```vue
+<!-- χρήση -->
+<Card>
+  <template #header><h3>Τίτλος</h3></template>
+  <p>Αυτό μπαίνει στο default slot.</p>
+</Card>
+```
+
+- **Default slot** (`<slot />`) → το περιεχόμενο χωρίς όνομα.
+- **Named slots** (`<slot name="header" />` + `<template #header>`) → πολλαπλά «σημεία ένθεσης».
+- **Scoped slots** → το παιδί μπορεί να **περάσει δεδομένα πίσω** στο slot content (`<slot :item="x" />`), χρήσιμο για λίστες/πίνακες.
+
+Τα slots είναι το βασικό εργαλείο **composition** στη Vue: φτιάχνεις γενικά «κουτιά» (Card, Modal, List) και ο γονέας γεμίζει το περιεχόμενο.
+
+<PredictOutput
+  title="Props & events flow"
+  code={`// Parent template:
+// <Counter :start="5" @change="onChange" />
+// Counter emits 'change' με τη νέα τιμή σε κάθε click (+1).
+// Ο γονέας: function onChange(v) { total = v; }
+// Μετά από 2 clicks, τι είναι το total;`}
+  options={['7', '5', '2', 'undefined']}
+  correctOptionIndex={0}
+  answer="7"
+  explanation="start=5, κάθε click κάνει +1 και εκπέμπει τη νέα τιμή: 6 μετά 7. Ο γονέας ενημερώνει total=7. Το παιδί δεν κρατά το 'αληθινό' state — το ανεβάζει στον γονέα μέσω event."
+/>
+
+<Flashcards
+  title="Components & επικοινωνία — repaso"
+  cards={[
+    {
+      question: "Πώς ορίζεις typed props στο script setup;",
+      answer: "Με defineProps: είτε object με type/required/default, είτε generic με TypeScript: defineProps<{ name: string; role?: string }>(). Τα props είναι read-only μέσα στο παιδί."
+    },
+    {
+      question: "Πώς στέλνει το παιδί δεδομένα στον γονέα;",
+      answer: "Με defineEmits ορίζει custom events και καλεί emit('eventName', payload). Ο γονέας ακούει με @eventName. Pattern: props down, events up."
+    },
+    {
+      question: "Τι είναι τα slots;",
+      answer: "Σημεία όπου ο γονέας βάζει markup μέσα στο component (σαν children στη React). Default slot (<slot/>), named slots (#name), scoped slots (περνούν δεδομένα πίσω). Βασικό εργαλείο composition."
+    },
+    {
+      question: "Γιατί τα props είναι read-only;",
+      answer: "Για να μένει η ροή δεδομένων μονόδρομη (one-way) και προβλέψιμη: ο γονέας κατέχει το state, το παιδί ζητά αλλαγές μέσω events. Έτσι ξέρεις πάντα ποιος αλλάζει τι."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Χτίσε ένα todo με props & events"
+  scenario="Φτιάξε έναν γονέα TodoList που κατέχει το array και ένα παιδί TodoItem που εκπέμπει remove/toggle — για να εξασκηθείς στο props down / events up."
+  outcomes={[
+    "Να ορίζεις typed props και emits.",
+    "Να κρατάς το state στον γονέα και να ζητάς αλλαγές με events.",
+    "Να χρησιμοποιείς slots για επαναχρησιμοποιήσιμα κουτιά."
+  ]}
+  steps={[
+    "TodoList: κράτα todos = ref([...]) και render με v-for + :key.",
+    "TodoItem: defineProps για id/title, defineEmits για remove/toggle.",
+    "Σύνδεσε @remove/@toggle στον γονέα ώστε να αλλάζει το array.",
+    "Φτιάξε ένα Card component με named slot για header.",
+    "Σημείωσε ποιος κατέχει το state και ποιος ζητά αλλαγές."
+  ]}
+  checkpoints={[
+    "Τα clicks στο παιδί αλλάζουν το state στον γονέα μέσω events.",
+    "Τα props δεν τροποποιούνται ποτέ μέσα στο παιδί.",
+    "Το Card δέχεται περιεχόμενο μέσω slot."
+  ]}
+  mistakes={[
+    "Να αλλάζεις prop μέσα στο παιδί αντί να εκπέμπεις event.",
+    "Να ξεχνάς το :key στο v-for.",
+    "Να περνάς callbacks ως props αντί να χρησιμοποιείς το events σύστημα της Vue."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν σχεδιάζεις ένα feature ξεκάθαρα ως props down / events up και χρησιμοποιείς slots για composition."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> Vue components communicate with props down and events up. I declare typed props with `defineProps` — they're read-only, so a child never mutates them; instead it emits a custom event via `defineEmits` and the parent, which owns the state, makes the change. For composition I use slots, including named and scoped slots, to build generic containers like Card or Modal that the parent fills with content — conceptually the same role as `children` in React.

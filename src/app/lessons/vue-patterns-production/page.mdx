@@ -1,0 +1,163 @@
+# Patterns, Testing & Production
+
+Το τελευταίο βήμα: από «δουλεύει στο μηχάνημά μου» σε **production-ready** Vue. Async components, performance, accessibility και testing — τα πράγματα που σε κάνουν να εμπιστεύονται το feature σου σε πραγματικό κώδικα.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να φορτώνεις components async με `Suspense`,
+- να αναγνωρίζεις και να λύνεις performance προβλήματα,
+- να γράφεις βασικά tests με **Vue Test Utils**,
+- να ξέρεις τα βασικά accessibility & build βήματα.
+
+## Async components & Suspense
+
+Για βαριά components ή για να δείξεις loading όσο φορτώνει δεδομένα, η Vue έχει async loading και `<Suspense>`:
+
+```vue
+<script setup>
+import { defineAsyncComponent } from "vue";
+const HeavyChart = defineAsyncComponent(() => import("./HeavyChart.vue"));
+</script>
+
+<template>
+  <Suspense>
+    <template #default><HeavyChart /></template>
+    <template #fallback><p>Φόρτωση γραφήματος…</p></template>
+  </Suspense>
+</template>
+```
+
+Το `<Suspense>` δείχνει το `#fallback` όσο το async component (ή ένα `async setup`) δεν είναι έτοιμο. Συνδυασμένο με `defineAsyncComponent` σπάει το bundle και βελτιώνει το αρχικό load.
+
+## Performance: τα συνηθισμένα
+
+Η Vue είναι γρήγορη από προεπιλογή, αλλά τα κλασικά λάθη:
+
+- **Σταθερά & μοναδικά `:key`** στο `v-for` — λάθος keys = περιττά re-renders.
+- **`v-once`** για περιεχόμενο που δεν αλλάζει ποτέ (renderάρεται μία φορά).
+- **`v-memo`** για ακριβές λίστες — παρακάμπτει re-render αν δεν άλλαξαν συγκεκριμένες τιμές.
+- **`computed` αντί για methods** για παράγωγες τιμές (caching).
+- **Lazy routes/components** για code splitting.
+- **`shallowRef`** για μεγάλα objects που δεν χρειάζονται deep reactivity.
+
+> Πρώτα **μέτρα** (Vue DevTools → component render timings) και μετά βελτιστοποίησε. Πρόωρο optimization = χαμένος χρόνος.
+
+## Accessibility (a11y)
+
+Τα βασικά που ελέγχονται σε review:
+
+- Χρησιμοποίησε **semantic HTML** (`<button>`, `<nav>`, `<label>`) — όχι `<div>` με `@click`.
+- Κάθε input έχει συνδεδεμένο `<label>`.
+- **Focus management** μετά από route change ή άνοιγμα modal.
+- `aria-*` attributes όπου το semantic HTML δεν αρκεί.
+- Σεβασμός `prefers-reduced-motion` στα transitions.
+
+Η Vue δεν σε εμποδίζει να γράψεις προσβάσιμο HTML — απλώς μην το ξεχνάς πίσω από τα components.
+
+## Testing με Vue Test Utils
+
+Το επίσημο εργαλείο για component tests (συνήθως με **Vitest**):
+
+```js
+import { mount } from "@vue/test-utils";
+import Counter from "@/components/Counter.vue";
+
+test("increments on click", async () => {
+  const wrapper = mount(Counter, { props: { start: 0 } });
+
+  expect(wrapper.text()).toContain("0");
+  await wrapper.find("button").trigger("click");
+  expect(wrapper.text()).toContain("1");
+});
+```
+
+Αρχές καλού test:
+
+- Δοκίμασε **συμπεριφορά**, όχι υλοποίηση — τι βλέπει/κάνει ο χρήστης.
+- Βρες elements από **ορατό κείμενο/ρόλο**, όχι από CSS classes που αλλάζουν.
+- Για events του παιδιού, έλεγξε με `wrapper.emitted()`.
+- `await` στα triggers — η ενημέρωση του DOM είναι ασύγχρονη.
+
+<Exercise
+  question="Ποιο test είναι πιο ανθεκτικό σε αλλαγές;"
+  options={[
+    "Αυτό που ελέγχει ορατή συμπεριφορά (κείμενο/κουμπί που πατά ο χρήστης).",
+    "Αυτό που ελέγχει εσωτερικές μεταβλητές και CSS class names.",
+    "Αυτό που δεν κάνει await στα triggers."
+  ]}
+  correctOptionIndex={0}
+  explanation="Tests που στηρίζονται σε ορατή συμπεριφορά επιβιώνουν από refactors. Όταν δένεσαι σε internals ή σε class names, το test σπάει σε κάθε αλλαγή υλοποίησης χωρίς να έχει σπάσει η λειτουργία."
+/>
+
+## Build & deploy
+
+Η σύγχρονη Vue στήνεται με **Vite**: `npm run build` παράγει στατικά assets (HTML/JS/CSS) στο `dist/`, έτοιμα για οποιοδήποτε static host (Netlify, Vercel, Pages). Βασικά:
+
+- **Environment variables** με πρόθεμα `VITE_` εκτίθενται στον client (μη βάζεις secrets).
+- **Tree-shaking & minification** γίνονται αυτόματα στο build.
+- Έλεγξε το **bundle size** — lazy load ό,τι δεν χρειάζεται αμέσως.
+
+<PredictOutput
+  title="Suspense fallback drill"
+  code={`// <Suspense> με #default = async component (1s φόρτωση)
+//                      #fallback = <p>Loading…</p>
+// Τι βλέπει ο χρήστης το πρώτο δευτερόλεπτο;`}
+  options={['Το fallback "Loading…"', 'Κενή οθόνη', 'Σφάλμα', 'Το async component αμέσως']}
+  correctOptionIndex={0}
+  answer='Το fallback "Loading…"'
+  explanation="Το Suspense δείχνει το #fallback όσο το async component δεν έχει επιλυθεί (resolved). Μόλις φορτώσει, αντικαθιστά το fallback με το #default."
+/>
+
+<Flashcards
+  title="Production Vue — repaso"
+  cards={[
+    {
+      question: "Τι κάνει το <Suspense>;",
+      answer: "Δείχνει #fallback (loading UI) όσο ένα async component ή async setup δεν είναι resolved, και μετά το #default. Με defineAsyncComponent σπάει και το bundle."
+    },
+    {
+      question: "Τρεις performance μοχλοί στη Vue;",
+      answer: "Σταθερά :key στο v-for, computed αντί method (caching), lazy routes/components για code splitting. Επιπλέον: v-once/v-memo για στατικό/ακριβό περιεχόμενο, shallowRef για μεγάλα objects. Μέτρα πρώτα με DevTools."
+    },
+    {
+      question: "Πώς γράφεις ανθεκτικά component tests;",
+      answer: "Με Vue Test Utils (mount) δοκίμασε συμπεριφορά: βρες elements από κείμενο/ρόλο, trigger events με await, έλεγξε output & emitted(). Απόφυγε internals και class names."
+    },
+    {
+      question: "Τι προσέχεις στο build με Vite;",
+      answer: "Env vars με πρόθεμα VITE_ εκτίθενται στον client (όχι secrets). Build → dist/ στατικά assets. Tree-shaking/minification αυτόματα. Παρακολούθησε bundle size και lazy-load ό,τι δεν χρειάζεται αμέσως."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Κάνε ένα feature production-ready"
+  scenario="Πάρε ένα feature που 'δουλεύει' και κάν' το production-ready: async load, accessible markup, ένα test και build check."
+  outcomes={[
+    "Να φορτώνεις βαριά components async με Suspense.",
+    "Να γράφεις ένα behavior test με Vue Test Utils.",
+    "Να ελέγχεις a11y & bundle πριν το deploy."
+  ]}
+  steps={[
+    "Τύλιξε ένα βαρύ component σε defineAsyncComponent + Suspense.",
+    "Πέρασε a11y checklist: labels, semantic tags, focus, reduced-motion.",
+    "Γράψε test: render → click → assert ορατή αλλαγή.",
+    "Τρέξε build και κοίτα το bundle size ανά route.",
+    "Σημείωσε τι μέτρησες πριν βελτιστοποιήσεις."
+  ]}
+  checkpoints={[
+    "Το βαρύ component φορτώνει lazy με fallback.",
+    "Το test ελέγχει συμπεριφορά, όχι internals.",
+    "Το feature είναι keyboard-accessible."
+  ]}
+  mistakes={[
+    "Να βελτιστοποιείς χωρίς μέτρηση.",
+    "Να γράφεις tests δεμένα σε class names/internal state.",
+    "Να εκθέτεις secrets μέσω VITE_ env vars."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν παραδίδεις feature που φορτώνει αποδοτικά, είναι προσβάσιμο, καλύπτεται από ένα ουσιαστικό test και χτίζεται καθαρά."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> For production I lazy-load heavy components with `defineAsyncComponent` and `<Suspense>` for a clean loading state, and I keep performance healthy with stable `:key`s, `computed` over methods, and route-level code splitting — but I measure with Vue DevTools before optimizing. I test behavior with Vue Test Utils: find elements by visible text or role, trigger events with `await`, and assert what the user sees, so tests survive refactors. I keep accessibility in mind with semantic HTML, labels, and focus management, and on Vite I'm careful that only `VITE_`-prefixed, non-secret values reach the client.

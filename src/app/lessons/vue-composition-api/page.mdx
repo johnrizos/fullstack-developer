@@ -1,0 +1,184 @@
+# Composition API in Depth
+
+Το μεγάλο πλεονέκτημα του Composition API είναι η **επαναχρησιμοποίηση λογικής** χωρίς τα προβλήματα του παρελθόντος (mixins). Εδώ μαθαίνεις **composables** — το αντίστοιχο των custom hooks της React — καθώς και `provide`/`inject` και πότε ακόμα συναντάς το Options API.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να γράφεις **composables** που μοιράζονται λογική,
+- να περνάς δεδομένα βαθιά με `provide`/`inject`,
+- να εξηγείς **Options API vs Composition API**,
+- να αναγνωρίζεις πότε αξίζει να εξάγεις λογική σε composable.
+
+## Composables: επαναχρησιμοποιήσιμη λογική
+
+Ένα **composable** είναι απλώς μια function που χρησιμοποιεί το reactivity API της Vue (`ref`, `computed`, lifecycle) και **επιστρέφει** reactive state + functions. Σύμβαση: το όνομα ξεκινά με `use`.
+
+```js
+// composables/useToggle.js
+import { ref } from "vue";
+
+export function useToggle(initial = false) {
+  const state = ref(initial);
+  const toggle = () => (state.value = !state.value);
+  return { state, toggle };
+}
+```
+
+```vue
+<script setup>
+import { useToggle } from "@/composables/useToggle";
+const { state: isOpen, toggle } = useToggle();
+</script>
+
+<template>
+  <button @click="toggle">{{ isOpen ? "Κλείσε" : "Άνοιξε" }}</button>
+</template>
+```
+
+Πιο ρεαλιστικό — ένα `useFetch` με loading/error state και lifecycle:
+
+```js
+// composables/useFetch.js
+import { ref, onMounted } from "vue";
+
+export function useFetch(url) {
+  const data = ref(null);
+  const error = ref(null);
+  const loading = ref(true);
+
+  onMounted(async () => {
+    try {
+      const res = await fetch(url);
+      data.value = await res.json();
+    } catch (e) {
+      error.value = e;
+    } finally {
+      loading.value = false;
+    }
+  });
+
+  return { data, error, loading };
+}
+```
+
+Κάθε component που καλεί `useFetch` παίρνει **το δικό του** ανεξάρτητο state — ακριβώς όπως τα custom hooks στη React. Έτσι σπάς μεγάλα components σε μικρά, ονοματισμένα κομμάτια λογικής.
+
+<Exercise
+  question="Τι κάνει ένα composable επαναχρησιμοποιήσιμο και ασφαλές, σε αντίθεση με ένα παλιό mixin;"
+  options={[
+    "Είναι ρητή function: βλέπεις τι παίρνει και τι επιστρέφει, χωρίς κρυφές συγκρούσεις ονομάτων.",
+    "Τρέχει μόνο μία φορά για όλη την εφαρμογή.",
+    "Δεν χρησιμοποιεί καθόλου reactivity."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το composable είναι μια απλή function με ξεκάθαρο input/output. Σε αντίθεση με τα mixins, δεν 'χύνει' properties στο component με κίνδυνο name collisions — βλέπεις ακριβώς τι επιστρέφει και το κάνεις destructure."
+/>
+
+## `provide` / `inject`: δεδομένα βαθιά στο δέντρο
+
+Όταν πρέπει να περάσεις δεδομένα από έναν πρόγονο σε μακρινό απόγονο **χωρίς prop drilling**, χρησιμοποιείς `provide`/`inject` — το αντίστοιχο του React Context:
+
+```js
+// πρόγονος
+import { provide, ref } from "vue";
+const theme = ref("dark");
+provide("theme", theme);
+```
+
+```js
+// οποιοσδήποτε απόγονος, όσο βαθιά κι αν είναι
+import { inject } from "vue";
+const theme = inject("theme", "light"); // 2ο όρισμα = default
+```
+
+Αν δώσεις ένα `ref`, η σύνδεση παραμένει **reactive**: αλλάζει ο πρόγονος → ενημερώνονται οι απόγονοι. Ιδανικό για theme, locale, auth user — πράγματα «καθολικά» για ένα υποδέντρο. Για πραγματικό shared app state, προτιμάς **Pinia** (επόμενο μάθημα).
+
+## Options API vs Composition API
+
+Θα συναντήσεις και τα δύο, ειδικά σε παλαιότερο κώδικα:
+
+```js
+// Options API — οργάνωση κατά "τύπο" (data, methods, computed…)
+export default {
+  data() { return { count: 0 }; },
+  methods: { inc() { this.count++; } },
+  computed: { double() { return this.count * 2; } },
+};
+```
+
+```vue
+<!-- Composition API — οργάνωση κατά "feature" -->
+<script setup>
+import { ref, computed } from "vue";
+const count = ref(0);
+const inc = () => count.value++;
+const double = computed(() => count.value * 2);
+</script>
+```
+
+Διαφορά-κλειδί: το Options API σε αναγκάζει να σκορπίσεις τη λογική ενός feature σε `data`/`methods`/`computed`· το Composition API την κρατά **μαζεμένη** και την κάνει **εξαγώγιμη** σε composable. Για νέο κώδικα → Composition API με `<script setup>`. Το Options API δεν είναι deprecated, αλλά το σύγχρονο στυλ είναι το Composition.
+
+<PredictOutput
+  title="Composable independence drill"
+  code={`// useCounter() επιστρέφει { count: ref(0), inc }
+// ComponentA και ComponentB καλούν το useCounter ξεχωριστά.
+// Στο A πατάς inc 3 φορές. Τι δείχνει το count στο B;`}
+  options={['0', '3', 'undefined', 'NaN']}
+  correctOptionIndex={0}
+  answer="0"
+  explanation="Κάθε κλήση του useCounter δημιουργεί ΝΕΟ ανεξάρτητο ref. Το state του A δεν επηρεάζει το B. (Αν ήθελες κοινό state, θα όριζες το ref ΕΞΩ από τη function ή θα χρησιμοποιούσες store.)"
+/>
+
+<Flashcards
+  title="Composition API — repaso"
+  cards={[
+    {
+      question: "Τι είναι ένα composable;",
+      answer: "Function (σύμβαση: use*) που χρησιμοποιεί reactivity (ref/computed/lifecycle) και επιστρέφει reactive state + functions. Το αντίστοιχο των React custom hooks — κάθε κλήση δίνει ανεξάρτητο state."
+    },
+    {
+      question: "Composable vs mixin;",
+      answer: "Το composable είναι ρητή function με ξεκάθαρο input/output, χωρίς name collisions. Το mixin 'χύνει' properties στο component implicitly, με κίνδυνο συγκρούσεων και ασάφειας προέλευσης. Composables αντικατέστησαν τα mixins."
+    },
+    {
+      question: "Πότε provide/inject;",
+      answer: "Για να περάσεις δεδομένα σε βαθύ απόγονο χωρίς prop drilling (σαν React Context). provide('key', value) στον πρόγονο, inject('key', default) στον απόγονο. Με ref παραμένει reactive. Για app-wide state → Pinia."
+    },
+    {
+      question: "Options API vs Composition API;",
+      answer: "Options: οργάνωση κατά τύπο (data/methods/computed), σκορπίζει feature logic. Composition (<script setup>): οργάνωση κατά feature, εξαγώγιμη σε composables. Νέος κώδικας → Composition."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Εξάγαγε λογική σε composables"
+  scenario="Πάρε ένα 'χοντρό' component και σπάσε το σε composables (useToggle, useFetch) + ένα provide/inject για theme."
+  outcomes={[
+    "Να γράφεις composables που επιστρέφουν reactive state.",
+    "Να μοιράζεσαι δεδομένα με provide/inject.",
+    "Να αναγνωρίζεις πότε αξίζει εξαγωγή σε composable."
+  ]}
+  steps={[
+    "Φτιάξε useToggle και χρησιμοποίησέ το σε δύο διαφορετικά components.",
+    "Φτιάξε useFetch με loading/error/data και onMounted.",
+    "Provide ένα theme ref στον root και inject το σε βαθύ παιδί.",
+    "Επιβεβαίωσε ότι κάθε χρήση composable έχει ανεξάρτητο state.",
+    "Σημείωσε ποια λογική άξιζε εξαγωγή και ποια όχι."
+  ]}
+  checkpoints={[
+    "Δύο components μοιράζονται ΛΟΓΙΚΗ (όχι state) μέσω composable.",
+    "Το inject παίρνει reactive τιμή που ενημερώνεται.",
+    "Το useFetch χειρίζεται loading/error καθαρά."
+  ]}
+  mistakes={[
+    "Να περιμένεις ότι δύο κλήσεις composable μοιράζονται state (δεν το κάνουν).",
+    "Να χρησιμοποιείς provide/inject για state που θα ήταν καλύτερο σε Pinia.",
+    "Να μην κάνεις destructure σωστά το return του composable."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν σπας ένα feature σε composables με καθαρό input/output και ξέρεις πότε φτάνει το provide/inject και πότε θες store."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> The Composition API lets me extract reusable logic into composables — plain `use*` functions that use Vue's reactivity and return state plus methods, like React custom hooks. Each call gets independent state, and unlike old mixins there are no hidden name collisions because the input and output are explicit. For passing data deep without prop drilling I use `provide`/`inject` — Vue's Context equivalent — keeping it reactive by providing a `ref`. I reach for the Composition API with `<script setup>` on new code because it groups logic by feature instead of scattering it across `data`, `methods`, and `computed`.

@@ -1,0 +1,201 @@
+# Routing & HttpClient
+
+Δύο κομμάτια που έρχονται «μέσα στο κουτί» της Angular: ο **Router** για navigation μεταξύ σελίδων και ο **HttpClient** για επικοινωνία με APIs. Εδώ μαθαίνεις routes, params, lazy loading, guards, HTTP calls και interceptors.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να ορίζεις routes με params και **lazy loading**,
+- να προστατεύεις routes με **guards**,
+- να κάνεις HTTP calls με `HttpClient`,
+- να χρησιμοποιείς **interceptors** για cross-cutting λογική.
+
+## Routing: οι σελίδες της εφαρμογής
+
+Ορίζεις τα routes ως array και τα δηλώνεις στο bootstrap:
+
+```ts
+// app.routes.ts
+import { Routes } from "@angular/router";
+
+export const routes: Routes = [
+  { path: "", component: HomeComponent },
+  { path: "users/:id", component: UserComponent },
+  {
+    path: "admin",
+    loadComponent: () => import("./admin.component").then((m) => m.AdminComponent),
+  },
+  { path: "**", component: NotFoundComponent }, // catch-all 404
+];
+```
+
+Το **`loadComponent`** κάνει **lazy loading**: ο κώδικας του route κατεβαίνει μόνο όταν ο χρήστης πάει εκεί (code splitting, μικρότερο αρχικό bundle). Το `<router-outlet />` στο template δείχνει το component του τρέχοντος route.
+
+Πλοήγηση:
+
+```ts
+template: `
+  <a routerLink="/">Αρχική</a>
+  <a [routerLink]="['/users', user.id]">Προφίλ</a>
+`;
+```
+
+```ts
+import { Router } from "@angular/router";
+const router = inject(Router);
+router.navigate(["/users", id]); // προγραμματιστικά
+```
+
+### Route params
+
+```ts
+import { ActivatedRoute } from "@angular/router";
+
+const route = inject(ActivatedRoute);
+const id = route.snapshot.paramMap.get("id");       // μία φορά (snapshot)
+route.paramMap.subscribe((p) => load(p.get("id"))); // reactive σε αλλαγές
+```
+
+> Το `snapshot` είναι ΟΚ αν το component δεν επαναχρησιμοποιείται. Αν πλοηγείσαι `/users/1 → /users/2` (ίδιο component), χρησιμοποίησε το **observable** `paramMap` για να ξαναφορτώσεις.
+
+## Guards: προστασία routes
+
+Ένα **guard** είναι μια function που αποφασίζει αν επιτρέπεται η πλοήγηση. Το σύγχρονο API είναι functional:
+
+```ts
+import { CanActivateFn, Router } from "@angular/router";
+import { inject } from "@angular/core";
+
+export const authGuard: CanActivateFn = () => {
+  const router = inject(Router);
+  const loggedIn = !!localStorage.getItem("token");
+  return loggedIn ? true : router.createUrlTree(["/login"]);
+};
+
+// route: { path: "admin", canActivate: [authGuard], ... }
+```
+
+Επιστρέφεις `true` (επιτρέπεται), `false` (μπλοκ), ή ένα `UrlTree` (redirect).
+
+## HttpClient: επικοινωνία με APIs
+
+Ο `HttpClient` επιστρέφει **Observables** (δες το μάθημα Signals & RxJS):
+
+```ts
+import { HttpClient } from "@angular/common/http";
+
+@Injectable({ providedIn: "root" })
+export class UserApi {
+  private http = inject(HttpClient);
+
+  getUsers() {
+    return this.http.get<User[]>("/api/users");
+  }
+  createUser(data: NewUser) {
+    return this.http.post<User>("/api/users", data);
+  }
+}
+```
+
+Τον στήνεις στο bootstrap με `provideHttpClient()`. Στο component τον καταναλώνεις είτε με `subscribe` (με cleanup) είτε καλύτερα με τον **`async` pipe** στο template — που κάνει unsubscribe αυτόματα.
+
+> Το `get<User[]>` δίνει **typed** απάντηση — ένα από τα οφέλη του TypeScript-first.
+
+## Interceptors: cross-cutting λογική
+
+Ένας **interceptor** «πιάνει» **κάθε** HTTP request/response για κοινή λογική: auth headers, logging, error handling, retries — σε ένα μέρος αντί σε κάθε call:
+
+```ts
+import { HttpInterceptorFn } from "@angular/common/http";
+
+export const authInterceptor: HttpInterceptorFn = (req, next) => {
+  const token = localStorage.getItem("token");
+  const authReq = token
+    ? req.clone({ setHeaders: { Authorization: `Bearer ${token}` } })
+    : req;
+  return next(authReq);
+};
+
+// bootstrap: provideHttpClient(withInterceptors([authInterceptor]))
+```
+
+Κλασικές χρήσεις: προσθήκη token σε κάθε request, καθολικό error handling (π.χ. redirect σε login στο 401), logging.
+
+<Exercise
+  question="Θες να προσθέτεις Authorization header σε ΚΑΘΕ HTTP request. Πού;"
+  options={[
+    "Σε έναν HTTP interceptor — μία φορά, εφαρμόζεται σε όλα τα requests.",
+    "Χειροκίνητα σε κάθε http.get/post.",
+    "Σε ένα route guard."
+  ]}
+  correctOptionIndex={0}
+  explanation="Ο interceptor είναι ακριβώς για cross-cutting λογική: πιάνει κάθε request και προσθέτει το header σε ένα μέρος. Χειροκίνητα σε κάθε call είναι επαναλήψεις & λάθη· το guard αφορά πλοήγηση, όχι HTTP."
+/>
+
+<PredictOutput
+  title="Lazy route drill"
+  code={`// { path: "reports", loadComponent: () => import("./reports...") }
+// Πότε κατεβαίνει ο κώδικας του ReportsComponent;`}
+  options={[
+    'Όταν ο χρήστης πλοηγηθεί στο /reports',
+    'Στο αρχικό φόρτωμα της εφαρμογής',
+    'Ποτέ',
+    'Σε κάθε HTTP request'
+  ]}
+  correctOptionIndex={0}
+  answer="Όταν ο χρήστης πλοηγηθεί στο /reports"
+  explanation="Το loadComponent κάνει lazy loading: το bundle του route κατεβαίνει on-demand, μόνο όταν χρειαστεί. Έτσι το αρχικό φόρτωμα μένει μικρό (code splitting)."
+/>
+
+<Flashcards
+  title="Routing & HTTP — repaso"
+  cards={[
+    {
+      question: "Πώς ορίζεις & κάνεις lazy load route;",
+      answer: "Routes array: { path, component } ή { path, loadComponent: () => import(...) } για lazy loading (code splitting). <router-outlet/> δείχνει το τρέχον. Πλοήγηση: routerLink ή router.navigate([...])."
+    },
+    {
+      question: "Πώς διαβάζεις route params;",
+      answer: "inject(ActivatedRoute): snapshot.paramMap.get('id') για μία φορά, ή paramMap observable (subscribe) όταν το component επαναχρησιμοποιείται μεταξύ /users/1 και /users/2."
+    },
+    {
+      question: "Τι είναι ένα route guard;",
+      answer: "Functional CanActivateFn που αποφασίζει αν επιτρέπεται η πλοήγηση: επιστρέφει true (ok), false (block) ή UrlTree (redirect). Δηλώνεται στο route με canActivate: [guard]."
+    },
+    {
+      question: "HttpClient & interceptors;",
+      answer: "HttpClient επιστρέφει typed Observables (http.get<T>). Στήνεται με provideHttpClient(). Interceptor (HttpInterceptorFn) πιάνει κάθε request/response για cross-cutting λογική: auth headers, error handling, logging."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Routed app με guard & HTTP layer"
+  scenario="Στήσε μια εφαρμογή με Home/User/Admin routes, lazy admin, authGuard, ένα API service και έναν auth interceptor."
+  outcomes={[
+    "Να ορίζεις routes με params & lazy loading.",
+    "Να προστατεύεις route με functional guard.",
+    "Να καταναλώνεις API μέσω HttpClient + async pipe."
+  ]}
+  steps={[
+    "Routes: /, /users/:id, /admin (lazy + canActivate), ** → 404.",
+    "Φτιάξε UserApi service με http.get<User[]>().",
+    "Δείξε τη λίστα με users$ | async + @for/track.",
+    "Πρόσθεσε authInterceptor που βάζει Authorization header.",
+    "Σημείωσε γιατί ο interceptor είναι καλύτερος από χειροκίνητα headers."
+  ]}
+  checkpoints={[
+    "Το /admin μπλοκάρεται χωρίς token (redirect /login).",
+    "Ο κώδικας του admin route φορτώνει lazy.",
+    "Κάθε request φεύγει με το header από τον interceptor."
+  ]}
+  mistakes={[
+    "Να χρησιμοποιείς snapshot params σε επαναχρησιμοποιούμενο component.",
+    "Να βάζεις auth header χειροκίνητα σε κάθε call αντί interceptor.",
+    "Να ξεχνάς το catch-all 404 route ή το provideHttpClient()."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν στήνεις routed app με lazy route, guard, typed HTTP service και interceptor, και εξηγείς πότε χρησιμοποιείς το καθένα."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> Angular ships routing and HTTP in the box. Routes map paths to components, I lazy-load with `loadComponent` for code splitting, navigate with `routerLink` or `router.navigate`, and read params from `ActivatedRoute` — snapshot for one-off, the `paramMap` observable when the component is reused. I protect routes with functional guards returning `true`, `false`, or a `UrlTree` redirect. For data I use `HttpClient`, which returns typed Observables I consume via the `async` pipe, and I put cross-cutting concerns like auth headers or global error handling in an HTTP interceptor so they live in one place.

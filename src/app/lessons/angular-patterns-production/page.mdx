@@ -1,0 +1,173 @@
+# Patterns, Testing & Production
+
+Το κλείσιμο του track: τι κάνει μια Angular εφαρμογή **γρήγορη, προσβάσιμη και αξιόπιστη** σε production. Change detection, performance patterns, accessibility και testing με το επίσημο TestBed.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς **change detection** και το `OnPush`,
+- να αναγνωρίζεις performance μοχλούς,
+- να γράφεις component test με **TestBed**,
+- να ξέρεις τα βασικά a11y & build.
+
+## Change detection & OnPush
+
+Η Angular ελέγχει αν άλλαξε κάτι ώστε να ενημερώσει το DOM — αυτό λέγεται **change detection**. Από προεπιλογή ελέγχει **όλο** το δέντρο components σε κάθε event/timer/HTTP. Για μεγάλες εφαρμογές αυτό κοστίζει.
+
+Με στρατηγική **`OnPush`**, ένα component ξανα-ελέγχεται **μόνο** όταν:
+
+- αλλάξει κάποιο **input** (νέα reference),
+- εκπεμφθεί event **μέσα** του,
+- αλλάξει ένα **signal** που διαβάζει,
+- ή χειροκίνητα (`async` pipe το κάνει μόνο του).
+
+```ts
+import { ChangeDetectionStrategy, Component } from "@angular/core";
+
+@Component({
+  selector: "app-row",
+  standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `{{ data().label }}`,
+})
+export class RowComponent { /* signal inputs */ }
+```
+
+`OnPush` + **signals** + **immutable inputs** = δραστικά λιγότεροι έλεγχοι. Είναι το βασικό performance pattern της σύγχρονης Angular.
+
+## Performance patterns
+
+- **`OnPush`** παντού όπου γίνεται.
+- **Signals** για fine-grained reactivity (ενημερώνεται μόνο ό,τι εξαρτάται).
+- **`track`** στο `@for` (σταθερό id) — δες το μάθημα Templates.
+- **Lazy loading** routes με `loadComponent`.
+- **`async` pipe** αντί χειροκίνητων subscriptions.
+- Απόφυγε **βαριούς υπολογισμούς στο template** — χρησιμοποίησε `computed` signals ή pure pipes.
+
+> Μέτρα πρώτα: Angular DevTools δείχνει change detection cycles & χρόνους ανά component.
+
+## Accessibility (a11y)
+
+Όπως σε κάθε framework:
+
+- **Semantic HTML** (`<button>`, `<nav>`, `<label>`) αντί για `<div>` με `(click)`.
+- Συνδεδεμένα `<label>` με inputs.
+- **Focus management** μετά από navigation/modal (η Angular CDK βοηθά: `FocusTrap`, `LiveAnnouncer`).
+- `aria-*` όπου χρειάζεται, σεβασμός `prefers-reduced-motion`.
+
+Η **Angular CDK** (Component Dev Kit) προσφέρει έτοιμα a11y primitives — αξίζει να τα ξέρεις.
+
+## Testing με TestBed
+
+Το επίσημο testing API είναι το **TestBed** (συνήθως με **Jasmine/Karma**, ή Jest/Vitest):
+
+```ts
+import { TestBed } from "@angular/core/testing";
+import { CounterComponent } from "./counter.component";
+
+describe("CounterComponent", () => {
+  it("increments on click", () => {
+    const fixture = TestBed.createComponent(CounterComponent);
+    fixture.detectChanges();
+
+    const button = fixture.nativeElement.querySelector("button");
+    button.click();
+    fixture.detectChanges();
+
+    expect(button.textContent).toContain("1");
+  });
+});
+```
+
+Για services με dependencies, το DI σε βοηθά: παρέχεις **mock** providers στο `TestBed.configureTestingModule({ providers: [...] })`. Αρχές:
+
+- Δοκίμασε **συμπεριφορά** (τι βλέπει/κάνει ο χρήστης), όχι internals.
+- Κάλεσε `fixture.detectChanges()` για να τρέξει change detection.
+- Mock τα services μέσω DI — εδώ «πληρώνεται» το DI σχεδιαστικά.
+
+## Build & deploy
+
+- **`ng build`** → optimized bundle στο `dist/` (AOT compilation, tree-shaking, minification).
+- **AOT (Ahead-of-Time)** compilation στο build = γρηγορότερο runtime & μικρότερο μέγεθος (default σε prod).
+- Environment files (`environment.ts` / `environment.prod.ts`) για config ανά περιβάλλον — **όχι secrets** στον client.
+- Παρακολούθησε **bundle budgets** (το CLI προειδοποιεί αν ξεπεράσεις όρια).
+
+<Exercise
+  question="Τι ενεργοποιεί re-check σε ένα OnPush component;"
+  options={[
+    "Αλλαγή input reference, event μέσα του, αλλαγή signal που διαβάζει, ή async pipe.",
+    "Οποιοδήποτε event οπουδήποτε στην εφαρμογή.",
+    "Μόνο ένα setInterval."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το OnPush περιορίζει το change detection: ξανα-ελέγχεται μόνο σε νέα input reference, εσωτερικό event, αλλαγή signal που διαβάζει, ή μέσω async pipe. Γι' αυτό μειώνει δραστικά τους ελέγχους σε μεγάλα δέντρα."
+/>
+
+<PredictOutput
+  title="Change detection drill"
+  code={`// OnPush component με input() data.
+// Ο γονέας ΜΕΤΑΛΛΑΣΣΕΙ το ίδιο object: data.label = "new"
+// (ίδια reference). Ενημερώνεται το OnPush παιδί;`}
+  options={[
+    'Όχι — ίδια reference, το OnPush δεν το θεωρεί αλλαγή',
+    'Ναι, πάντα',
+    'Μόνο μετά από reload',
+    'Σφάλμα compile'
+  ]}
+  correctOptionIndex={0}
+  answer="Όχι — ίδια reference"
+  explanation="Το OnPush ελέγχει αλλαγή input με reference equality. Mutation του ίδιου object δεν αλλάζει τη reference, οπότε δεν πυροδοτεί re-check. Λύση: νέα reference (immutable update) ή signal input."
+/>
+
+<Flashcards
+  title="Production Angular — repaso"
+  cards={[
+    {
+      question: "Τι είναι το OnPush;",
+      answer: "Change detection strategy που ξανα-ελέγχει το component μόνο σε: νέα input reference, εσωτερικό event, αλλαγή signal που διαβάζει, ή async pipe. Με signals + immutable inputs μειώνει δραστικά τους ελέγχους."
+    },
+    {
+      question: "Performance μοχλοί στη σύγχρονη Angular;",
+      answer: "OnPush, signals (fine-grained), σταθερό track στο @for, lazy routes (loadComponent), async pipe, computed/pure pipes αντί βαριών υπολογισμών στο template. Μέτρα με Angular DevTools."
+    },
+    {
+      question: "Πώς τεστάρεις component;",
+      answer: "TestBed.createComponent → fixture, fixture.detectChanges(), βρες elements στο nativeElement, προσομοίωσε actions, assert ορατή συμπεριφορά. Mock services μέσω DI providers. Δοκίμασε behavior, όχι internals."
+    },
+    {
+      question: "Τι είναι το AOT στο build;",
+      answer: "Ahead-of-Time compilation: τα templates μεταγλωττίζονται στο build (όχι στον browser) → ταχύτερο runtime, μικρότερο μέγεθος, λάθη templates πιάνονται νωρίς. Default σε production."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Κάνε ένα feature production-ready"
+  scenario="Πάρε ένα feature και βελτίωσέ το: OnPush + signals, accessible markup, ένα TestBed test και production build check."
+  outcomes={[
+    "Να εφαρμόζεις OnPush & signals για performance.",
+    "Να γράφεις behavior test με TestBed.",
+    "Να ελέγχεις a11y & bundle πριν deploy."
+  ]}
+  steps={[
+    "Βάλε changeDetection: OnPush και signal inputs σε ένα list-item component.",
+    "Επιβεβαίωσε ότι immutable updates ενημερώνουν, mutations όχι.",
+    "Πέρασε a11y checklist: semantic tags, labels, focus.",
+    "Γράψε TestBed test: render → click → assert ορατή αλλαγή.",
+    "Τρέξε ng build και κοίτα bundle budgets."
+  ]}
+  checkpoints={[
+    "Το component είναι OnPush και ενημερώνεται σωστά με signals/immutable inputs.",
+    "Το test ελέγχει συμπεριφορά, όχι internals.",
+    "Το feature είναι keyboard-accessible."
+  ]}
+  mistakes={[
+    "Να μεταλλάσσεις input object σε OnPush και να περιμένεις update.",
+    "Να βελτιστοποιείς χωρίς μέτρηση.",
+    "Να βάζεις secrets σε environment files του client."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν παραδίδεις OnPush feature με signals, καλυμμένο από ουσιαστικό TestBed test, προσβάσιμο και με υγιές bundle."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> For production Angular I lean on `OnPush` change detection with signals and immutable inputs, so components re-check only when an input reference changes, an internal event fires, or a signal they read changes — which slashes work in large trees. I lazy-load routes, use the `async` pipe, and keep heavy logic out of templates via `computed` signals, measuring with Angular DevTools first. I test behavior with `TestBed`, mocking services through DI — which is where Angular's DI really pays off — and ship AOT-compiled, tree-shaken builds while watching bundle budgets and keeping secrets out of client environment files.

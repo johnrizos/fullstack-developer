@@ -1,0 +1,195 @@
+# Components, Inputs & Outputs
+
+Όπως κάθε framework, η Angular χτίζεται από components που επικοινωνούν: δεδομένα μπαίνουν με **inputs**, γεγονότα βγαίνουν με **outputs**, και markup περνά με **content projection**. Εδώ χρησιμοποιούμε το σύγχρονο, **signal-based** API (`input()` / `output()`).
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να δέχεσαι δεδομένα με `input()` (signal inputs),
+- να εκπέμπεις γεγονότα με `output()`,
+- να περνάς markup με `ng-content` (content projection),
+- να εξηγείς το one-way data flow της Angular.
+
+## Inputs: δεδομένα προς τα κάτω
+
+Ο γονέας περνά δεδομένα μέσω **inputs**. Το σύγχρονο API τα ορίζει ως **signals** με τη function `input()`:
+
+```ts
+import { Component, input } from "@angular/core";
+
+@Component({
+  selector: "app-user-card",
+  standalone: true,
+  template: `
+    <article>
+      <h3>{{ name() }}</h3>
+      <span>{{ role() }}</span>
+    </article>
+  `,
+})
+export class UserCardComponent {
+  name = input.required<string>();      // υποχρεωτικό input
+  role = input<string>("member");       // με default τιμή
+}
+```
+
+Πρόσεξε: τα signal inputs **διαβάζονται ως functions** στο template — `{{ name() }}`. Ο γονέας τα δίνει με property binding:
+
+```ts
+template: `
+  <app-user-card [name]="user.name" [role]="user.role" />
+`;
+```
+
+> Το παλιό API ήταν ο decorator `@Input()`. Θα τον δεις σε υπάρχοντα κώδικα — αλλά για νέο κώδικα προτιμάς τη function `input()`, που είναι reactive (signal) και type-safe.
+
+## Outputs: γεγονότα προς τα πάνω
+
+Το παιδί ειδοποιεί τον γονέα μέσω **outputs**, με τη function `output()`:
+
+```ts
+import { Component, input, output } from "@angular/core";
+
+@Component({
+  selector: "app-todo-item",
+  standalone: true,
+  template: `
+    <li>
+      {{ title() }}
+      <button (click)="toggle.emit(id())">✓</button>
+      <button (click)="remove.emit(id())">✕</button>
+    </li>
+  `,
+})
+export class TodoItemComponent {
+  id = input.required<number>();
+  title = input.required<string>();
+  toggle = output<number>();
+  remove = output<number>();
+}
+```
+
+Ο γονέας ακούει με event binding:
+
+```ts
+template: `
+  @for (todo of todos; track todo.id) {
+    <app-todo-item
+      [id]="todo.id"
+      [title]="todo.title"
+      (toggle)="onToggle($event)"
+      (remove)="onRemove($event)"
+    />
+  }
+`;
+```
+
+Το `$event` περιέχει το payload που έδωσες στο `emit()`. Pattern, ίδιο παντού: **inputs down, outputs up**. Ο γονέας κατέχει το state.
+
+<Exercise
+  question="Πώς διαβάζεις ένα signal input στο template;"
+  options={[
+    "Ως function: {{ name() }} — τα signal inputs είναι signals, τα καλείς.",
+    "Ως σκέτη μεταβλητή: {{ name }}.",
+    "Με .value: {{ name.value }}."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το input() επιστρέφει signal, οπότε το διαβάζεις καλώντας το: name(). Αυτό κάνει το input reactive — όταν αλλάζει η τιμή από τον γονέα, το template ενημερώνεται αυτόματα."
+/>
+
+## Content projection με `ng-content`
+
+Όταν θες ο γονέας να βάλει **δικό του markup** μέσα στο component (όχι μόνο δεδομένα), χρησιμοποιείς `<ng-content>` — το αντίστοιχο των slots της Vue / children της React:
+
+```ts
+@Component({
+  selector: "app-card",
+  standalone: true,
+  template: `
+    <div class="card">
+      <header><ng-content select="[card-header]" /></header>
+      <div class="body"><ng-content /></div>
+    </div>
+  `,
+})
+export class CardComponent {}
+```
+
+```ts
+// χρήση
+template: `
+  <app-card>
+    <h3 card-header>Τίτλος</h3>
+    <p>Αυτό μπαίνει στο default ng-content.</p>
+  </app-card>
+`;
+```
+
+- **`<ng-content />`** → default projection (όλο το περιεχόμενο χωρίς selector).
+- **`<ng-content select="...">`** → projection με βάση CSS selector/attribute (πολλαπλά «σημεία»).
+
+Έτσι φτιάχνεις γενικά «κουτιά» (Card, Dialog, Panel) που ο γονέας γεμίζει.
+
+<PredictOutput
+  title="Inputs/outputs flow"
+  code={`// <app-counter [start]="10" (changed)="total = \$event" />
+// Το counter κάνει emit τη νέα τιμή σε κάθε click (+1).
+// Μετά από 3 clicks, ποιο είναι το total στον γονέα;`}
+  options={['13', '3', '10', 'undefined']}
+  correctOptionIndex={0}
+  answer="13"
+  explanation="start=10, κάθε click +1 και emit: 11, 12, 13. Ο γονέας θέτει total = $event = 13. Το παιδί δεν κατέχει το 'αληθινό' state — το ανεβάζει στον γονέα μέσω output."
+/>
+
+<Flashcards
+  title="Components I/O — repaso"
+  cards={[
+    {
+      question: "Πώς ορίζεις & διαβάζεις signal input;",
+      answer: "name = input.required<string>() ή input<string>('default'). Στο template το διαβάζεις ως function: {{ name() }}. Reactive & type-safe. Το παλιό @Input() decorator υπάρχει σε legacy κώδικα."
+    },
+    {
+      question: "Πώς εκπέμπεις output;",
+      answer: "evt = output<number>() και evt.emit(payload). Ο γονέας ακούει με (evt)=\"handler($event)\" όπου $event είναι το payload. Pattern: inputs down, outputs up."
+    },
+    {
+      question: "Τι είναι το ng-content;",
+      answer: "Content projection — ο γονέας περνά markup μέσα στο component (σαν slots/children). <ng-content/> default, <ng-content select=\"[attr]\"/> για στοχευμένα σημεία. Για γενικά κουτιά Card/Dialog."
+    },
+    {
+      question: "Γιατί δεν αλλάζει το παιδί τα inputs του;",
+      answer: "One-way data flow: ο γονέας κατέχει το state, το παιδί ζητά αλλαγές μέσω outputs. Έτσι η ροή είναι μονόδρομη και προβλέψιμη — ξέρεις πάντα ποιος αλλάζει τι."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Reusable rating component"
+  scenario="Φτιάξε ένα <app-rating> που δέχεται max & value ως inputs και εκπέμπει rated output, και τύλιξέ το σε ένα Card με content projection."
+  outcomes={[
+    "Να ορίζεις signal inputs & outputs.",
+    "Να κρατάς το state στον γονέα (inputs down, outputs up).",
+    "Να χρησιμοποιείς ng-content για composition."
+  ]}
+  steps={[
+    "Όρισε value = input(0) και max = input(5) στο rating.",
+    "Όρισε rated = output<number>() και κάνε emit στο click αστεριού.",
+    "Στον γονέα κράτα το score και ενημέρωσέ το από το (rated).",
+    "Φτιάξε <app-card> με ng-content και βάλε το rating μέσα του.",
+    "Σημείωσε ποιος κατέχει το state και ποιος το αλλάζει."
+  ]}
+  checkpoints={[
+    "Τα inputs διαβάζονται ως functions στο template.",
+    "Το click ανεβάζει τη νέα τιμή στον γονέα μέσω output.",
+    "Το Card προβάλλει το προβαλλόμενο περιεχόμενο."
+  ]}
+  mistakes={[
+    "Να διαβάζεις signal input χωρίς () στο template.",
+    "Να προσπαθείς να αλλάξεις input μέσα στο παιδί.",
+    "Να ξεχνάς το $event στον listener του output."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν σχεδιάζεις component ως inputs down / outputs up με signal API και χρησιμοποιείς ng-content για composition."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> Modern Angular uses signal-based component I/O: `input()` (or `input.required()`) for data coming down, read in the template as a function like `name()`, and `output()` with `.emit()` for events going up, which the parent handles via `(event)="fn($event)"`. Inputs are read-only in the child, so it never mutates them — the parent owns state and the child requests changes through outputs. For passing markup rather than data I use `ng-content` for content projection, with selectors for multiple slots, to build generic containers like Card or Dialog.

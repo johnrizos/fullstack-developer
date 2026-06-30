@@ -1,0 +1,183 @@
+# Templates, Binding & Control Flow
+
+Τα Angular templates συνδέουν τα δεδομένα της class με το HTML μέσω **binding**, και ελέγχουν τι εμφανίζεται μέσω του **νέου control flow** (`@if`, `@for`, `@switch`). Εδώ μαθαίνεις όλους τους τύπους binding και πώς να renderάρεις δυναμικό UI.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να ξεχωρίζεις τα 4 είδη binding,
+- να χρησιμοποιείς το νέο control flow `@if` / `@for` / `@switch`,
+- να γράφεις σωστό `track` στο `@for`,
+- να εφαρμόζεις κλάσεις/styles δυναμικά.
+
+## Τα 4 είδη binding
+
+Η σύνδεση class ↔ template γίνεται σε τέσσερις μορφές — η σύνταξη δείχνει την **κατεύθυνση**:
+
+```ts
+@Component({
+  selector: "app-demo",
+  standalone: true,
+  template: `
+    <!-- 1. Interpolation: class → view (κείμενο) -->
+    <h1>{{ title }}</h1>
+
+    <!-- 2. Property binding [ ]: class → view (attribute/property) -->
+    <img [src]="imageUrl" [alt]="title" />
+    <button [disabled]="isLoading">Αποθήκευση</button>
+
+    <!-- 3. Event binding ( ): view → class -->
+    <button (click)="save()">Save</button>
+    <input (input)="onType($event)" />
+
+    <!-- 4. Two-way binding [( )]: αμφίδρομο -->
+    <input [(ngModel)]="name" />
+  `,
+})
+export class DemoComponent {
+  title = "Καλημέρα";
+  imageUrl = "/logo.png";
+  isLoading = false;
+  name = "";
+  save() {}
+  onType(e: Event) {}
+}
+```
+
+Μνημονικός κανόνας:
+
+- **`{{ }}`** interpolation → κείμενο μέσα σε element.
+- **`[prop]`** property binding → «μέσα» (δεδομένα μπαίνουν στο view). «Square brackets = δεδομένα μπαίνουν».
+- **`(event)`** event binding → «έξω» (γεγονότα βγαίνουν στην class). «Parentheses = γεγονότα βγαίνουν».
+- **`[(ngModel)]`** two-way → «banana in a box», συνδυασμός των δύο.
+
+> Το `[(ngModel)]` χρειάζεται το `FormsModule` στα imports του standalone component.
+
+## Νέο control flow: `@if`, `@for`, `@switch`
+
+Από την Angular 17 το control flow είναι **built-in στο template** (αντικαθιστά τα παλιά `*ngIf`/`*ngFor`):
+
+```ts
+template: `
+  @if (user) {
+    <p>Καλώς ήρθες, {{ user.name }}</p>
+  } @else if (loading) {
+    <p>Φόρτωση…</p>
+  } @else {
+    <a routerLink="/login">Σύνδεση</a>
+  }
+
+  <ul>
+    @for (todo of todos; track todo.id) {
+      <li>{{ todo.title }}</li>
+    } @empty {
+      <li>Καμία εργασία</li>
+    }
+  </ul>
+
+  @switch (status) {
+    @case ("active") { <span>Ενεργό</span> }
+    @case ("paused") { <span>Σε παύση</span> }
+    @default { <span>Άγνωστο</span> }
+  }
+`;
+```
+
+Πλεονεκτήματα έναντι των παλιών directives: καθαρότερη σύνταξη, καλύτερο type-narrowing, ενσωματωμένο `@empty`, και είναι **πιο γρήγορο**.
+
+### Το `track` είναι υποχρεωτικό
+
+Στο `@for` **πρέπει** να δηλώσεις `track` — μια μοναδική ταυτότητα ανά item (συνήθως `item.id`). Βοηθά την Angular να ξαναχρησιμοποιεί DOM nodes αντί να τα ξαναχτίζει σε κάθε αλλαγή — ίδια ιδέα με τα keys σε React/Vue. Χωρίς σωστό `track`, οι λίστες είναι αργές και «χάνουν» state (π.χ. focus, input τιμές).
+
+## Δυναμικές κλάσεις & styles
+
+```ts
+template: `
+  <div [class.active]="isActive" [class.error]="hasError">…</div>
+  <div [ngClass]="{ active: isActive, error: hasError }">…</div>
+  <div [style.color]="isError ? 'red' : 'green'">…</div>
+  <div [ngStyle]="{ fontWeight: isBold ? '700' : '400' }">…</div>
+`;
+```
+
+Το `[class.x]` τοggλάρει μία κλάση· το `[ngClass]` δέχεται object με πολλές. Αντίστοιχα `[style.prop]` και `[ngStyle]`.
+
+<Exercise
+  question="Θες να στείλεις το click ΑΠΟ το template ΣΤΗ class. Ποια σύνταξη;"
+  options={[
+    "(click)=\"handler()\" — οι παρενθέσεις σημαίνουν 'γεγονός βγαίνει προς την class'.",
+    "[click]=\"handler()\" — τα brackets σημαίνουν event.",
+    "{{ click }} — interpolation."
+  ]}
+  correctOptionIndex={0}
+  explanation="Event binding χρησιμοποιεί παρενθέσεις (event). Τα [brackets] είναι property binding (δεδομένα μπαίνουν στο view). Το {{ }} είναι interpolation κειμένου."
+/>
+
+<PredictOutput
+  title="@for track drill"
+  code={`// @for (item of items; track item.id) { ... }
+// Τι παθαίνει η λίστα αν βάλεις track \$index σε λίστα
+// που αναδιατάσσεται (reorder);`}
+  options={[
+    'Μπορεί να χαθεί DOM state (focus/input) και να γίνουν περιττά re-renders',
+    'Τίποτα, το $index είναι πάντα ιδανικό',
+    'Η λίστα δεν renderάρεται καθόλου',
+    'Διπλασιάζονται τα items'
+  ]}
+  correctOptionIndex={0}
+  answer="Μπορεί να χαθεί DOM state και να γίνουν περιττά re-renders"
+  explanation="Με track $index, όταν αλλάζει η σειρά, η Angular ταυτίζει λάθος items με DOM nodes — χάνεται state και γίνεται περιττή δουλειά. Χρησιμοποίησε σταθερό id ως track."
+/>
+
+<Flashcards
+  title="Templates & binding — repaso"
+  cards={[
+    {
+      question: "Τα 4 είδη binding;",
+      answer: "{{ }} interpolation (class→view κείμενο), [prop] property binding (class→view), (event) event binding (view→class), [(ngModel)] two-way. Μνημονικό: brackets=μέσα, parentheses=έξω."
+    },
+    {
+      question: "Ποιο είναι το νέο control flow;",
+      answer: "@if/@else if/@else, @for (...; track id) {...} @empty {...}, @switch/@case/@default — built-in στο template από Angular 17, αντικαθιστά *ngIf/*ngFor. Καθαρότερο, ταχύτερο, καλύτερο type-narrowing."
+    },
+    {
+      question: "Γιατί είναι υποχρεωτικό το track στο @for;",
+      answer: "Δίνει μοναδική ταυτότητα ανά item ώστε η Angular να ξαναχρησιμοποιεί DOM nodes αντί να τα ξαναχτίζει. Σαν keys σε React/Vue. Λάθος track (π.χ. $index σε reorder) → χαμένο state & αργή λίστα."
+    },
+    {
+      question: "Πώς εφαρμόζεις δυναμικές κλάσεις;",
+      answer: "[class.active]=\"cond\" για μία κλάση, [ngClass]=\"{ active: cond }\" για πολλές. Αντίστοιχα [style.prop] και [ngStyle] για inline styles."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Dynamic list UI με control flow"
+  scenario="Φτιάξε μια λίστα εργασιών με @for/@empty, conditional μηνύματα με @if, και δυναμικές κλάσεις ανά κατάσταση."
+  outcomes={[
+    "Να χρησιμοποιείς και τα 4 είδη binding.",
+    "Να renderάρεις λίστες με σωστό track.",
+    "Να δείχνεις/κρύβεις UI με @if/@switch."
+  ]}
+  steps={[
+    "Δείξε τη λίστα με @for (todo of todos; track todo.id) και @empty.",
+    "Πρόσθεσε @if για 'loading' vs 'περιεχόμενο'.",
+    "Σύνδεσε ένα κουμπί με (click) που προσθέτει todo.",
+    "Βάλε [class.done]=\"todo.done\" για styling ανά κατάσταση.",
+    "Δοκίμασε track $index σε reorder και δες το πρόβλημα."
+  ]}
+  checkpoints={[
+    "Η λίστα έχει σταθερό track με id.",
+    "Το @empty εμφανίζεται όταν δεν υπάρχουν items.",
+    "Οι κλάσεις αλλάζουν σωστά ανά κατάσταση."
+  ]}
+  mistakes={[
+    "Να μπερδεύεις [prop] με (event).",
+    "Να βάζεις $index ως track σε δυναμική/reorderable λίστα.",
+    "Να ξεχνάς το FormsModule για [(ngModel)]."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν διαβάζεις/γράφεις κάθε binding με την πρώτη και χρησιμοποιείς το νέο control flow με σωστό track."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> Angular has four binding forms: `{{ }}` interpolation and `[prop]` property binding push data into the view, `(event)` sends events out to the class, and `[(ngModel)]` is two-way. For dynamic UI I use the new built-in control flow — `@if`/`@else`, `@for` with a mandatory `track`, and `@switch` — which replaced the old structural directives with cleaner syntax and better performance. The `track` expression must be a stable unique id, the same reasoning as keys elsewhere; using `$index` on a reorderable list loses DOM state and causes wasted re-renders.

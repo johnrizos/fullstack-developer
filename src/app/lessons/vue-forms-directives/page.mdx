@@ -1,0 +1,181 @@
+# Forms & Directives
+
+Οι **directives** είναι τα `v-*` attributes που δίνουν «υπερδυνάμεις» στο HTML της Vue: εμφάνιση υπό συνθήκη, λίστες, two-way binding σε forms. Εδώ τα μαθαίνεις όλα τα βασικά — και το `v-model`, που είναι το σήμα κατατεθέν της Vue.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να συνδέεις inputs με `v-model` (two-way binding),
+- να εμφανίζεις/κρύβεις με `v-if` vs `v-show`,
+- να renderάρεις λίστες με `v-for` και σωστά `:key`,
+- να ξέρεις πότε υπάρχει custom directive.
+
+## `v-model`: two-way binding
+
+Στη React τα forms είναι «controlled» με value + onChange. Η Vue το συμπυκνώνει σε **`v-model`**, που συγχρονίζει input και state **και προς τις δύο κατευθύνσεις**:
+
+```vue
+<script setup>
+import { ref } from "vue";
+const name = ref("");
+const agreed = ref(false);
+const role = ref("member");
+</script>
+
+<template>
+  <input v-model="name" placeholder="Όνομα" />
+  <input type="checkbox" v-model="agreed" />
+  <select v-model="role">
+    <option value="member">Member</option>
+    <option value="admin">Admin</option>
+  </select>
+
+  <p>{{ name }} — {{ role }} — {{ agreed ? "✓" : "✗" }}</p>
+</template>
+```
+
+Το `v-model` είναι **syntactic sugar**: για ένα text input ισοδυναμεί με `:value` + `@input` που ενημερώνει το state. Δουλεύει με κάθε τύπο input (text, checkbox, radio, select) και προσαρμόζει αυτόματα το σωστό property/event.
+
+**Modifiers** που γλιτώνουν κώδικα:
+
+```vue
+<input v-model.trim="name" />     <!-- κόβει κενά -->
+<input v-model.number="age" />    <!-- μετατρέπει σε number -->
+<input v-model.lazy="bio" />      <!-- sync στο change αντί input -->
+```
+
+### `v-model` σε custom component
+
+Ένα δικό σου component μπορεί να υποστηρίξει `v-model` με ένα reactive `defineModel()`:
+
+```vue
+<!-- MyInput.vue -->
+<script setup>
+const model = defineModel(); // two-way σύνδεση με τον γονέα
+</script>
+<template>
+  <input v-model="model" />
+</template>
+```
+
+```vue
+<!-- γονέας -->
+<MyInput v-model="name" />
+```
+
+## Conditional rendering: `v-if` vs `v-show`
+
+```vue
+<p v-if="isLoading">Φόρτωση…</p>
+<p v-else-if="error">Σφάλμα</p>
+<p v-else>{{ data }}</p>
+
+<div v-show="isOpen">Toggle με CSS</div>
+```
+
+Η διαφορά μετράει σε performance:
+
+- **`v-if`** — **προσθέτει/αφαιρεί** το element από το DOM. Ακριβότερο toggle, αλλά δεν κοστίζει αν δεν εμφανιστεί ποτέ. Υποστηρίζει `v-else-if`/`v-else`.
+- **`v-show`** — κρατά το element στο DOM και απλώς αλλάζει `display: none`. Φθηνό toggle, αλλά πάντα renderάρεται.
+
+Κανόνας: συχνό toggling → `v-show`. Σπάνια/ποτέ ή ακριβό περιεχόμενο → `v-if`.
+
+## Lists: `v-for` και το `:key`
+
+```vue
+<ul>
+  <li v-for="todo in todos" :key="todo.id">
+    {{ todo.title }}
+  </li>
+</ul>
+```
+
+Το **`:key`** πρέπει να είναι **σταθερό & μοναδικό** (συνήθως το `id`). Βοηθά τη Vue να εντοπίζει ποιο item άλλαξε/μετακινήθηκε αντί να ξαναφτιάχνει όλη τη λίστα — ακριβώς όπως τα keys στη React. **Ποτέ** μη χρησιμοποιείς το index ως key σε λίστα που αλλάζει σειρά/μέγεθος.
+
+<Exercise
+  question="Έχεις ένα toggle που πατιέται συνεχώς. v-if ή v-show;"
+  options={[
+    "v-show — κρατά το element και αλλάζει μόνο display, φθηνό για συχνό toggling.",
+    "v-if — αφαιρεί/προσθέτει το element κάθε φορά, ιδανικό για συχνό toggling.",
+    "Δεν έχει διαφορά."
+  ]}
+  correctOptionIndex={0}
+  explanation="v-show αλλάζει μόνο CSS display, οπότε το συχνό toggle είναι φθηνό. v-if προσθέτει/αφαιρεί από το DOM σε κάθε αλλαγή — καλό για σπάνια ή ακριβά elements, όχι για συνεχές toggling."
+/>
+
+## Custom directives (σύντομα)
+
+Πέρα από τα built-in, μπορείς να φτιάξεις δικά σου `v-*` για επαναχρησιμοποιήσιμη συμπεριφορά DOM (π.χ. autofocus):
+
+```js
+const vFocus = {
+  mounted: (el) => el.focus(),
+};
+// χρήση: <input v-focus />
+```
+
+Σπάνια τα χρειάζεσαι — αλλά είναι το σωστό εργαλείο όταν θες **χαμηλού επιπέδου** πρόσβαση στο DOM element σε πολλά σημεία.
+
+<PredictOutput
+  title="v-model drill"
+  code={`// <input v-model.number="age" />
+// Ο χρήστης πληκτρολογεί "42".
+// Τι τύπου είναι το age.value;`}
+  options={['number (42)', 'string ("42")', 'undefined', 'boolean']}
+  correctOptionIndex={0}
+  answer="number (42)"
+  explanation="Ο modifier .number μετατρέπει την τιμή του input σε number. Χωρίς αυτόν, τα inputs δίνουν πάντα string ('42'), που είναι κλασική πηγή bugs σε υπολογισμούς."
+/>
+
+<Flashcards
+  title="Forms & directives — repaso"
+  cards={[
+    {
+      question: "Τι κάνει το v-model;",
+      answer: "Two-way binding: συγχρονίζει input και state αμφίδρομα. Είναι sugar για :value + @input (προσαρμοσμένο ανά τύπο input). Modifiers: .trim, .number, .lazy. Σε custom component: defineModel()."
+    },
+    {
+      question: "v-if vs v-show;",
+      answer: "v-if προσθέτει/αφαιρεί element από το DOM (υποστηρίζει v-else-if/v-else), ακριβό toggle. v-show κρατά το element και αλλάζει display:none, φθηνό toggle. Συχνό toggling → v-show."
+    },
+    {
+      question: "Γιατί χρειάζεται :key στο v-for;",
+      answer: "Σταθερό & μοναδικό id ανά item ώστε η Vue να εντοπίζει αλλαγές/μετακινήσεις αντί να ξαναχτίζει τη λίστα. Μη χρησιμοποιείς index σε λίστα που αλλάζει σειρά/μέγεθος."
+    },
+    {
+      question: "Τι είναι μια custom directive;",
+      answer: "Δικό σου v-* με hooks (mounted, updated…) για επαναχρησιμοποιήσιμη low-level συμπεριφορά στο DOM element, π.χ. v-focus. Σπάνια αναγκαία, αλλά χρήσιμη για άμεση πρόσβαση στο element."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Validated form με directives"
+  scenario="Χτίσε μια φόρμα εγγραφής με v-model, conditional error messages και μια λίστα προεπισκόπησης με v-for."
+  outcomes={[
+    "Να συνδέεις inputs με v-model και modifiers.",
+    "Να εμφανίζεις σφάλματα με v-if/v-else.",
+    "Να renderάρεις λίστες με σωστά keys."
+  ]}
+  steps={[
+    "Φτιάξε inputs για name (.trim) και age (.number) με v-model.",
+    "Δείξε error message με v-if όταν το name είναι κενό.",
+    "Χρησιμοποίησε v-show για ένα 'advanced options' panel.",
+    "Render λίστα προστιθέμενων χρηστών με v-for + :key.",
+    "Σημείωσε πού χρειάστηκες modifier και γιατί."
+  ]}
+  checkpoints={[
+    "Το age είναι number χάρη στο .number.",
+    "Τα errors εμφανίζονται/κρύβονται σωστά.",
+    "Η λίστα έχει σταθερά μοναδικά keys."
+  ]}
+  mistakes={[
+    "Να ξεχνάς το .number και να κάνεις πράξεις σε string.",
+    "Να βάζεις index ως :key σε δυναμική λίστα.",
+    "Να χρησιμοποιείς v-if για συχνό toggle αντί v-show."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν στήνεις μια φόρμα με v-model + validation και διαλέγεις σωστά v-if/v-show και keys χωρίς σκέψη."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> Vue forms use `v-model` for two-way binding — it's sugar over `:value` plus an input event, adapted per input type, with modifiers like `.trim`, `.number`, and `.lazy`. For conditional UI I pick `v-if` when something rarely shows or is expensive, and `v-show` when it toggles often, since `v-show` only flips `display`. Lists use `v-for` with a stable, unique `:key` — never the index for reorderable lists — so Vue can patch efficiently, the same reasoning as React keys.

@@ -1,0 +1,194 @@
+# Routing & State (Vue Router + Pinia)
+
+Μια πραγματική εφαρμογή έχει **πολλές σελίδες** και **κοινό state** που χρειάζονται διαφορετικά components. Η Vue τα λύνει με δύο επίσημες βιβλιοθήκες: **Vue Router** για navigation και **Pinia** για state management.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να ορίζεις routes και να πλοηγείσαι (`<RouterLink>`, `useRouter`),
+- να διαβάζεις route params,
+- να προστατεύεις routes με **navigation guards**,
+- να φτιάχνεις **Pinia store** για shared state.
+
+## Vue Router: οι σελίδες της εφαρμογής
+
+Ορίζεις έναν χάρτη από paths σε components:
+
+```js
+// router.js
+import { createRouter, createWebHistory } from "vue-router";
+
+const routes = [
+  { path: "/", component: () => import("./views/Home.vue") },
+  { path: "/users/:id", component: () => import("./views/User.vue") },
+  { path: "/:pathMatch(.*)*", component: () => import("./views/NotFound.vue") },
+];
+
+export const router = createRouter({
+  history: createWebHistory(),
+  routes,
+});
+```
+
+Το `() => import(...)` κάνει **lazy loading**: ο κώδικας κάθε route κατεβαίνει μόνο όταν χρειαστεί — βασικό για performance. Το `<RouterView />` στο App.vue δείχνει το component του τρέχοντος route.
+
+Πλοήγηση με links ή προγραμματιστικά:
+
+```vue
+<template>
+  <RouterLink to="/">Αρχική</RouterLink>
+  <RouterLink :to="`/users/${user.id}`">Προφίλ</RouterLink>
+</template>
+
+<script setup>
+import { useRouter } from "vue-router";
+const router = useRouter();
+function goHome() {
+  router.push("/"); // προγραμματιστική πλοήγηση
+}
+</script>
+```
+
+### Route params
+
+Διαβάζεις δυναμικά κομμάτια του URL με `useRoute`:
+
+```vue
+<script setup>
+import { useRoute } from "vue-router";
+const route = useRoute();
+const userId = route.params.id; // από το /users/:id
+</script>
+```
+
+> Προσοχή: αν πλοηγείσαι από `/users/1` σε `/users/2`, το component **επαναχρησιμοποιείται** (δεν ξαναδημιουργείται). Παρακολούθησε το `route.params.id` με `watch` για να ξαναφορτώσεις δεδομένα.
+
+## Navigation guards: προστασία routes
+
+Για να μπλοκάρεις πρόσβαση (π.χ. χωρίς login), χρησιμοποιείς guards:
+
+```js
+router.beforeEach((to, from) => {
+  const isLoggedIn = !!localStorage.getItem("token");
+  if (to.path.startsWith("/admin") && !isLoggedIn) {
+    return "/login"; // redirect — ακυρώνει την αρχική πλοήγηση
+  }
+  // return true ή τίποτα → επιτρέπεται
+});
+```
+
+Ο `beforeEach` τρέχει **πριν** από κάθε navigation. Επιστρέφεις `false`/μια διαδρομή για να μπλοκάρεις/ανακατευθύνεις, ή `true`/τίποτα για να επιτρέψεις.
+
+<Exercise
+  question="Τι κερδίζεις γράφοντας τα routes ως () => import('./View.vue');"
+  options={[
+    "Lazy loading — ο κώδικας του route κατεβαίνει μόνο όταν ο χρήστης πάει εκεί.",
+    "Τίποτα, είναι απλώς εναλλακτικό συντακτικό.",
+    "Κάνει το route να φορτώνει δύο φορές."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το dynamic import σπάει το bundle ανά route (code splitting). Έτσι το αρχικό φόρτωμα είναι μικρότερο και ο κώδικας κάθε σελίδας έρχεται on-demand."
+/>
+
+## Pinia: το επίσημο state management
+
+Όταν πολλά components χρειάζονται **το ίδιο** state (auth user, καλάθι, ρυθμίσεις), το `provide`/`inject` δεν φτάνει. Η **Pinia** δίνει κεντρικά, reactive **stores**:
+
+```js
+// stores/cart.js
+import { defineStore } from "pinia";
+import { ref, computed } from "vue";
+
+export const useCartStore = defineStore("cart", () => {
+  const items = ref([]);                                  // state
+  const total = computed(() =>                            // getter
+    items.value.reduce((s, i) => s + i.price, 0)
+  );
+  function add(item) { items.value.push(item); }          // action
+  return { items, total, add };
+});
+```
+
+Χρήση σε οποιοδήποτε component:
+
+```vue
+<script setup>
+import { useCartStore } from "@/stores/cart";
+const cart = useCartStore();
+cart.add({ name: "Laptop", price: 1200 });
+</script>
+
+<template>
+  <p>Σύνολο: {{ cart.total }}€ ({{ cart.items.length }} προϊόντα)</p>
+</template>
+```
+
+Το store είναι **singleton & reactive**: όποιο component το χρησιμοποιεί βλέπει τις ίδιες, ζωντανές τιμές. Δομή: **state** (`ref`), **getters** (`computed`), **actions** (functions). Είναι ουσιαστικά ένα «καθολικό composable».
+
+<PredictOutput
+  title="Shared store drill"
+  code={`// useCartStore() έχει items: ref([]).
+// ComponentA κάνει cart.add(x). ComponentB διαβάζει cart.items.length.
+// Τι δείχνει το B;`}
+  options={['1', '0', 'undefined', 'σφάλμα']}
+  correctOptionIndex={0}
+  answer="1"
+  explanation="Σε αντίθεση με τα composables (νέο state ανά κλήση), το Pinia store είναι singleton: όλα τα components μοιράζονται ΤΟ ΙΔΙΟ reactive state. Άρα το B βλέπει το item που πρόσθεσε το A."
+/>
+
+<Flashcards
+  title="Routing & state — repaso"
+  cards={[
+    {
+      question: "Πώς πλοηγείσαι στη Vue Router;",
+      answer: "Declarative με <RouterLink to=\"...\"> ή προγραμματιστικά με const router = useRouter(); router.push('/path'). Το <RouterView/> δείχνει το component του τρέχοντος route."
+    },
+    {
+      question: "Πώς διαβάζεις route params;",
+      answer: "const route = useRoute(); route.params.id (για /users/:id). Προσοχή: το component επαναχρησιμοποιείται μεταξύ /users/1 και /users/2 — κάνε watch το params για reload."
+    },
+    {
+      question: "Τι είναι τα navigation guards;",
+      answer: "Hooks πριν την πλοήγηση, π.χ. router.beforeEach((to, from) => ...). Επιστρέφεις false/διαδρομή για block/redirect (π.χ. auth check), ή true/τίποτα για να επιτρέψεις."
+    },
+    {
+      question: "Τι δομή έχει ένα Pinia store;",
+      answer: "defineStore με state (ref), getters (computed), actions (functions). Είναι singleton & reactive — όλα τα components μοιράζονται το ίδιο state. Σαν 'καθολικό composable' για app-wide state."
+    },
+    {
+      question: "provide/inject vs Pinia;",
+      answer: "provide/inject: τοπικό σε υποδέντρο, καλό για theme/locale. Pinia: κεντρικό app-wide state (auth, cart) προσβάσιμο από παντού, με actions/getters και devtools support."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Multi-page app με guard & store"
+  scenario="Στήσε μια μικρή εφαρμογή με Home/User/Login routes, ένα protected /admin και ένα Pinia store για τον συνδεδεμένο χρήστη."
+  outcomes={[
+    "Να ορίζεις routes με params και lazy loading.",
+    "Να προστατεύεις route με navigation guard.",
+    "Να μοιράζεσαι state με Pinia store."
+  ]}
+  steps={[
+    "Όρισε routes: /, /users/:id, /login, /admin και 404 catch-all.",
+    "Φτιάξε useAuthStore (Pinia) με user state και login/logout actions.",
+    "Πρόσθεσε beforeEach guard που μπλοκάρει /admin χωρίς user.",
+    "Στο User.vue διάβασε route.params.id και watch το για reload.",
+    "Σημείωσε γιατί ο cart/auth ταιριάζει σε store και όχι σε props."
+  ]}
+  checkpoints={[
+    "Το /admin κάνει redirect σε /login χωρίς auth.",
+    "Όλα τα components βλέπουν τον ίδιο user από το store.",
+    "Η αλλαγή /users/1 → /users/2 ξαναφορτώνει δεδομένα."
+  ]}
+  mistakes={[
+    "Να μην κάνεις watch τα route.params όταν το component επαναχρησιμοποιείται.",
+    "Να βάζεις app-wide state σε props/inject αντί σε store.",
+    "Να ξεχνάς το catch-all route για 404."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν στήνεις routed app με guard και Pinia store, και εξηγείς πότε state ανήκει σε store έναντι σε component."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> For navigation I use Vue Router: routes map paths to components, I lazy-load each with a dynamic import for code splitting, navigate with `<RouterLink>` or `router.push`, and read dynamic segments via `useRoute().params`. I protect routes with `beforeEach` guards that redirect when, say, a user isn't authenticated. For shared state across many components I use Pinia — stores with state, getters, and actions that are singleton and reactive, so everyone sees the same live data. I keep `provide`/`inject` for local subtree concerns like theme, and Pinia for true app-wide state like auth or cart.

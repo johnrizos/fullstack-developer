@@ -1,0 +1,156 @@
+# Angular Foundations & Architecture
+
+Η Angular είναι ένα **πλήρες (batteries-included) framework**: σε αντίθεση με τη React/Vue που είναι κυρίως view layer, η Angular φέρνει μαζί router, forms, HTTP, DI και testing. Είναι **TypeScript-first** και πιο δομημένη — γι' αυτό κυριαρχεί σε enterprise. Σε αυτό το track δουλεύουμε με **σύγχρονη Angular (17+)**: standalone components, signals και το νέο control flow.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς την αρχιτεκτονική **component / template / service**,
+- να δημιουργείς app & components με το **Angular CLI**,
+- να γράφεις ένα **standalone component**,
+- να καταλαβαίνεις γιατί η Angular είναι TypeScript-first.
+
+## Η αρχιτεκτονική με μια ματιά
+
+Μια Angular εφαρμογή είναι ένα δέντρο από **components**, υποστηριζόμενο από **services**:
+
+- **Component** = μια class με decorator `@Component`, ένα **template** (HTML) και styles. Ελέγχει ένα κομμάτι οθόνης.
+- **Template** = το HTML με Angular σύνταξη (bindings, control flow).
+- **Service** = class με reusable λογική/δεδομένα, που μοιράζεται μέσω **Dependency Injection** (επόμενα μαθήματα).
+
+```ts
+import { Component } from "@angular/core";
+
+@Component({
+  selector: "app-hello",
+  standalone: true,
+  template: `<h1>Γεια, {{ name }}!</h1>`,
+})
+export class HelloComponent {
+  name = "Ada";
+}
+```
+
+Τρία σημεία:
+
+- **`@Component`** — decorator που «μετατρέπει» την class σε Angular component, με metadata (selector, template, styles).
+- **`selector`** — το custom tag (`<app-hello>`) με το οποίο το χρησιμοποιείς.
+- **`standalone: true`** — το σύγχρονο μοντέλο: το component δηλώνει μόνο του τα dependencies του, χωρίς τα παλιά **NgModules**.
+
+## Standalone components (το σύγχρονο default)
+
+Παλιά κάθε component έπρεπε να δηλωθεί σε ένα `NgModule`. Από την Angular 17+ τα **standalone components** είναι το default: κάθε component εισάγει **μόνο του** ό,τι χρειάζεται μέσω `imports`.
+
+```ts
+import { Component } from "@angular/core";
+import { UserCardComponent } from "./user-card.component";
+
+@Component({
+  selector: "app-root",
+  standalone: true,
+  imports: [UserCardComponent], // φέρνει το child component
+  template: `<app-user-card />`,
+})
+export class AppComponent {}
+```
+
+Αυτό μειώνει το boilerplate και κάνει τα dependencies κάθε component **ρητά** και τοπικά — πιο εύκολο tree-shaking και κατανόηση.
+
+## Angular CLI: το εργαλείο που τα κάνει όλα
+
+Η Angular έρχεται με ισχυρό CLI που γεννά, τρέχει, τεστάρει και χτίζει:
+
+```bash
+npm install -g @angular/cli
+ng new my-app          # νέα εφαρμογή (ρωτά για routing, CSS κ.λπ.)
+ng serve               # dev server με hot reload
+ng generate component user-card   # (ng g c user-card) — φτιάχνει component
+ng generate service auth          # φτιάχνει service
+ng build                          # production build στο dist/
+ng test                           # unit tests
+```
+
+Το `ng generate` παράγει αρχεία με τη **σωστή δομή & naming convention** αυτόματα — γι' αυτό η Angular αισθάνεται «οργανωμένη»: όλοι ακολουθούν τις ίδιες συμβάσεις.
+
+## Γιατί TypeScript-first
+
+Η Angular **γράφτηκε σε TypeScript** και το αξιοποιεί παντού: decorators, typed DI, typed forms, typed inputs. Δεν είναι προαιρετικό «extra» όπως αλλού — είναι η γλώσσα του framework.
+
+- Οι **decorators** (`@Component`, `@Injectable`) είναι TS feature.
+- Το **DI** βασίζεται σε τύπους για να ξέρει τι να «εγχύσει».
+- Τα **types** πιάνουν λάθη στο compile, κρίσιμο σε μεγάλες ομάδες.
+
+Αν δεν ξέρεις TypeScript, δες πρώτα το TypeScript track — εδώ θεωρείται δεδομένο.
+
+<Exercise
+  question="Τι σημαίνει standalone: true σε ένα component;"
+  options={[
+    "Το component δηλώνει μόνο του τα dependencies του με imports, χωρίς NgModule.",
+    "Το component δεν μπορεί να χρησιμοποιήσει άλλα components.",
+    "Το component τρέχει σε ξεχωριστό thread."
+  ]}
+  correctOptionIndex={0}
+  explanation="Τα standalone components (default από Angular 17+) αντικαθιστούν τα NgModules: κάθε component εισάγει ρητά ό,τι χρειάζεται μέσω του imports array. Λιγότερο boilerplate, ρητά dependencies."
+/>
+
+<PredictOutput
+  title="CLI mental model"
+  code={`// Ποια εντολή φτιάχνει ΝΕΟ component με τη σωστή δομή αρχείων;`}
+  options={['ng generate component user-card', 'ng serve user-card', 'ng build component', 'npm new component']}
+  correctOptionIndex={0}
+  answer="ng generate component user-card"
+  explanation="Το ng generate component (συντομογραφία ng g c) δημιουργεί τα αρχεία του component (.ts/.html/.css/.spec) με σωστό naming και το δηλώνει κατάλληλα. ng serve τρέχει τον dev server· ng build χτίζει."
+/>
+
+<Flashcards
+  title="Angular foundations — repaso"
+  cards={[
+    {
+      question: "Ποια τα δομικά κομμάτια μιας Angular app;",
+      answer: "Components (class με @Component + template + styles, ελέγχουν UI), templates (HTML με Angular σύνταξη), services (reusable λογική/δεδομένα μέσω DI). Δέντρο από components με services από κάτω."
+    },
+    {
+      question: "Τι κάνει το @Component decorator;",
+      answer: "Μετατρέπει μια TS class σε Angular component, δίνοντας metadata: selector (custom tag), template/templateUrl, styles, standalone, imports. Είναι TypeScript decorator."
+    },
+    {
+      question: "Standalone components vs NgModules;",
+      answer: "Standalone (default 17+): κάθε component δηλώνει τα dependencies του στο imports array, χωρίς module. Λιγότερο boilerplate, ρητά & τοπικά dependencies, καλύτερο tree-shaking. Τα NgModules είναι το παλιό μοντέλο."
+    },
+    {
+      question: "Γιατί η Angular είναι TypeScript-first;",
+      answer: "Γράφτηκε σε TS και το χρησιμοποιεί παντού: decorators, typed DI (βασίζεται σε τύπους για injection), typed forms/inputs. Πιάνει λάθη στο compile — κρίσιμο για enterprise/μεγάλες ομάδες."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Στήσε ένα standalone app skeleton"
+  scenario="Με το CLI φτιάξε μια μικρή εφαρμογή με ένα root και ένα child standalone component, για να νιώσεις τη δομή της Angular."
+  outcomes={[
+    "Να δημιουργείς app & components με το CLI.",
+    "Να γράφεις standalone component με imports.",
+    "Να εξηγείς component/template/service."
+  ]}
+  steps={[
+    "ng new και ng serve για να δεις το dev server.",
+    "ng g c user-card για ένα child component.",
+    "Import το UserCardComponent στο AppComponent (standalone) και χρησιμοποίησέ το.",
+    "Πρόσθεσε ένα property στην class και δείξε το με {{ }} στο template.",
+    "Σημείωσε τι δουλειά έκανε αυτόματα το CLI."
+  ]}
+  checkpoints={[
+    "Το app τρέχει στο ng serve με hot reload.",
+    "Το child component εμφανίζεται μέσω του selector του.",
+    "Καταλαβαίνεις ρόλο component vs service."
+  ]}
+  mistakes={[
+    "Να ξεχνάς να βάλεις το child στο imports του standalone parent.",
+    "Να ψάχνεις NgModule σε σύγχρονο standalone project.",
+    "Να αγνοείς τις naming conventions που επιβάλλει το CLI."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν στήνεις standalone app με το CLI και εξηγείς την αρχιτεκτονική component/template/service με δικά σου λόγια."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> Angular is a batteries-included, TypeScript-first framework: components are classes decorated with `@Component` that pair a template with logic, backed by services shared through dependency injection. On modern Angular I use standalone components — they replace NgModules by declaring their own dependencies in an `imports` array, which means less boilerplate and explicit, tree-shakeable deps. The CLI scaffolds everything with consistent conventions, so `ng generate` gives correctly structured components and services, and `ng serve`/`ng build` handle dev and production.
