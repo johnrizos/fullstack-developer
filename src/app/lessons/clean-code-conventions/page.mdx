@@ -27,17 +27,26 @@ function calculateShippingCost(weightKg, distanceKm) { /* ... */ }
 
 ## Συμβάσεις ανά είδος
 
-| Είδος | Σύμβαση | Παράδειγμα |
+Δύο ξεχωριστές ερωτήσεις, μην τις μπερδεύεις: **πώς** το γράφεις (casing) και **τι λέξη** διαλέγεις (σημασία).
+
+### 1. Casing — πώς γράφεται
+
+| Τι ονομάζεις | Στυλ | Παράδειγμα |
 |---|---|---|
 | Μεταβλητές & functions | `camelCase` | `userName`, `getUserById` |
-| Classes & components | `PascalCase` | `class UserModel`, `<ProfileCard>` |
-| Σταθερές (config/magic) | `UPPER_SNAKE_CASE` | `MAX_RETRIES`, `API_URL` |
+| Classes & components | `PascalCase` | `UserModel`, `<ProfileCard>` |
+| Σταθερές (config) | `UPPER_SNAKE_CASE` | `MAX_RETRIES`, `API_URL` |
+| Files & folders | `kebab-case` * | `user-card.tsx`, `use-fetch.ts` |
+| CSS classes | `kebab-case` / BEM | `card__title--active` |
+
+### 2. Επιλογή λέξης — τι σημαίνει το όνομα
+
+| Τι ονομάζεις | Κανόνας | Παράδειγμα |
+|---|---|---|
+| Functions (ενέργειες) | ρήμα + ουσιαστικό | `fetchOrders`, `validateEmail` |
+| Μεταβλητές (δεδομένα) | ουσιαστικό | `orders`, `currentUser` |
 | Booleans | πρόθεμα `is`/`has`/`can`/`should` | `isActive`, `hasAccess`, `canEdit` |
-| Functions (ενέργειες) | **ρήμα + ουσιαστικό** | `fetchOrders`, `validateEmail` |
-| Μεταβλητές (δεδομένα) | **ουσιαστικά** | `orders`, `currentUser` |
 | Event handlers | `handle*` / `on*` | `handleClick`, `onSubmit` |
-| Files/folders | συνήθως `kebab-case`* | `user-card.tsx`, `use-fetch.ts` |
-| CSS classes | `kebab-case` (ή BEM) | `card__title--active` |
 
 \* *Σε React/Vue πολλές ομάδες ονομάζουν τα component αρχεία `PascalCase` (`UserCard.tsx`). Το κρίσιμο είναι **συνέπεια μέσα στο project**.*
 
