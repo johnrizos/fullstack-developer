@@ -1,0 +1,215 @@
+# Clean Code: Naming & Conventions
+
+Ο κώδικας διαβάζεται **πολύ** περισσότερες φορές απ' όσες γράφεται. «Clean code» δεν σημαίνει έξυπνος — σημαίνει **εύκολος να διαβαστεί και να αλλαχθεί** από άλλον (ή από εσένα σε 6 μήνες). Το πιο φθηνό εργαλείο γι' αυτό είναι τα **καλά ονόματα**. Αυτό το μάθημα είναι cross-language: ισχύει σε JavaScript, TypeScript, Python, σε κάθε framework.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να ονομάζεις σωστά variables, functions, booleans, constants, components & files,
+- να γράφεις μικρές functions με ξεκάθαρη ευθύνη,
+- να αναγνωρίζεις magic numbers, περιττά comments και επανάληψη,
+- να κάνεις refactor «βρώμικου» κώδικα σε καθαρό.
+
+## Γιατί τα ονόματα είναι το Νο.1
+
+Ένα κακό όνομα σε αναγκάζει να **διαβάσεις την υλοποίηση** για να καταλάβεις τι κάνει. Ένα καλό όνομα **είναι** η τεκμηρίωση:
+
+```js
+// ❌ τι είναι το d; τι μονάδα;
+const d = 86400000;
+function calc(x, y) { /* ... */ }
+
+// ✅ το όνομα λέει την ιστορία
+const MILLISECONDS_PER_DAY = 86_400_000;
+function calculateShippingCost(weightKg, distanceKm) { /* ... */ }
+```
+
+Ο κανόνας: **ξόδεψε χρόνο στα ονόματα**. Αν δυσκολεύεσαι να ονομάσεις κάτι, συχνά σημαίνει ότι κάνει πολλά πράγματα — σινιάλο για split.
+
+## Συμβάσεις ανά είδος
+
+| Είδος | Σύμβαση | Παράδειγμα |
+|---|---|---|
+| Μεταβλητές & functions | `camelCase` | `userName`, `getUserById` |
+| Classes & components | `PascalCase` | `class UserModel`, `<ProfileCard>` |
+| Σταθερές (config/magic) | `UPPER_SNAKE_CASE` | `MAX_RETRIES`, `API_URL` |
+| Booleans | πρόθεμα `is`/`has`/`can`/`should` | `isActive`, `hasAccess`, `canEdit` |
+| Functions (ενέργειες) | **ρήμα + ουσιαστικό** | `fetchOrders`, `validateEmail` |
+| Μεταβλητές (δεδομένα) | **ουσιαστικά** | `orders`, `currentUser` |
+| Event handlers | `handle*` / `on*` | `handleClick`, `onSubmit` |
+| Files/folders | συνήθως `kebab-case`* | `user-card.tsx`, `use-fetch.ts` |
+| CSS classes | `kebab-case` (ή BEM) | `card__title--active` |
+
+\* *Σε React/Vue πολλές ομάδες ονομάζουν τα component αρχεία `PascalCase` (`UserCard.tsx`). Το κρίσιμο είναι **συνέπεια μέσα στο project**.*
+
+> **Python** εξαίρεση: μεταβλητές/functions σε `snake_case`, classes σε `PascalCase` (PEP 8). Κάθε γλώσσα έχει το ιδίωμά της — ακολούθησε το, μην επιβάλλεις JS σε Python.
+
+### Ονόματα που λένε την πρόθεση
+
+- **Πες τι, όχι πώς**: `users` αντί `userArray`, `isLoading` αντί `flag`.
+- **Όχι συντομογραφίες**: `userCount` αντί `usrCnt`, `index` αντί `idx` (εκτός καθιερωμένων: `id`, `i` σε μικρό loop).
+- **Αντιστοιχία θετικού/αρνητικού**: `isVisible` καλύτερο από `isNotHidden` (διπλή άρνηση μπερδεύει).
+- **Ίδια έννοια, ίδια λέξη**: μην έχεις `getUser`, `fetchClient`, `retrieveAccount` για το ίδιο πράγμα.
+
+<Exercise
+  question="Ποιο boolean όνομα είναι το καλύτερο;"
+  options={[
+    "isActive — πρόθεμα is + θετική διατύπωση, διαβάζεται σαν πρόταση.",
+    "active — δεν φαίνεται ότι είναι boolean.",
+    "isNotInactive — διπλή άρνηση, μπερδεύει."
+  ]}
+  correctOptionIndex={0}
+  explanation="Τα booleans με πρόθεμα is/has/can διαβάζονται σαν ερώτηση/πρόταση (if (isActive)). Απόφυγε διπλές αρνήσεις: isNotInactive κάνει τον αναγνώστη να σκεφτεί δύο φορές."
+/>
+
+## Functions: μικρές, με μία ευθύνη
+
+Μια function πρέπει να κάνει **ένα πράγμα** και το όνομά της να το λέει ολόκληρο. Σημάδια ότι κάνει πολλά: «και» στο όνομα (`saveAndNotify`), δεκάδες γραμμές, βαθιά nesting.
+
+**Early returns** αντί για βαθύ nesting (guard clauses):
+
+```js
+// ❌ pyramid of doom
+function getDiscount(user) {
+  if (user) {
+    if (user.isMember) {
+      if (user.years > 2) {
+        return 0.2;
+      }
+    }
+  }
+  return 0;
+}
+
+// ✅ guard clauses — επίπεδο, ευανάγνωστο
+function getDiscount(user) {
+  if (!user) return 0;
+  if (!user.isMember) return 0;
+  return user.years > 2 ? 0.2 : 0;
+}
+```
+
+Λίγες παράμετροι (ιδανικά ≤3). Πολλές → πέρασε ένα **object** με ονομασμένα πεδία:
+
+```js
+// ❌ τι σημαίνει το true, το false;
+createUser("Ada", "ada@x.com", true, false);
+// ✅ αυτο-τεκμηριωμένο
+createUser({ name: "Ada", email: "ada@x.com", isAdmin: true, sendEmail: false });
+```
+
+## Magic numbers & strings
+
+Μια «γυμνή» τιμή στον κώδικα δεν εξηγεί τι σημαίνει. Δώσ' της **όνομα**:
+
+```js
+// ❌ γιατί 3; γιατί "PENDING";
+if (retries > 3) { /* ... */ }
+if (status === "PENDING") { /* ... */ }
+
+// ✅
+const MAX_RETRIES = 3;
+const STATUS = { PENDING: "PENDING", DONE: "DONE" };
+if (retries > MAX_RETRIES) { /* ... */ }
+if (status === STATUS.PENDING) { /* ... */ }
+```
+
+Όφελος διπλό: διαβάζεται καλύτερα **και** αλλάζεις την τιμή σε ένα μέρος.
+
+## Comments: γιατί, όχι τι
+
+Ο καθαρός κώδικας χρειάζεται **λίγα** comments — το όνομα και η δομή εξηγούν το «τι». Κράτα comments για το **«γιατί»**: αποφάσεις, παραδοχές, gotchas.
+
+```js
+// ❌ περιττό — ο κώδικας ήδη το λέει
+i = i + 1; // αύξησε το i κατά 1
+
+// ✅ εξηγεί ΓΙΑΤΙ, κάτι που δεν φαίνεται από τον κώδικα
+// Το API επιστρέφει 0-based μήνες, γι' αυτό +1 για εμφάνιση.
+const displayMonth = apiMonth + 1;
+```
+
+Αν χρειάζεσαι comment για να εξηγήσεις **τι** κάνει ένα μπλοκ, συχνά είναι σινιάλο να το βγάλεις σε **καλά ονομασμένη function** αντί για comment.
+
+## DRY — αλλά με μέτρο
+
+**DRY** (Don't Repeat Yourself): η ίδια λογική σε τρία σημεία = ένα bug σε τρία σημεία. Βγάλ' την σε function. Προσοχή όμως στο αντίθετο άκρο: μην «ενώνεις» κώδικα που απλώς **τυχαίνει** να μοιάζει αλλά αλλάζει για διαφορετικούς λόγους — η πρόωρη αφαίρεση κάνει ζημιά. Κανόνας πείρας: επανάληψη 2 φορές = ΟΚ, 3η φορά = κάν' το abstraction.
+
+<PredictOutput
+  title="Refactor smell drill"
+  code={`function p(u, a) {
+  if (u) {
+    if (a > 18) {
+      return u.name + " ok";
+    }
+  }
+  return "no";
+}
+// Ποιο είναι το ΚΥΡΙΟ πρόβλημα clean-code εδώ;`}
+  options={[
+    'Κρυπτικά ονόματα (p, u, a) + βαθύ nesting αντί για guard clauses',
+    'Είναι πολύ αργό σε runtime',
+    'Δεν τρέχει καθόλου',
+    'Λείπει async/await'
+  ]}
+  correctOptionIndex={0}
+  answer="Κρυπτικά ονόματα + βαθύ nesting"
+  explanation="Τα p/u/a δεν λένε τίποτα και το διπλό if χτίζει pyramid. Καθαρό: function describeUser(user, age) με guard clauses (if (!user) return ...; if (age <= 18) return ...)."
+/>
+
+<Flashcards
+  title="Clean code — γρήγορο repaso"
+  cards={[
+    {
+      question: "Ποιες οι βασικές naming συμβάσεις;",
+      answer: "camelCase: variables/functions. PascalCase: classes/components. UPPER_SNAKE_CASE: σταθερές. Booleans: is/has/can/should. Functions: ρήμα+ουσιαστικό (fetchOrders). Files: συνήθως kebab-case (ή PascalCase για components). Python: snake_case. Πάνω απ' όλα: συνέπεια."
+    },
+    {
+      question: "Τι κάνει μια function 'καθαρή';",
+      answer: "Κάνει ΕΝΑ πράγμα, το όνομα το λέει ολόκληρο, λίγες παράμετροι (≤3, αλλιώς object), early returns/guard clauses αντί για βαθύ nesting. 'και' στο όνομα = σινιάλο για split."
+    },
+    {
+      question: "Τι είναι magic number και πώς το λύνεις;",
+      answer: "Γυμνή τιμή χωρίς εξήγηση (if (retries > 3)). Λύση: ονομασμένη σταθερά (const MAX_RETRIES = 3). Διαβάζεται καλύτερα και αλλάζει σε ένα μέρος."
+    },
+    {
+      question: "Πότε γράφεις comment;",
+      answer: "Για το ΓΙΑΤΙ (αποφάσεις, παραδοχές, gotchas), όχι για το ΤΙ (αυτό το λέει ο κώδικας/τα ονόματα). Αν χρειάζεσαι comment για να εξηγήσεις τι κάνει ένα μπλοκ, βγάλ' το σε ονομασμένη function."
+    },
+    {
+      question: "DRY — ποιο το όριο;",
+      answer: "Don't Repeat Yourself: ίδια λογική σε πολλά σημεία = bug σε πολλά σημεία. Αλλά μην ενώνεις κώδικα που απλώς ΜΟΙΑΖΕΙ ενώ αλλάζει για διαφορετικούς λόγους. Κανόνας: 3η επανάληψη → abstraction."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Refactor σε καθαρό κώδικα"
+  scenario="Πάρε ένα 'βρώμικο' module (κρυπτικά ονόματα, magic numbers, βαθύ nesting) και κάν' το καθαρό βήμα-βήμα, χωρίς να αλλάξεις τη συμπεριφορά."
+  outcomes={[
+    "Να εφαρμόζεις naming συμβάσεις με συνέπεια.",
+    "Να ισιώνεις nesting με guard clauses.",
+    "Να βγάζεις magic numbers σε ονομασμένες σταθερές."
+  ]}
+  steps={[
+    "Μετονόμασε όλες τις μεταβλητές/functions ώστε το όνομα να λέει την πρόθεση.",
+    "Αντικατέστησε magic numbers/strings με ονομασμένες σταθερές.",
+    "Μετάτρεψε βαθιά if σε early returns.",
+    "Σπάσε κάθε function που κάνει 'πάνω από ένα πράγμα'.",
+    "Σβήσε comments που λένε το 'τι' και κράτα μόνο το 'γιατί'."
+  ]}
+  checkpoints={[
+    "Κανένα κρυπτικό όνομα ή γυμνός αριθμός δεν έμεινε.",
+    "Καμία function δεν έχει 'και' στο όνομα.",
+    "Η συμπεριφορά είναι ακριβώς ίδια (ίδια tests περνούν)."
+  ]}
+  mistakes={[
+    "Να αλλάζεις και τη συμπεριφορά ενώ κάνεις refactor naming.",
+    "Να κάνεις πρόωρο abstraction σε κώδικα που απλώς μοιάζει.",
+    "Να αλλάζεις σύμβαση στη μέση του project (ασυνέπεια)."
+  ]}
+  mastery="Το μάθημα έχει πετύχει όταν παίρνεις άγνωστο 'βρώμικο' κώδικα και τον κάνεις ευανάγνωστο μόνο με ονόματα, guard clauses και σταθερές — χωρίς να σπάσει τίποτα."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> I treat naming as the cheapest documentation: `camelCase` for variables and functions, `PascalCase` for classes and components, `UPPER_SNAKE_CASE` for constants, and `is`/`has` prefixes for booleans, with functions named as verb-plus-noun. I keep functions small and single-purpose, prefer guard clauses over deep nesting, and replace magic numbers with named constants. Comments explain *why*, not *what* — if I need a comment to describe what a block does, I extract it into a well-named function instead. I apply DRY but avoid premature abstraction, and above all stay consistent with the project's existing conventions.

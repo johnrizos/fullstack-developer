@@ -48,6 +48,7 @@ export const lessonDurationsMinutes: Record<string, number> = {
   "job-ready-practice": 60,
   "milestone-projects": 70,
   "code-review-practice": 70,
+  "clean-code-conventions": 65,
   "typescript-foundations": 55,
   "typescript-unions-narrowing": 60,
   "typescript-functions": 55,
@@ -607,6 +608,14 @@ export const curriculum: CurriculumSection[] = [
         project: "Self-review σε παλιό PR ή feature.",
         skills: ["review", "debugging", "quality"],
         href: "/lessons/code-review-practice",
+      },
+      {
+        id: "clean-code-conventions",
+        title: "Clean Code: Naming & Conventions",
+        description: "Πώς ονομάζεις variables, functions, booleans, constants, components & files — και αρχές αναγνωσιμότητας: μικρές functions, early returns, magic numbers, comments, DRY.",
+        project: "Refactor 'βρώμικου' module σε καθαρό, με σωστά ονόματα.",
+        skills: ["naming", "readability", "refactoring"],
+        href: "/lessons/clean-code-conventions",
       },
       {
         id: "typescript",
