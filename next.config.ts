@@ -16,6 +16,9 @@ const nextConfig: NextConfig = {
 
 const withMDX = createMDX({
   options: {
+    // Turbopack requires plugin names as strings with serializable options.
+    // remark-gfm enables GitHub-Flavored Markdown (tables, strikethrough, etc.).
+    remarkPlugins: [["remark-gfm"]],
     rehypePlugins: [
       // Turbopack requires plugin names as strings with serializable options.
       [
