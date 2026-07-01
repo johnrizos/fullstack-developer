@@ -60,6 +60,41 @@ VM:                          Container:
 
 Με απλά λόγια: **το VM κουβαλά ολόκληρο OS, ο container μοιράζεται το OS του host** — γι' αυτό ο container είναι δραματικά ελαφρύτερος και γρηγορότερος.
 
+## «Μοιράζεται το OS» — τι ΑΚΡΙΒΩΣ σημαίνει;
+
+Εδώ μπερδεύονται σχεδόν όλοι, οπότε ας το ξεκαθαρίσουμε. Ένα λειτουργικό σύστημα έχει **δύο μέρη**:
+
+- **Kernel** — ο «κινητήρας». Μιλάει στο υλικό (CPU, μνήμη, δίσκος, δίκτυο) και διαχειρίζεται τις διεργασίες. Η καρδιά του OS.
+- **Userspace** — τα προγράμματα, οι βιβλιοθήκες, τα αρχεία, το shell, ο package manager. «Κάθονται πάνω» στον kernel και του ζητάνε δουλειές.
+
+Όταν λέμε ότι ο container «μοιράζεται το OS του host», εννοούμε συγκεκριμένα ότι **μοιράζεται τον kernel** — δεν κουβαλάει δικό του.
+
+### Ένα image περιέχει userspace, ΟΧΙ kernel
+
+Αυτό είναι το κλειδί: ένα image (`ubuntu`, `node:20-alpine`) περιέχει **μόνο το userspace** μιας διανομής Linux — τα αρχεία και τις βιβλιοθήκες της. **Δεν περιέχει kernel.** Γι' αυτό ένα Alpine image είναι ~5MB και ένα Ubuntu ~30MB, ενώ ένα ολόκληρο Ubuntu ISO (με kernel) είναι ~4GB. Το image δεν είναι «όλο το Ubuntu» — είναι τα προγράμματά του, που δανείζονται τον kernel του host για να τρέξουν.
+
+### Ο κανόνας συμβατότητας
+
+Επειδή ο container δανείζεται τον kernel του host, πρέπει να είναι **συμβατός** μαζί του:
+
+> Ένας **Linux container** χρειάζεται **Linux kernel**· ένας **Windows container** χρειάζεται **Windows kernel**.
+
+Άρα, τι γίνεται με ένα **Linux container σε Windows Server** (ή στον Windows/Mac υπολογιστή σου); Με τη «στεγνή» λογική δεν θα έπρεπε να δουλεύει — ο Windows kernel δεν τρέχει Linux userspace, είναι άλλος κινητήρας. Και όμως δουλεύει, χάρη σε ένα «κόλπο»:
+
+> Σε Windows/Mac, το Docker στήνει από κάτω ένα **μικρό, κρυφό Linux VM** (στα Windows μέσω **WSL2** ή Hyper-V). Ο Linux container σου **δεν** χρησιμοποιεί τον Windows kernel — δανείζεται τον **Linux kernel αυτού του VM**.
+
+```text
+Windows Server / ο Windows υπολογιστής σου
+ └── κρυφό Linux VM (WSL2)   ← έχει ΑΛΗΘΙΝΟ Linux kernel
+       └── ο Linux container δανείζεται ΑΥΤΟΝ τον kernel
+```
+
+Τα Windows δεν «προσποιούνται» ότι είναι Linux — υπάρχει ένας πραγματικός (αλλά μικρός και κρυμμένος) Linux kernel από κάτω. Γι' αυτό ακριβώς, μόλις τρέξεις `docker run -it ubuntu bash` σε Windows, βρίσκεσαι «μέσα σε Linux»: το Docker Desktop έχει ήδη στήσει αυτό το Linux VM για σένα.
+
+### Το take-away για την παραγωγή
+
+Αυτό το κρυφό VM υπάρχει **μόνο** όταν το OS family του host δεν ταιριάζει με του container. Στην πραγματική παραγωγή σχεδόν πάντα τρέχεις **Linux containers σε Linux servers** → **κανένα VM**, άμεσο kernel sharing, όλο το όφελος (ms εκκίνηση, MBs μνήμης). Το VM στον υπολογιστή σου είναι απλώς για development· ο container που φτιάχνεις είναι Linux και θα τρέξει σε Linux server χωρίς κανένα VM.
+
 ## Ο πρώτος σου container
 
 Αν έχεις εγκατεστημένο το Docker Desktop, μία εντολή αρκεί:
@@ -131,6 +166,17 @@ docker run node:20 node -e "console.log(2+2)"
   explanation="Registry = κεντρική αποθήκη images. Κάνεις pull για να κατεβάσεις (π.χ. node:20) και push για να ανεβάσεις το δικό σου image ώστε άλλα μηχανήματα/το CI/η παραγωγή να το τραβήξουν."
 />
 
+<Exercise
+  question="Τρέχεις ένα Linux container (π.χ. ubuntu) πάνω σε Windows Server. Ποιον kernel χρησιμοποιεί;"
+  options={[
+    "Τον Windows kernel — ο container μεταφράζεται αυτόματα σε Windows.",
+    "Έναν Linux kernel μέσα σε ένα κρυφό, ελαφρύ Linux VM (WSL2/Hyper-V) που στήνει το Docker — ΟΧΙ τον Windows kernel.",
+    "Δικό του Linux kernel που περιέχεται στο ubuntu image."
+  ]}
+  correctOptionIndex={1}
+  explanation="Ο Linux container χρειάζεται Linux kernel, αλλά ο Windows δεν έχει. Το Docker στήνει από κάτω ένα μικρό Linux VM (WSL2) και ο container δανείζεται ΕΚΕΙΝΟΝ τον kernel. Το image δεν περιέχει kernel — μόνο userspace. Στην παραγωγή τρέχεις Linux σε Linux, οπότε δεν χρειάζεται VM."
+/>
+
 ## Πώς απαντάς στη συνέντευξη
 
 > «What is Docker and what problem does it solve?»
@@ -155,6 +201,14 @@ docker run node:20 node -e "console.log(2+2)"
     {
       question: "Container vs VM;",
       answer: "Container: μοιράζεται τον kernel του host, απομόνωση σε επίπεδο διεργασίας (namespaces/cgroups), ms εκκίνηση, MBs. VM: πλήρες guest OS σε hypervisor, ισχυρότερη απομόνωση αλλά βαρύ (GBs, δευτερόλεπτα boot)."
+    },
+    {
+      question: "'Μοιράζεται το OS' — τι ακριβώς μοιράζεται;",
+      answer: "Τον KERNEL (τον κινητήρα που μιλά στο υλικό). Το image περιέχει μόνο userspace (προγράμματα/βιβλιοθήκες), ΟΧΙ kernel — γι' αυτό είναι MBs, όχι GBs. Δανείζεται τον kernel του host για να τρέξει."
+    },
+    {
+      question: "Linux container σε Windows/Mac — πώς γίνεται;",
+      answer: "Ο Linux container θέλει Linux kernel. Σε Windows/Mac το Docker στήνει ένα κρυφό, ελαφρύ Linux VM (WSL2/Hyper-V) και ο container δανείζεται ΕΚΕΙΝΟΝ τον kernel — όχι τον Windows/macOS. Στην παραγωγή: Linux σε Linux → κανένα VM."
     },
     {
       question: "Τι κάνει το docker run <image>;",
