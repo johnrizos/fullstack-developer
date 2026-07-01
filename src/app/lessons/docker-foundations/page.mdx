@@ -1,0 +1,192 @@
+# Docker Foundations
+
+Πριν γράψεις ούτε ένα `Dockerfile`, πρέπει να καταλάβεις **τι πρόβλημα λύνει το Docker** — αλλιώς οι εντολές μοιάζουν μαγικά ξόρκια. Αυτό το μάθημα ξεκινά από το μηδέν: γιατί υπάρχει το Docker, ποιες είναι οι 3 λέξεις-κλειδιά (image, container, registry), σε τι διαφέρει από ένα virtual machine, και τρέχεις τον πρώτο σου container.
+
+## Το πρόβλημα: «στο μηχάνημά μου δουλεύει»
+
+Φαντάσου ότι έφτιαξες μια εφαρμογή στον υπολογιστή σου. Δουλεύει τέλεια. Τη στέλνεις σε συνάδελφο — και **σκάει**. Γιατί;
+
+- Εσύ έχεις Node 20, αυτός Node 18.
+- Εσύ έχεις PostgreSQL εγκατεστημένη, αυτός όχι.
+- Εσύ έχεις μια environment variable που ξέχασες ότι υπάρχει.
+- Ο server της παραγωγής τρέχει άλλη έκδοση Linux με άλλες βιβλιοθήκες.
+
+Αυτό είναι το κλασικό **«works on my machine»** πρόβλημα: η εφαρμογή σου εξαρτάται από **αόρατες προϋποθέσεις** του δικού σου μηχανήματος. Όσο περισσότερα μηχανήματα εμπλέκονται (ο δικός σου, του συναδέλφου, το CI, η παραγωγή), τόσο πιο εύθραυστο γίνεται.
+
+## Η λύση: πακετάρω τα ΠΑΝΤΑ μαζί
+
+Το Docker λέει: αντί να ελπίζω ότι κάθε μηχάνημα έχει τις σωστές προϋποθέσεις, **βάζω τα πάντα σε ένα πακέτο** — τον κώδικά μου, το runtime (π.χ. Node), τις βιβλιοθήκες, τα system dependencies, ακόμα και ένα κομμάτι λειτουργικού. Αυτό το πακέτο τρέχει **ακριβώς το ίδιο** παντού: στον υπολογιστή σου, στο CI, στην παραγωγή.
+
+Αυτό λέγεται **containerization**. Το αποτέλεσμα: «αν δουλεύει εδώ, δουλεύει παντού» — γιατί το «εδώ» ταξιδεύει μαζί με την εφαρμογή.
+
+## Οι 3 λέξεις που πρέπει να ξεκαθαρίσεις
+
+Το 90% της αρχικής σύγχυσης με το Docker είναι ότι μπερδεύεις αυτούς τους 3 όρους. Ας τους καρφώσουμε:
+
+| Όρος | Τι είναι | Αναλογία |
+|---|---|---|
+| **Image** | Το αμετάβλητο «πακέτο»: app + dependencies + runtime. Ένα αρχείο-πρότυπο, δεν «τρέχει». | Σαν **class** στον προγραμματισμό — ή σαν μια συνταγή. |
+| **Container** | Ένα **τρέχον instance** ενός image. Ζωντανή διεργασία με δικό της filesystem. | Σαν **object** — ή σαν το φαγητό που μαγείρεψες από τη συνταγή. |
+| **Registry** | Αποθήκη με images, από όπου κάνεις push/pull (π.χ. Docker Hub, GHCR). | Σαν το **npm/GitHub** αλλά για images. |
+
+Το κλειδί: από **ένα** image μπορείς να σηκώσεις **πολλά** containers, ακριβώς όπως από μία class φτιάχνεις πολλά objects. Το image είναι νεκρό/αμετάβλητο· ο container ζει.
+
+```text
+Registry (Docker Hub)
+    │  docker pull node:20
+    ▼
+  Image  (node:20)  ── docker run ──▶  Container 1 (ζωντανός)
+                     ── docker run ──▶  Container 2 (ζωντανός)
+```
+
+## Container vs Virtual Machine — η ερώτηση που θα σου κάνουν
+
+Και τα δύο απομονώνουν εφαρμογές, αλλά με πολύ διαφορετικό κόστος. Αυτή είναι **σχεδόν σίγουρη ερώτηση συνέντευξης**:
+
+- Ένα **VM** σηκώνει **ολόκληρο guest λειτουργικό** πάνω σε έναν hypervisor. Βαρύ: GBs στο δίσκο, δεκάδες δευτερόλεπτα boot, πολλή RAM. Αλλά **ισχυρή απομόνωση** (ξεχωριστός kernel).
+- Ένα **container μοιράζεται τον kernel του host** και απομονώνεται σε επίπεδο διεργασίας (μέσω Linux namespaces & cgroups). Ελαφρύ: MBs, ξεκινά σε **milliseconds**, ελάχιστη μνήμη. Πιο αδύναμη απομόνωση από VM, αλλά αρκετή για τις περισσότερες περιπτώσεις.
+
+```text
+VM:                          Container:
+┌─────────┐ ┌─────────┐      ┌─────────┐ ┌─────────┐
+│  App A  │ │  App B  │      │  App A  │ │  App B  │
+│ Guest OS│ │ Guest OS│      └─────────┘ └─────────┘
+├─────────┴─┴─────────┤      ├─────────────────────┤
+│      Hypervisor     │      │  Docker Engine       │
+├─────────────────────┤      ├─────────────────────┤
+│      Host OS         │      │  Host OS (κοινός kernel)│
+└─────────────────────┘      └─────────────────────┘
+```
+
+Με απλά λόγια: **το VM κουβαλά ολόκληρο OS, ο container μοιράζεται το OS του host** — γι' αυτό ο container είναι δραματικά ελαφρύτερος και γρηγορότερος.
+
+## Ο πρώτος σου container
+
+Αν έχεις εγκατεστημένο το Docker Desktop, μία εντολή αρκεί:
+
+```bash
+docker run hello-world
+```
+
+Τι συνέβη βήμα-βήμα:
+
+1. Το Docker έψαξε το image `hello-world` **τοπικά**. Δεν το βρήκε.
+2. Το κατέβασε (**pull**) από το Docker Hub (registry).
+3. Δημιούργησε έναν **container** από αυτό το image και τον έτρεξε.
+4. Ο container τύπωσε ένα μήνυμα και **τερμάτισε**.
+
+Δοκίμασε κάτι πιο χειροπιαστό — τρέξε μια πλήρη Ubuntu και μπες μέσα της:
+
+```bash
+docker run -it ubuntu bash
+# τώρα είσαι μέσα σε ένα Linux container:
+#   cat /etc/os-release   → Ubuntu, ακόμα κι αν είσαι σε Windows/Mac!
+#   exit                  → βγαίνεις, ο container σταματά
+```
+
+Μέσα σε δευτερόλεπτα έχεις ένα καθαρό Linux περιβάλλον, απομονωμένο από το μηχάνημά σου. Αυτή είναι η δύναμη: **μιας χρήσης, φορητά, καθαρά περιβάλλοντα** χωρίς να «λερώνεις» τον υπολογιστή σου.
+
+## Πού κολλάει αυτό στη δουλειά σου
+
+- **Onboarding:** νέος developer κάνει `docker compose up` και έχει όλο το stack (app + database) σε λεπτά, χωρίς οδηγίες 3 σελίδων.
+- **Ίδιο περιβάλλον παντού:** το image που πέρασε τα tests στο CI είναι το **ίδιο** που πάει παραγωγή — όχι «παρόμοιο».
+- **Καθαριότητα:** δοκιμάζεις PostgreSQL 16 χωρίς να την εγκαταστήσεις μόνιμα· σβήνεις τον container και δεν έμεινε τίποτα.
+
+<PredictOutput
+  title="Image ή container;"
+  code={`docker run node:20 node -e "console.log(2+2)"
+# ...τρέχει, τυπώνει 4, τελειώνει
+docker run node:20 node -e "console.log(2+2)"
+# το τρέχεις ΞΑΝΑ`}
+  options={[
+    "Το δεύτερο τρέξιμο ξανακατεβάζει το node:20 από το registry",
+    "Δημιουργείται ΝΕΟΣ container από το ΙΔΙΟ (ήδη κατεβασμένο) image",
+    "Χρησιμοποιείται ξανά ο ίδιος container",
+    "Σφάλμα: το image χρησιμοποιείται ήδη"
+  ]}
+  correctOptionIndex={1}
+  answer="Νέος container από το ίδιο image"
+  explanation="Το image node:20 κατέβηκε την πρώτη φορά και έμεινε τοπικά (cached). Κάθε docker run φτιάχνει ΝΕΟ container-instance από αυτό το ίδιο image — όπως new από μια class. Το image δεν ξανακατεβαίνει, και δεν επαναχρησιμοποιείται ο παλιός container."
+/>
+
+<Exercise
+  question="Ποια είναι η βασική διαφορά container από virtual machine;"
+  options={[
+    "Ο container μοιράζεται τον kernel του host και απομονώνεται σε επίπεδο διεργασίας — ξεκινά σε ms με MBs· το VM σηκώνει ολόκληρο guest OS.",
+    "Ο container τρέχει μόνο σε Linux, το VM παντού.",
+    "Δεν υπάρχει ουσιαστική διαφορά, απλώς άλλο όνομα."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το VM εικονικοποιεί υλικό και τρέχει πλήρες guest OS πάνω σε hypervisor (βαρύ, αργό boot, GBs). Ο container μοιράζεται τον kernel του host μέσω namespaces/cgroups — απομόνωση σε επίπεδο διεργασίας, εκκίνηση σε ms, MBs μνήμης."
+/>
+
+<Exercise
+  question="Τι είναι το registry;"
+  options={[
+    "Το εργαλείο που τρέχει τους containers στο μηχάνημά σου.",
+    "Μια αποθήκη images (π.χ. Docker Hub, GHCR) απ' όπου κάνεις push/pull — σαν npm για images.",
+    "Το αρχείο ρυθμίσεων του container."
+  ]}
+  correctOptionIndex={1}
+  explanation="Registry = κεντρική αποθήκη images. Κάνεις pull για να κατεβάσεις (π.χ. node:20) και push για να ανεβάσεις το δικό σου image ώστε άλλα μηχανήματα/το CI/η παραγωγή να το τραβήξουν."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «What is Docker and what problem does it solve?»
+
+> Docker solves the "works on my machine" problem by packaging an app together with its runtime, dependencies, and system libraries into an immutable image, so it runs identically on my laptop, in CI, and in production. The three core terms: an image is the immutable template — like a class; a container is a running instance of that image — like an object, and you can start many containers from one image; a registry like Docker Hub is where images are pushed and pulled. Unlike a virtual machine, which boots a full guest OS on a hypervisor and costs gigabytes and seconds, a container shares the host kernel and isolates at the process level with namespaces and cgroups, so it starts in milliseconds and uses megabytes. That lightweight, reproducible environment is why the image that passed tests in CI is the exact same one that ships to production.
+
+<Flashcards
+  title="Docker Foundations — interview drills"
+  cards={[
+    {
+      question: "Ποιο πρόβλημα λύνει το Docker;",
+      answer: "Το 'works on my machine': πακετάρει app + runtime + dependencies + system libs σε ένα αμετάβλητο image που τρέχει ολόιδιο παντού (laptop, CI, production). Τέλος στις αόρατες προϋποθέσεις του κάθε μηχανήματος."
+    },
+    {
+      question: "Image vs container;",
+      answer: "Image: αμετάβλητο πρότυπο (app+deps+runtime), δεν τρέχει — σαν class. Container: τρέχον instance του image με δικό του filesystem/διεργασίες — σαν object. Πολλά containers από ένα image."
+    },
+    {
+      question: "Τι είναι το registry;",
+      answer: "Αποθήκη images (Docker Hub, GHCR, ECR). pull = κατεβάζω, push = ανεβάζω. Σαν npm/GitHub αλλά για Docker images."
+    },
+    {
+      question: "Container vs VM;",
+      answer: "Container: μοιράζεται τον kernel του host, απομόνωση σε επίπεδο διεργασίας (namespaces/cgroups), ms εκκίνηση, MBs. VM: πλήρες guest OS σε hypervisor, ισχυρότερη απομόνωση αλλά βαρύ (GBs, δευτερόλεπτα boot)."
+    },
+    {
+      question: "Τι κάνει το docker run <image>;",
+      answer: "Βρίσκει το image τοπικά (αν όχι, το κάνει pull από registry), δημιουργεί ΝΕΟ container από αυτό και το τρέχει. Κάθε run = νέο instance."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Ξεκίνα με το Docker από το μηδέν"
+  scenario="Χωρίς να ξέρεις τίποτα από Docker, εγκατέστησε το Docker Desktop και εξοικειώσου με image, container και registry τρέχοντας έτοιμα images."
+  outcomes={[
+    "Να εξηγείς με δικά σου λόγια το 'works on my machine' και πώς το λύνει το containerization.",
+    "Να ξεχωρίζεις image / container / registry.",
+    "Να τρέχεις έναν container και να καταλαβαίνεις τι έγινε από κάτω."
+  ]}
+  steps={[
+    "Εγκατέστησε Docker Desktop και τρέξε docker run hello-world.",
+    "Τρέξε docker run -it ubuntu bash και δες ότι είσαι μέσα σε Linux (cat /etc/os-release), μετά exit.",
+    "Τρέξε docker images και δες ποια images κατέβηκαν τοπικά.",
+    "Τρέξε docker ps -a και δες τους containers που έφτιαξες (και σταμάτησαν).",
+    "Εξήγησε σε έναν φίλο τη διαφορά image vs container με την αναλογία class/object."
+  ]}
+  checkpoints={[
+    "Καταλαβαίνεις ότι ένα image είναι αμετάβλητο πρότυπο και ο container ζωντανό instance.",
+    "Ξέρεις ότι το πρώτο run κατέβασε το image από registry, το δεύτερο όχι.",
+    "Μπορείς να πεις γιατί ο container ξεκινά σε ms ενώ ένα VM σε δευτερόλεπτα."
+  ]}
+  mistakes={[
+    "Να λες 'image' και 'container' σαν να είναι το ίδιο πράγμα.",
+    "Να νομίζεις ότι ο container είναι μικρό VM (μοιράζεται kernel — δεν είναι).",
+    "Να ξεχνάς ότι κάθε docker run φτιάχνει νέο container."
+  ]}
+  mastery="Πέτυχες όταν εξηγείς γιατί υπάρχει το Docker, ξεχωρίζεις image/container/registry, και δικαιολογείς γιατί ο container είναι ελαφρύτερος από VM."
+/>

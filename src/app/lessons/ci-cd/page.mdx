@@ -1,0 +1,192 @@
+# CI/CD
+
+CI/CD εμφανίζεται σχεδόν σε κάθε αγγελία backend/fullstack γιατί δείχνει ότι μπορείς να παραδώσεις λογισμικό **με προβλέψιμο τρόπο** — αυτόματα ελεγμένο, όχι «το ανέβασα και σταυρώνω τα δάχτυλα». Αυτό το μάθημα ξεκαθαρίζει τι είναι το CI, τι το CD, φτιάχνεις ένα πραγματικό GitHub Actions pipeline, και μαθαίνεις να διαβάζεις ένα αποτυχημένο build.
+
+## CI: Continuous Integration
+
+**Continuous Integration** σημαίνει ότι κάθε φορά που κάποιος ανοίγει PR ή κάνει push, τρέχουν **αυτόματα** μια σειρά από ελέγχους — **πριν** το merge. Είναι το **quality gate** που προστατεύει το main branch: αν κάτι σπάσει, φαίνεται αμέσως, όχι μια βδομάδα μετά σε production.
+
+Ένα τυπικό CI pipeline για fullstack app:
+
+```text
+install → lint → typecheck → unit tests → build → integration tests
+```
+
+Αν **οποιοδήποτε** βήμα αποτύχει, το PR **δεν πρέπει** να γίνεται merge μέχρι να διορθωθεί. Το «Integration» στο όνομα αναφέρεται στην ιδέα ότι ενσωματώνεις τη δουλειά σου **συχνά** και σε **μικρά κομμάτια** — έτσι τα conflicts και τα regressions πιάνονται νωρίς και είναι μικρά.
+
+## CD: Continuous Delivery vs Deployment
+
+Το **CD** έχει δύο εκδοχές που μπερδεύονται συνεχώς — ξεκαθάρισέ τες (κλασική ερώτηση):
+
+- **Continuous Delivery**: το pipeline ετοιμάζει ένα **έτοιμο, δοκιμασμένο release** — αλλά **άνθρωπος** πατά το κουμπί «deploy». Έλεγχος στο πότε βγαίνει.
+- **Continuous Deployment**: όταν περάσουν **όλα** τα checks, το deploy γίνεται **αυτόματα**, χωρίς ανθρώπινο βήμα. Πλήρης αυτοματοποίηση.
+
+Και οι δύο **προϋποθέτουν αξιόπιστο CI** — δεν κάνεις auto-deploy αν δεν εμπιστεύεσαι τα tests σου.
+
+## Ένα πραγματικό GitHub Actions workflow
+
+Το GitHub Actions τρέχει workflows που ορίζεις σε YAML μέσα στο `.github/workflows/`. Ας φτιάξουμε ένα CI που τρέχει σε κάθε PR:
+
+```yaml
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+```
+
+Ας το διαβάσουμε:
+
+- **`on:`** — **πότε** τρέχει: σε κάθε `pull_request` και σε κάθε `push` στο `main`.
+- **`jobs:`** — μία ή περισσότερες δουλειές. Εδώ μία (`checks`).
+- **`runs-on: ubuntu-latest`** — σε **καθαρό** μηχάνημα που στήνει το GitHub — γι' αυτό το CI πιάνει το «works on my machine»: ξεκινά από το μηδέν.
+- **`steps:`** — τα βήματα με τη σειρά. Τα `uses:` είναι έτοιμα actions (checkout του κώδικα, setup του Node με cache)· τα `run:` είναι δικές σου εντολές.
+
+Αν κάποιο `run` επιστρέψει non-zero exit code, το job **αποτυγχάνει** και το PR σημειώνεται ως failing.
+
+## npm ci vs npm install — γιατί στο CI;
+
+Πρόσεξες `npm ci` και όχι `npm install`. Στο CI θέλεις **αναπαραγωγιμότητα**:
+
+- `npm ci` κάνει **καθαρό** install **ακριβώς** από το `package-lock.json`: σβήνει το `node_modules`, **αποτυγχάνει** αν το lock και το `package.json` διαφωνούν, και **ποτέ** δεν τροποποιεί το lock.
+- `npm install` μπορεί να αλλάξει το lock και να τραβήξει ελαφρώς διαφορετικές εκδόσεις.
+
+Σε clean environment (όπως το CI runner), το `npm ci` είναι και ταχύτερο και ντετερμινιστικό — ακριβώς ό,τι θες.
+
+## Πώς διαβάζεις ένα αποτυχημένο pipeline
+
+Όταν «κοκκινίσει» το CI, μην πανικοβάλλεσαι — διάβασέ το με σειρά:
+
+1. **Ποιο job** απέτυχε;
+2. **Ποιο step/command** μέσα στο job;
+3. Ποιο **error message** εμφανίστηκε **πρώτο** (όχι το τελευταίο — το πρώτο είναι συνήθως η ρίζα).
+4. **Αναπαράγεται τοπικά;** Τρέξε την ίδια εντολή στο μηχάνημά σου.
+
+Και ο χρυσός κανόνας: **μην κάνεις bypass τα checks χωρίς λόγο.** Τα checks υπάρχουν για να προστατεύουν το main. Αν κάτι είναι flaky, διόρθωσε την αιτία — μην το απενεργοποιείς.
+
+## Καλές πρακτικές
+
+- **Κράτα τα CI jobs γρήγορα** — αν αργούν, η ομάδα σταματά να τα εμπιστεύεται/χρησιμοποιεί (cache dependencies, τρέξε βήματα παράλληλα).
+- **Μην τυπώνεις secrets στα logs** — χρησιμοποίησε GitHub Actions secrets, όχι hardcoded τιμές.
+- **Το build πρέπει να περνά πριν το deploy** — ποτέ deploy από σπασμένο branch.
+- **Branch protection**: απαίτησε τα checks να περνούν πριν επιτραπεί το merge.
+- **Migrations με rollback plan** — μην κάνεις deploy schema change χωρίς σχέδιο επαναφοράς.
+
+<PredictOutput
+  title="Quality gate"
+  code={`# CI workflow με steps: npm ci → lint → test → build
+# Ένας developer ανοίγει PR. Το 'npm run lint' βρίσκει ένα σφάλμα (exit 1).
+# Τι γίνεται;`}
+  options={[
+    "Το pipeline αγνοεί το lint και συνεχίζει στο test/build",
+    "Το job αποτυγχάνει· το PR σημειώνεται failing και (με branch protection) δεν γίνεται merge",
+    "Το lint διορθώνεται αυτόματα",
+    "Γίνεται deploy παρά το σφάλμα"
+  ]}
+  correctOptionIndex={1}
+  answer="Το job αποτυγχάνει και μπλοκάρει το merge"
+  explanation="Ένα step που επιστρέφει non-zero exit code (lint error) αποτυγχάνει το job — και by default σταματά τα επόμενα steps. Το PR φαίνεται failing, και με branch protection το merge μπλοκάρεται μέχρι να διορθωθεί. Αυτό ακριβώς είναι το CI ως quality gate."
+/>
+
+<Exercise
+  question="Τι κάνει το CI;"
+  options={[
+    "Τρέχει automated checks (lint, typecheck, tests, build) σε κάθε PR/push πριν το merge — quality gate.",
+    "Κάνει deploy την εφαρμογή σε production αυτόματα.",
+    "Χτίζει Docker images τοπικά στο μηχάνημά σου."
+  ]}
+  correctOptionIndex={0}
+  explanation="CI = τρέχει αυτόματα ελέγχους σε κάθε αλλαγή, πριν το merge, σε καθαρό environment. Είναι το quality gate που προστατεύει το main. Το deploy είναι δουλειά του CD."
+/>
+
+<Exercise
+  question="Continuous Delivery vs Continuous Deployment;"
+  options={[
+    "Είναι συνώνυμα.",
+    "Delivery: το pipeline ετοιμάζει έτοιμο release αλλά άνθρωπος πατά deploy. Deployment: μετά τα checks, το deploy γίνεται αυτόματα.",
+    "Delivery για frontend, Deployment για backend."
+  ]}
+  correctOptionIndex={1}
+  explanation="Delivery = πάντα-έτοιμο release, με ανθρώπινο approve στο τέλος. Deployment = πλήρως αυτόματο μόλις περάσουν τα checks. Και τα δύο προϋποθέτουν αξιόπιστο CI."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «Explain CI/CD.»
+
+> CI, continuous integration, runs automated checks on every PR and push — install, lint, typecheck, tests, and build — on a clean machine, before anything merges. It's the quality gate that protects main and catches regressions early because everyone integrates small changes often. I run these in GitHub Actions with npm ci for reproducible, lockfile-exact installs. CD comes in two flavors: continuous delivery produces an always-ready, tested release but a human clicks deploy, while continuous deployment ships automatically once all checks pass — both depend on trustworthy CI. When a pipeline fails I read which job and command failed and the first error, reproduce it locally, and fix the root cause rather than bypassing the check. I keep jobs fast, never print secrets, and require passing checks via branch protection before merge.
+
+<Flashcards
+  title="CI/CD — interview drills"
+  cards={[
+    {
+      question: "Τι είναι το CI;",
+      answer: "Continuous Integration: σε κάθε PR/push τρέχουν αυτόματα checks (lint/typecheck/tests/build) σε καθαρό environment, πριν το merge. Quality gate που προστατεύει το main και πιάνει regressions νωρίς."
+    },
+    {
+      question: "Continuous Delivery vs Deployment;",
+      answer: "Delivery: pipeline παράγει έτοιμο, δοκιμασμένο release — άνθρωπος πατά deploy. Deployment: μετά τα checks, deploy ΑΥΤΟΜΑΤΑ χωρίς ανθρώπινο βήμα. Και τα δύο θέλουν αξιόπιστο CI."
+    },
+    {
+      question: "npm ci vs npm install στο CI;",
+      answer: "npm ci: καθαρό, ντετερμινιστικό install ΑΚΡΙΒΩΣ από το lockfile — σβήνει node_modules, αποτυγχάνει αν lock & package.json διαφωνούν, δεν αλλάζει το lock. Ιδανικό/ταχύτερο για clean CI runners."
+    },
+    {
+      question: "Πώς διαβάζεις αποτυχημένο CI;",
+      answer: "1) ποιο job, 2) ποιο command, 3) το ΠΡΩΤΟ error message (η ρίζα), 4) αναπαράγεται τοπικά; Διόρθωσε την αιτία — μην κάνεις bypass τα checks."
+    },
+    {
+      question: "Τι σημαίνει το on: pull_request στο GitHub Actions;",
+      answer: "Το trigger: πότε τρέχει το workflow. pull_request → σε κάθε PR. Μπορείς και push: branches:[main] για να τρέχει και στο main."
+    },
+    {
+      question: "Δύο κανόνες υγιούς pipeline;",
+      answer: "Κράτα τα jobs γρήγορα (αλλιώς η ομάδα τα αγνοεί) και ποτέ μην τυπώνεις secrets στα logs (χρήση Actions secrets). Επίσης: branch protection ώστε τα checks να είναι προαπαιτούμενο για merge."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Στήσε CI pipeline με GitHub Actions"
+  scenario="Πρόσθεσε ένα CI workflow που τρέχει install, lint, tests και build σε κάθε PR, ώστε να πιάνει προβλήματα πριν φτάσουν στο main."
+  outcomes={[
+    "Να γράφεις GitHub Actions workflow με καθαρή σειρά βημάτων.",
+    "Να χρησιμοποιείς το CI ως quality gate με branch protection.",
+    "Να διαβάζεις και να διορθώνεις ένα αποτυχημένο build."
+  ]}
+  steps={[
+    "Φτιάξε .github/workflows/ci.yml με on: pull_request και job σε ubuntu-latest.",
+    "Steps: checkout, setup-node (cache npm), npm ci, lint, typecheck, test, build.",
+    "Ενεργοποίησε branch protection ώστε τα checks να απαιτούνται πριν το merge.",
+    "Κάνε ένα σκόπιμο lint failure σε PR και δες το CI να κοκκινίζει και να μπλοκάρει το merge.",
+    "Διόρθωσε το, δες το να γίνεται πράσινο, και μετά επίτρεψε το merge."
+  ]}
+  checkpoints={[
+    "Το CI τρέχει σε clean environment σε κάθε PR.",
+    "Ένα failing step μπλοκάρει το merge.",
+    "Μπορείς να εντοπίσεις τη ρίζα ενός failure από τα logs."
+  ]}
+  mistakes={[
+    "Να τρέχεις τα checks μόνο ΜΕΤΑ το merge (πολύ αργά).",
+    "Να κάνεις bypass ένα κόκκινο check χωρίς να λύσεις την αιτία.",
+    "Να τυπώνεις secrets στα logs.",
+    "Αργά jobs που η ομάδα σταματά να εμπιστεύεται."
+  ]}
+  mastery="Πέτυχες όταν κάθε PR ελέγχεται αυτόματα σε καθαρό environment, τα failing checks μπλοκάρουν το merge, και ξέρεις να διαβάζεις ένα κόκκινο build."
+/>

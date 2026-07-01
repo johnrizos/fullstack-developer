@@ -1,0 +1,198 @@
+# Images & Dockerfile
+
+Στο προηγούμενο μάθημα έτρεξες **έτοιμα** images (`ubuntu`, `node`). Τώρα φτιάχνεις το **δικό σου**: πακετάρεις την εφαρμογή σου σε ένα image με ένα `Dockerfile`. Θα καταλάβεις τι είναι κάθε γραμμή, γιατί τα images είναι φτιαγμένα σε **layers**, γιατί η **σειρά** των εντολών επηρεάζει την ταχύτητα, και πώς κρατάς έξω ό,τι δεν χρειάζεται.
+
+## Τι είναι το Dockerfile
+
+Το `Dockerfile` είναι μια **συνταγή**: ένα αρχείο κειμένου με εντολές που λένε στο Docker πώς να χτίσει το image σου, βήμα-βήμα. Το τρέχεις με `docker build`.
+
+Ας δούμε ένα πλήρες παράδειγμα για μια Node εφαρμογή και μετά το εξηγούμε γραμμή-γραμμή:
+
+```dockerfile
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+EXPOSE 3000
+CMD ["node", "server.js"]
+```
+
+- **`FROM node:20-alpine`** — Ξεκίνα από ένα έτοιμο **base image**. Εδώ: Node 20 πάνω σε Alpine Linux (μια πολύ μικρή διανομή, ~5MB). **Ποτέ δεν ξεκινάς από το μηδέν** — πατάς πάνω σε κάτι.
+- **`WORKDIR /app`** — Όρισε τον φάκελο εργασίας μέσα στο image. Οι επόμενες εντολές τρέχουν εκεί (σαν `cd /app`, αλλά δημιουργεί τον φάκελο αν δεν υπάρχει).
+- **`COPY package*.json ./`** — Αντίγραψε τα `package.json` και `package-lock.json` από το μηχάνημά σου **μέσα** στο image (στο `/app`).
+- **`RUN npm ci`** — Τρέξε μια εντολή **κατά το χτίσιμο**. Εδώ εγκαθιστά τα dependencies. Το αποτέλεσμα «ψήνεται» μέσα στο image.
+- **`COPY . .`** — Αντίγραψε **όλο** τον υπόλοιπο κώδικά σου μέσα στο image.
+- **`EXPOSE 3000`** — Τεκμηρίωση: «αυτή η εφαρμογή ακούει στην πόρτα 3000». (Δεν ανοίγει πόρτα από μόνο του — το κάνει το `-p` στο run, θα το δεις στο επόμενο μάθημα.)
+- **`CMD ["node", "server.js"]`** — Η εντολή που τρέχει **όταν ξεκινά ο container** (όχι στο build). Ένα `CMD` ανά Dockerfile.
+
+## RUN vs CMD — μη τα μπερδέψεις
+
+Κλασικό μπέρδεμα αρχαρίου:
+
+- **`RUN`** εκτελείται **τη στιγμή που χτίζεις** το image. Το αποτέλεσμα αποθηκεύεται μόνιμα μέσα στο image (π.χ. τα εγκατεστημένα packages).
+- **`CMD`** εκτελείται **τη στιγμή που τρέχει** ο container από το image. Είναι η «κύρια διεργασία».
+
+Δηλαδή το `RUN npm ci` γίνεται **μία φορά** στο build· το `CMD` γίνεται **κάθε φορά** που σηκώνεις container.
+
+## Χτίζω και τρέχω το image μου
+
+```bash
+# Χτίσε ένα image από το Dockerfile του τρέχοντος φακέλου (.), δώσ' του όνομα (tag)
+docker build -t my-app .
+
+# Δες το:
+docker images        # θα δεις το my-app στη λίστα
+
+# Τρέξ' το:
+docker run my-app
+```
+
+Το **`-t my-app`** δίνει **tag/όνομα** στο image. Χωρίς tag θα έπρεπε να το αναφέρεις με ένα δυσνόητο ID. Μπορείς και έκδοση: `-t my-app:1.0`. Αν δεν βάλεις έκδοση, μπαίνει `:latest` by default.
+
+Το **`.`** στο τέλος είναι το **build context**: ο φάκελος που στέλνεται στο Docker για να χτίσει (συνήθως ο τρέχων).
+
+## Layers: γιατί τα images χτίζονται «σε στρώσεις»
+
+Αυτή είναι **η** έννοια που ξεχωρίζει όποιον κατάλαβε το Docker. Κάθε εντολή στο Dockerfile (`FROM`, `COPY`, `RUN`…) δημιουργεί ένα **layer** — ένα αμετάβλητο «στρώμα» αλλαγών πάνω στο προηγούμενο. Το τελικό image είναι η στοίβα όλων των layers.
+
+Το κρίσιμο: το Docker **κάνει cache κάθε layer**. Όταν ξαναχτίζεις, για κάθε εντολή ρωτά «άλλαξε κάτι σε σχέση με πριν;»:
+
+- **Όχι** → χρησιμοποιεί το cached layer (ακαριαία).
+- **Ναι** → ξαναχτίζει αυτό το layer **και όλα τα επόμενα** (το cache «σπάει» από εκεί και κάτω).
+
+## Γιατί COPY package.json ΠΡΙΝ τον κώδικα — η #1 interview ερώτηση
+
+Κοίτα ξανά τη σειρά:
+
+```dockerfile
+COPY package*.json ./     # 1. μόνο τα manifests
+RUN npm ci                # 2. install
+COPY . .                  # 3. ΜΕΤΑ όλος ο κώδικας
+```
+
+Γιατί όχι απλά `COPY . .` και μετά `npm ci`; Επειδή **ο κώδικάς σου αλλάζει συνέχεια, τα dependencies σου σπάνια**. Με τη σωστή σειρά:
+
+- Αλλάζεις μια γραμμή κώδικα → σπάει το cache **μόνο** στο `COPY . .` και κάτω. Το `RUN npm ci` layer μένει **cached** → **το install ΔΕΝ ξανατρέχει**. Build σε δευτερόλεπτα.
+- Αν έβαζες `COPY . .` **πριν** το install, **κάθε** αλλαγή κώδικα θα ακύρωνε το install layer → θα ξανακατέβαζες όλα τα dependencies κάθε φορά. Αργό και σπάταλο.
+
+**Κανόνας:** βάζε τα πράγματα που αλλάζουν **σπάνια** (dependencies) **πάνω/νωρίς** και αυτά που αλλάζουν **συχνά** (κώδικας) **κάτω/αργά**.
+
+## .dockerignore: μη στέλνεις σκουπίδια στο image
+
+Το `COPY . .` θα αντέγραφε **τα πάντα** — μαζί με `node_modules`, `.git`, `.env`, logs. Αυτό είναι κακό: φουσκώνει το image, χαλάει το caching, και μπορεί να διαρρεύσει secrets. Βάζεις ένα `.dockerignore` (σαν `.gitignore`):
+
+```text
+node_modules
+.git
+.env
+*.log
+dist
+Dockerfile
+```
+
+Έτσι το build context μένει μικρό και καθαρό, και το `COPY . .` δεν φέρνει τοπικά `node_modules` (που ούτως ή άλλως τα φτιάχνεις με `npm ci` **μέσα** στο image, για το σωστό OS).
+
+<PredictOutput
+  title="Layer caching"
+  code={`# Έχεις χτίσει ήδη το image μία φορά.
+# Τώρα αλλάζεις ΜΟΝΟ μια γραμμή στο src/server.js και ξαναχτίζεις:
+#   FROM node:20-alpine
+#   WORKDIR /app
+#   COPY package*.json ./
+#   RUN npm ci          ← ακριβό βήμα
+#   COPY . .
+#   CMD ["node","server.js"]
+docker build -t my-app .`}
+  options={[
+    "Ξανατρέχει το npm ci γιατί άλλαξε αρχείο",
+    "Το npm ci μένει cached· ξαναχτίζονται μόνο τα layers από το COPY . . και κάτω",
+    "Ξαναχτίζεται όλο το image από την αρχή (FROM)",
+    "Το build αποτυγχάνει λόγω cache conflict"
+  ]}
+  correctOptionIndex={1}
+  answer="Το npm ci μένει cached· ξαναχτίζεται μόνο από το COPY . . και κάτω"
+  explanation="Άλλαξε μόνο κώδικας, όχι το package*.json. Άρα τα layers FROM/WORKDIR/COPY package*.json/RUN npm ci είναι αμετάβλητα → cached. Το cache σπάει στο COPY . . (εκεί μπήκε το αλλαγμένο αρχείο) και ξαναχτίζονται μόνο αυτό + όσα ακολουθούν. Το ακριβό npm ci δεν ξανατρέχει."
+/>
+
+<Exercise
+  question="Ποια η διαφορά RUN από CMD;"
+  options={[
+    "Είναι συνώνυμα.",
+    "RUN εκτελείται κατά το build (και ψήνεται στο image)· CMD εκτελείται όταν ξεκινά ο container (η κύρια διεργασία).",
+    "RUN για Linux, CMD για Windows."
+  ]}
+  correctOptionIndex={1}
+  explanation="RUN = build-time: τρέχει ενώ χτίζεται το image και το αποτέλεσμα αποθηκεύεται σε layer (π.χ. εγκατεστημένα packages). CMD = run-time: η προεπιλεγμένη εντολή που τρέχει κάθε φορά που σηκώνεις container από το image."
+/>
+
+<Exercise
+  question="Γιατί χρειάζεσαι .dockerignore;"
+  options={[
+    "Για να μη μπαίνουν στο build context/image άχρηστα ή ευαίσθητα αρχεία (node_modules, .git, .env) — μικρότερο image, καλύτερο caching, χωρίς διαρροή secrets.",
+    "Για να τρέχει πιο γρήγορα ο container.",
+    "Είναι υποχρεωτικό αρχείο, αλλιώς δεν χτίζεται το image."
+  ]}
+  correctOptionIndex={0}
+  explanation="Το COPY . . θα αντέγραφε τα πάντα. Το .dockerignore (σαν .gitignore) εξαιρεί node_modules/.git/.env/logs — μικρότερο context & image, σταθερότερο cache και καμία διαρροή secrets στο image."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «Walk me through a Dockerfile and why instruction order matters.»
+
+> A Dockerfile is the recipe for building an image. FROM picks a base image like node:20-alpine, WORKDIR sets the working directory, COPY brings files from the host into the image, RUN executes commands at build time — like npm ci — and bakes the result into the image, and CMD is the default command that runs when a container starts. Each instruction creates a cached layer, so order matters: I copy package.json and run the install before copying the rest of the source, because dependencies change rarely and source changes constantly. That way a code change only busts the cache from COPY . . downward and the expensive install layer stays cached. I also add a .dockerignore for node_modules, .git, and .env so the build context stays small and no secrets leak into the image.
+
+<Flashcards
+  title="Images & Dockerfile — interview drills"
+  cards={[
+    {
+      question: "Τι κάνει το FROM;",
+      answer: "Ορίζει το base image πάνω στο οποίο χτίζεις (π.χ. node:20-alpine). Πάντα ξεκινάς από κάτι έτοιμο — δεν χτίζεις OS από το μηδέν."
+    },
+    {
+      question: "RUN vs CMD;",
+      answer: "RUN: εκτελείται στο build, το αποτέλεσμα ψήνεται σε layer (π.χ. npm ci). CMD: η εντολή που τρέχει όταν ξεκινά ο container (μία ανά Dockerfile)."
+    },
+    {
+      question: "Τι είναι τα layers και γιατί μετράνε;",
+      answer: "Κάθε εντολή του Dockerfile = ένα cached, αμετάβλητο layer. Στο rebuild, αν ένα layer δεν άλλαξε χρησιμοποιείται από cache· αν άλλαξε, ξαναχτίζεται αυτό ΚΑΙ όλα τα επόμενα."
+    },
+    {
+      question: "Γιατί COPY package.json + install ΠΡΙΝ το COPY . . ;",
+      answer: "Layer caching: dependencies αλλάζουν σπάνια, κώδικας συχνά. Έτσι μια αλλαγή κώδικα δεν ακυρώνει το ακριβό install layer — build σε δευτερόλεπτα αντί για ξανακατέβασμα όλων."
+    },
+    {
+      question: "docker build -t my-app . — τι σημαίνει το -t και το . ;",
+      answer: "-t my-app: δίνει όνομα/tag στο image (default :latest αν δεν βάλεις έκδοση). . : το build context, ο φάκελος που στέλνεται στο Docker για το χτίσιμο."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Γράψε το πρώτο σου Dockerfile"
+  scenario="Πάρε μια απλή Node/Express εφαρμογή και πακέταρέ την σε δικό σου image, με σωστή σειρά εντολών και .dockerignore."
+  outcomes={[
+    "Να γράφεις Dockerfile που χτίζει και τρέχει την εφαρμογή σου.",
+    "Να εξηγείς κάθε εντολή (FROM/WORKDIR/COPY/RUN/CMD).",
+    "Να εκμεταλλεύεσαι το layer caching με σωστή σειρά."
+  ]}
+  steps={[
+    "Γράψε Dockerfile: FROM node:20-alpine, WORKDIR /app, COPY package*.json, RUN npm ci, COPY . ., CMD.",
+    "Πρόσθεσε .dockerignore με node_modules, .git, .env.",
+    "Τρέξε docker build -t my-app . και μετά docker images για να το δεις.",
+    "Άλλαξε μια γραμμή κώδικα, ξαναχτίσε, και παρατήρησε ότι το npm ci ΔΕΝ ξανατρέχει (cached).",
+    "Δοκίμασε επίτηδες να βάλεις COPY . . πριν το npm ci και δες πόσο πιο αργό γίνεται το rebuild."
+  ]}
+  checkpoints={[
+    "Το image χτίζεται και τρέχει την εφαρμογή.",
+    "Μια αλλαγή κώδικα δεν προκαλεί ξανα-install dependencies.",
+    "Το .dockerignore κρατά node_modules/.git/.env έξω από το image."
+  ]}
+  mistakes={[
+    "COPY . . πριν το install → σπάει το cache σε κάθε αλλαγή κώδικα.",
+    "Να ξεχνάς .dockerignore → φουσκωμένο image, πιθανή διαρροή .env.",
+    "Να μπερδεύεις RUN (build-time) με CMD (run-time)."
+  ]}
+  mastery="Πέτυχες όταν γράφεις ένα καθαρό Dockerfile, εξηγείς κάθε γραμμή, και δικαιολογείς τη σειρά εντολών με βάση το layer caching."
+/>

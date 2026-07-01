@@ -1,0 +1,194 @@
+# Docker Compose
+
+Μια πραγματική εφαρμογή σπάνια είναι **ένας** container. Έχεις το backend, μια **βάση**, ίσως ένα **Redis**, ίσως έναν worker. Με σκέτο `docker run` θα έγραφες 4 μεγάλες εντολές με σωστές πόρτες, volumes, env vars και δικτύωση — κάθε φορά, με το σωστό σκορ. Το **Docker Compose** το κάνει αυτό σε **ένα αρχείο** και **μία εντολή**.
+
+## Το πρόβλημα που λύνει
+
+Χωρίς Compose, για να σηκώσεις app + database θα έτρεχες κάτι σαν:
+
+```bash
+docker run -d --name db -e POSTGRES_PASSWORD=secret -v pgdata:/var/lib/postgresql/data postgres:16
+docker run -d --name api -p 8080:3000 -e DATABASE_URL=... --link db my-app
+```
+
+Επίπονο, εύκολο να κάνεις λάθος, δύσκολο να το μοιραστείς. Με Compose περιγράφεις **δηλωτικά** ό,τι θες σε ένα `compose.yaml`, και το σηκώνεις όλο με `docker compose up`.
+
+## Το compose.yaml
+
+```yaml
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: appdb
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      retries: 5
+
+  api:
+    build: .
+    ports:
+      - "8080:3000"
+    environment:
+      DATABASE_URL: postgres://postgres:secret@db:5432/appdb
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+```
+
+Ας το διαβάσουμε:
+
+- **`services:`** — κάθε «κουτί» (container) της εφαρμογής σου. Εδώ δύο: `db` και `api`.
+- **`image: postgres:16`** — το `db` χρησιμοποιεί έτοιμο image από το registry.
+- **`build: .`** — το `api` **χτίζεται** από το `Dockerfile` του τρέχοντος φακέλου (αντί για έτοιμο image).
+- **`environment:`** — env vars, ακριβώς όπως το `-e`.
+- **`volumes:`** — μόνιμη αποθήκευση για τη βάση (το ίδιο concept με το προηγούμενο μάθημα). Το `pgdata` δηλώνεται και στο κάτω `volumes:` block.
+- **`ports: "8080:3000"`** — port mapping, όπως το `-p host:container`.
+- **`depends_on`** — σειρά εκκίνησης (θα το δούμε παρακάτω).
+
+## Το «μαγικό» κομμάτι: δικτύωση με ονόματα
+
+Πρόσεξε το `DATABASE_URL`:
+
+```text
+postgres://postgres:secret@db:5432/appdb
+                          ^^
+```
+
+Το host δεν είναι `localhost` ούτε κάποια IP — είναι **`db`**, το **όνομα του service**. Το Compose φτιάχνει αυτόματα ένα **ιδιωτικό δίκτυο** και βάζει όλα τα services μέσα του, όπου **βρίσκουν το ένα το άλλο με το όνομά τους** (service discovery μέσω DNS). Έτσι το `api` μιλά στη βάση απλώς λέγοντας `db:5432` — χωρίς IPs, χωρίς χειροκίνητο linking.
+
+Σημαντικό: το `db:5432` δουλεύει **μεταξύ των containers**. Από τον **δικό σου browser** μιλάς μέσω της host πόρτας (`localhost:8080`) που εκτέθηκε με το `ports`. Δεν χρειάζεται (και συνήθως δεν θέλεις) να εκθέσεις την 5432 της βάσης έξω.
+
+## depends_on: σειρά εκκίνησης
+
+Το `depends_on` λέει «σήκωσε πρώτα το `db`, μετά το `api`». **Προσοχή** σε μια κλασική παγίδα: το σκέτο `depends_on: [db]` περιμένει μόνο να **ξεκινήσει** ο container της βάσης — **όχι** να είναι έτοιμη να δεχτεί συνδέσεις. Η PostgreSQL κάνει λίγα δευτερόλεπτα να σηκωθεί, οπότε το `api` μπορεί να σκάσει προσπαθώντας να συνδεθεί σε μια βάση που «ξεκίνησε αλλά δεν είναι έτοιμη».
+
+Η σωστή λύση είναι ο συνδυασμός **`healthcheck` + `condition: service_healthy`** (όπως στο παράδειγμα): το `api` ξεκινά μόνο όταν το healthcheck της βάσης περάσει.
+
+## Οι εντολές που θα χρησιμοποιείς καθημερινά
+
+```bash
+docker compose up            # σήκωσε τα πάντα (foreground, βλέπεις logs)
+docker compose up -d         # ...στο παρασκήνιο
+docker compose up --build    # ξαναχτίσε τα images πρώτα
+docker compose ps            # τι τρέχει
+docker compose logs -f api   # logs ενός service
+docker compose exec api sh   # μπες μέσα σε ένα service
+docker compose down          # σταμάτα & σβήσε τα πάντα
+docker compose down -v       # ...ΚΑΙ σβήσε τα volumes (χάνεις τα δεδομένα!)
+```
+
+Με **μία** εντολή (`up`) όλη η ομάδα έχει ολόιδιο περιβάλλον. Ένας νέος developer κάνει `git clone` + `docker compose up` και δουλεύει σε λεπτά — αυτό είναι το μεγάλο win.
+
+## Compose ≠ production orchestration
+
+Ξεκαθάρισέ το για να μη μπερδευτείς (και για τη συνέντευξη): το Compose είναι ιδανικό για **local development** και απλά setups — τρέχει σε **ένα μηχάνημα**. Δεν κάνει auto-scaling σε πολλούς servers, self-healing σε cluster, ή rolling updates χωρίς downtime. Γι' αυτά υπάρχει το **Kubernetes** (επόμενο βήμα στη ροή). Compose = «σήκωσε το stack μου τοπικά, εύκολα».
+
+<PredictOutput
+  title="Service discovery"
+  code={`# Στο compose.yaml έχεις services 'db' (postgres) και 'api'.
+# Πώς πρέπει να δείχνει το DATABASE_URL του api ώστε να βρει τη βάση;`}
+  options={[
+    "postgres://...@localhost:5432/appdb",
+    "postgres://...@127.0.0.1:5432/appdb",
+    "postgres://...@db:5432/appdb",
+    "postgres://...@postgres:5432/appdb"
+  ]}
+  correctOptionIndex={2}
+  answer="postgres://...@db:5432/appdb"
+  explanation="Το Compose βάζει τα services σε κοινό δίκτυο όπου βρίσκονται με το ΟΝΟΜΑ SERVICE τους. Το service λέγεται 'db', άρα ο api μιλά στο 'db:5432'. Το localhost/127.0.0.1 θα έδειχνε στον ΙΔΙΟ τον container του api (όχι στη βάση). Το 'postgres' θα δούλευε μόνο αν το service λεγόταν έτσι."
+/>
+
+<Exercise
+  question="Γιατί το σκέτο depends_on δεν αρκεί συχνά για μια βάση;"
+  options={[
+    "Γιατί το depends_on δεν υπάρχει στο Compose.",
+    "Γιατί περιμένει μόνο να ΞΕΚΙΝΗΣΕΙ ο container, όχι να είναι ΕΤΟΙΜΗ η βάση για συνδέσεις — χρειάζεσαι healthcheck + condition: service_healthy.",
+    "Γιατί το depends_on δουλεύει μόνο για web servers."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το depends_on ελέγχει σειρά εκκίνησης, αλλά 'ξεκίνησε ο container' ≠ 'η βάση δέχεται συνδέσεις'. Η Postgres θέλει λίγα δευτερόλεπτα. Ο σωστός τρόπος: healthcheck στη βάση + depends_on με condition: service_healthy, ώστε το api να ξεκινά μόνο όταν η βάση είναι όντως έτοιμη."
+/>
+
+<Exercise
+  question="Πότε ΔΕΝ είναι σωστή επιλογή το Docker Compose;"
+  options={[
+    "Για local development με app + database.",
+    "Για production σε πολλά μηχανήματα με auto-scaling, self-healing και zero-downtime updates — εκεί θες orchestrator (Kubernetes).",
+    "Για να μοιραστείς ένα setup με την ομάδα."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το Compose τρέχει σε ένα μηχάνημα — τέλειο για local dev/απλά setups. Για production cluster με scaling/self-healing/rolling updates χρειάζεσαι orchestrator (Kubernetes). Compose και K8s λύνουν διαφορετικά προβλήματα."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «What is Docker Compose and when do you use it?»
+
+> Docker Compose describes a multi-container app declaratively in one compose.yaml and brings it up with a single docker compose up. Each service is a container — say an api that builds from my Dockerfile and a db from the postgres image — with its ports, environment, volumes, and dependencies in one place. Compose creates a private network where services find each other by service name, so the api connects to the database at db:5432, no IPs or manual linking. I use depends_on with a healthcheck and condition service_healthy so the api waits until the database actually accepts connections, not just until its container starts. The big win is onboarding: clone the repo, run compose up, and the whole stack is identical for everyone. But Compose runs on a single machine — for multi-node scaling, self-healing, and zero-downtime rollouts I'd reach for Kubernetes instead.
+
+<Flashcards
+  title="Docker Compose — interview drills"
+  cards={[
+    {
+      question: "Τι λύνει το Docker Compose;",
+      answer: "Ορίζει multi-container εφαρμογή (app+db+redis…) δηλωτικά σε ένα compose.yaml και τη σηκώνει με μία εντολή (docker compose up). Τέλος στα πολλαπλά χειροκίνητα docker run."
+    },
+    {
+      question: "Πώς βρίσκει το ένα service το άλλο;",
+      answer: "Το Compose φτιάχνει κοινό ιδιωτικό δίκτυο· τα services επικοινωνούν με το ΟΝΟΜΑ service τους μέσω DNS (π.χ. api → db:5432). Χωρίς IPs/manual links."
+    },
+    {
+      question: "build vs image σε ένα service;",
+      answer: "image: <name> → τραβά έτοιμο image από registry (π.χ. postgres:16). build: . → χτίζει το service από τοπικό Dockerfile."
+    },
+    {
+      question: "Γιατί depends_on + healthcheck και όχι σκέτο depends_on;",
+      answer: "Το σκέτο depends_on περιμένει μόνο να ξεκινήσει ο container, όχι να είναι έτοιμη η υπηρεσία. Με healthcheck + condition: service_healthy το εξαρτώμενο service ξεκινά μόνο όταν το άλλο είναι όντως έτοιμο."
+    },
+    {
+      question: "Compose vs Kubernetes;",
+      answer: "Compose: ένα μηχάνημα, local dev/απλά setups, εύκολο. Kubernetes: πολλά μηχανήματα, scaling/self-healing/rolling updates σε production. Διαφορετικά προβλήματα."
+    },
+    {
+      question: "Τι κάνει το docker compose down -v;",
+      answer: "Σταματά & σβήνει containers ΚΑΙ τα named volumes → χάνεις τα δεδομένα (π.χ. της βάσης). Το σκέτο down αφήνει τα volumes."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Σήκωσε app + database με ένα compose up"
+  scenario="Φτιάξε ένα compose.yaml που σηκώνει το backend σου μαζί με μια PostgreSQL, με σωστό networking, persistence και σειρά εκκίνησης."
+  outcomes={[
+    "Να περιγράφεις multi-container stack δηλωτικά.",
+    "Να συνδέεις services μέσω service name (όχι IP).",
+    "Να διαχειρίζεσαι persistence και σειρά εκκίνησης σωστά."
+  ]}
+  steps={[
+    "Γράψε services: db (image: postgres:16, volume, POSTGRES_PASSWORD) και api (build: ., ports 8080:3000).",
+    "Βάλε στο api DATABASE_URL που δείχνει στο 'db:5432' (όχι localhost).",
+    "Πρόσθεσε healthcheck στο db και depends_on: { db: { condition: service_healthy } } στο api.",
+    "Τρέξε docker compose up --build και άνοιξε localhost:8080.",
+    "Κάνε docker compose down και μετά ξανά up — επιβεβαίωσε ότι τα δεδομένα επέζησαν (volume). Μετά δοκίμασε down -v και δες τη διαφορά."
+  ]}
+  checkpoints={[
+    "Ολόκληρο το stack σηκώνεται με μία εντολή.",
+    "Το api μιλά στη βάση με το service name, όχι IP/localhost.",
+    "Τα δεδομένα επιβιώνουν σε down/up (αλλά όχι σε down -v)."
+  ]}
+  mistakes={[
+    "DATABASE_URL με localhost αντί για το service name db.",
+    "Σκέτο depends_on χωρίς healthcheck → race condition με βάση που δεν είναι έτοιμη.",
+    "Να εκθέτεις άσκοπα την πόρτα της βάσης προς τα έξω.",
+    "down -v κατά λάθος → σβήνεις τα δεδομένα."
+  ]}
+  mastery="Πέτυχες όταν σηκώνεις όλο το stack με ένα compose up, εξηγείς το service-name networking, και ξέρεις πότε Compose vs Kubernetes."
+/>

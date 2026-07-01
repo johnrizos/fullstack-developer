@@ -1,0 +1,191 @@
+# Running Containers
+
+Έχεις ένα image. Τώρα το ζωντανεύεις. Αυτό το μάθημα είναι το **πρακτικό εγχειρίδιο** για την καθημερινή δουλειά με containers: πώς τους τρέχεις, τους βλέπεις, μπαίνεις μέσα τους, διαβάζεις logs, ανοίγεις **πόρτες** για να τους μιλήσεις, κρατάς **δεδομένα** που επιβιώνουν, και περνάς **ρυθμίσεις**. Χωρίς αυτά, ένας container είναι ένα κλειστό κουτί που δεν σου χρησιμεύει.
+
+## Ο κύκλος ζωής ενός container
+
+Ένας container περνά από καταστάσεις: **created → running → stopped → removed**. Οι βασικές εντολές:
+
+```bash
+docker run <image>      # δημιούργησε + ξεκίνα νέο container
+docker ps               # δες τους ΤΡΕΧΟΝΤΕΣ containers
+docker ps -a            # δες ΟΛΟΥΣ (και τους σταματημένους)
+docker stop <id>        # σταμάτα (ήπια) έναν container
+docker start <id>       # ξαναξεκίνα σταματημένο container
+docker rm <id>          # σβήσε (σταματημένο) container
+docker logs <id>        # δες τι τύπωσε
+docker exec -it <id> sh # μπες ΜΕΣΑ σε τρέχοντα container
+```
+
+Το `<id>` είναι το container ID (τα πρώτα 2-3 chars αρκούν) ή το όνομά του. Δώσε όνομα με `--name`:
+
+```bash
+docker run --name api my-app
+docker stop api        # πιο βολικό από το ID
+```
+
+## Foreground vs detached (-d)
+
+Από προεπιλογή, ο `docker run` «κολλάει» το terminal σου στον container — βλέπεις τα logs, και με `Ctrl+C` τον σταματάς. Για services (π.χ. web server) θες να τρέχει **στο παρασκήνιο**:
+
+```bash
+docker run -d --name api my-app    # -d = detached, τρέχει στο background
+docker logs -f api                 # -f = follow, δες live τα logs
+```
+
+## Ports: πώς μιλάς στον container (-p)
+
+Κρίσιμο σημείο που μπερδεύει τους πάντες. Ένας container έχει **δικό του, απομονωμένο δίκτυο**. Αν η εφαρμογή σου ακούει στην πόρτα 3000 **μέσα** στον container, **δεν** τη φτάνεις από τον browser σου — είναι κλεισμένη μέσα. Πρέπει να **χαρτογραφήσεις** μια πόρτα του μηχανήματός σου (host) σε μια πόρτα του container:
+
+```bash
+docker run -d -p 8080:3000 my-app
+#             ^^^^ ^^^^
+#             host  container
+```
+
+Αυτό λέει: «ό,τι έρθει στην πόρτα **8080 του μηχανήματός μου**, στείλ' το στην πόρτα **3000 μέσα στον container**». Τώρα ανοίγεις `http://localhost:8080` και βλέπεις την εφαρμογή. Η σύνταξη είναι πάντα **`-p host:container`** — να το θυμάσαι, μπερδεύεται εύκολα η σειρά.
+
+## Volumes: τα δεδομένα που επιβιώνουν (-v)
+
+**Ο container είναι εφήμερος.** Ό,τι γράφει στο δικό του filesystem **χάνεται** μόλις τον σβήσεις (`docker rm`). Για μια βάση δεδομένων αυτό είναι καταστροφή — θα έχανες όλα τα δεδομένα σε κάθε restart. Λύση: **volumes**, μόνιμη αποθήκευση **έξω** από τον container:
+
+```bash
+# named volume: το Docker διαχειρίζεται την αποθήκευση
+docker run -d -v pgdata:/var/lib/postgresql/data postgres:16
+
+# bind mount: συνδέει έναν ΦΑΚΕΛΟ του μηχανήματός σου μέσα στον container
+docker run -d -v "$(pwd)/src:/app/src" my-app
+```
+
+- **Named volume** (`pgdata:/path`): το Docker κρατά τα δεδομένα σε δικό του χώρο. Ιδανικό για **databases** — επιβιώνουν κι αν σβήσεις/ξαναφτιάξεις τον container.
+- **Bind mount** (`/host/folder:/container/folder`): «καθρεφτίζει» έναν φάκελό σου μέσα στον container. Ιδανικό στο **development** — αλλάζεις κώδικα και ο container τον βλέπει ζωντανά.
+
+Ο κανόνας: **τα δεδομένα που πρέπει να ζήσουν πάνε σε volume, ποτέ μέσα στο ephemeral filesystem του container.**
+
+## Environment variables: ρυθμίσεις χωρίς rebuild (-e)
+
+Ο ίδιος container πρέπει να τρέχει με άλλες ρυθμίσεις σε dev vs prod (π.χ. άλλο connection string). Δεν ξαναχτίζεις το image γι' αυτό — περνάς **env vars στο runtime**:
+
+```bash
+docker run -e NODE_ENV=production -e PORT=3000 my-app
+
+# ή μαζεμένα από αρχείο:
+docker run --env-file .env my-app
+```
+
+Αυτός είναι και ο **σωστός τρόπος για secrets**: δεν μπαίνουν ποτέ στο image (θα διέρρεαν) — έρχονται ως env vars τη στιγμή που τρέχει ο container.
+
+## Καθάρισμα
+
+Οι σταματημένοι containers και τα αχρησιμοποίητα images μαζεύονται:
+
+```bash
+docker ps -a               # δες πόσοι σταματημένοι μαζεύτηκαν
+docker rm <id>             # σβήσε έναν
+docker run --rm my-app     # --rm: αυτο-σβήσιμο μόλις σταματήσει
+docker system prune        # γενικό καθάρισμα (σταματημένοι, dangling images)
+```
+
+<PredictOutput
+  title="Ports"
+  code={`# Η εφαρμογή μέσα στον container ακούει στην 3000.
+docker run -d -p 8080:3000 my-app
+# Ανοίγεις τον browser στο:
+#   http://localhost:____ ;`}
+  options={[
+    "http://localhost:3000",
+    "http://localhost:8080",
+    "Και τα δύο δουλεύουν",
+    "Κανένα — χρειάζεται κι άλλη ρύθμιση"
+  ]}
+  correctOptionIndex={1}
+  answer="http://localhost:8080"
+  explanation="Η σύνταξη είναι -p host:container. Άρα 8080 = πόρτα του μηχανήματός σου, 3000 = πόρτα μέσα στον container. Από τον browser σου μιλάς στο host → localhost:8080, και το Docker προωθεί στην 3000 του container. Το localhost:3000 δεν δείχνει πουθενά (η 3000 είναι κλεισμένη μέσα στον container)."
+/>
+
+<Exercise
+  question="Έχεις μια βάση σε container και θέλεις τα δεδομένα να επιβιώνουν σε restart/rm. Τι χρησιμοποιείς;"
+  options={[
+    "Τίποτα — τα δεδομένα μένουν αυτόματα.",
+    "Named volume (-v pgdata:/var/lib/postgresql/data) — μόνιμη αποθήκευση έξω από τον εφήμερο container.",
+    "Ξαναχτίζεις το image μετά από κάθε αλλαγή δεδομένων."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το filesystem του container είναι εφήμερο — σβήνει με το docker rm. Ένα named volume κρατά τα δεδομένα έξω από τον container, οπότε επιβιώνουν αν τον σβήσεις/ξαναφτιάξεις. Αυτός είναι ο κανόνας για κάθε stateful service (databases)."
+/>
+
+<Exercise
+  question="Πώς περνάς ένα secret (π.χ. DB password) σε έναν container σωστά;"
+  options={[
+    "Το γράφεις μέσα στο Dockerfile με ENV.",
+    "Ως env var στο runtime (-e / --env-file) — ποτέ μέσα στο image.",
+    "Το κάνεις hardcode στον κώδικα."
+  ]}
+  correctOptionIndex={1}
+  explanation="Ό,τι μπει στο image (ENV στο Dockerfile ή hardcoded) διαρρέει: το docker history/το registry το εκθέτουν. Τα secrets έρχονται στο runtime ως env vars (-e ή --env-file), από τον orchestrator ή secret manager — έξω από το image."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you run a container and expose it, persist data, and pass config?»
+
+> docker run creates and starts a container from an image; I add -d to run it detached in the background and check it with docker ps and docker logs -f. A container has its own isolated network, so to reach it I publish a port with -p host:container — -p 8080:3000 forwards my machine's 8080 to the app listening on 3000 inside. The container filesystem is ephemeral, so anything stateful like a database goes in a volume: a named volume for data that must survive rm, or a bind mount of a host folder for live-reloading code in development. Config and secrets don't go in the image — they come in at runtime as environment variables with -e or --env-file, which is also why secrets never leak through docker history or a registry.
+
+<Flashcards
+  title="Running Containers — interview drills"
+  cards={[
+    {
+      question: "docker run -d τι κάνει το -d;",
+      answer: "Detached: τρέχει τον container στο παρασκήνιο (δεν κολλάει το terminal). Βλέπεις logs με docker logs -f <name>. Απαραίτητο για services."
+    },
+    {
+      question: "-p 8080:3000 — ποιο είναι ποιο;",
+      answer: "host:container. 8080 = πόρτα του μηχανήματός σου, 3000 = πόρτα μέσα στον container. Χωρίς -p, η πόρτα του container είναι απρόσιτη απ' έξω."
+    },
+    {
+      question: "Named volume vs bind mount;",
+      answer: "Named volume (pgdata:/path): το Docker διαχειρίζεται μόνιμη αποθήκευση — ιδανικό για databases. Bind mount (/host:/container): καθρεφτίζει φάκελό σου μέσα στον container — ιδανικό για live code σε development."
+    },
+    {
+      question: "Γιατί χρειάζεσαι volume για μια βάση;",
+      answer: "Το filesystem του container είναι εφήμερο — σβήνει με docker rm. Το volume κρατά τα δεδομένα έξω, ώστε να επιβιώνουν σε restart/recreate του container."
+    },
+    {
+      question: "Πώς περνάς config/secrets σε container;",
+      answer: "Env vars στο runtime: -e KEY=VALUE ή --env-file .env. Ποτέ μέσα στο image (διαρρέουν μέσω docker history/registry)."
+    },
+    {
+      question: "docker exec -it <id> sh — τι κάνει;",
+      answer: "Ανοίγει interactive shell ΜΕΣΑ σε έναν ΤΡΕΧΟΝΤΑ container — για debugging (δες αρχεία, env, δίκτυο). Διαφορετικό από docker run που φτιάχνει νέο container."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Τρέξε, εξέθεσε και κράτα δεδομένα"
+  scenario="Σήκωσε μια εφαρμογή και μια βάση σε containers, φρόντισε να τα φτάνεις από τον browser, να επιβιώνουν τα δεδομένα, και να περνάς ρυθμίσεις."
+  outcomes={[
+    "Να τρέχεις containers σε background και να διαβάζεις logs.",
+    "Να εκθέτεις πόρτες με -p host:container.",
+    "Να κρατάς δεδομένα με volumes και να περνάς config με env vars."
+  ]}
+  steps={[
+    "Τρέξε την εφαρμογή σου με docker run -d -p 8080:3000 --name api my-app και άνοιξε localhost:8080.",
+    "Δες logs με docker logs -f api και μπες μέσα με docker exec -it api sh.",
+    "Σήκωσε postgres με -v pgdata:/var/lib/postgresql/data και -e POSTGRES_PASSWORD=...",
+    "Σβήσε και ξαναφτιάξε τον postgres container — επιβεβαίωσε ότι τα δεδομένα επέζησαν (χάρη στο volume).",
+    "Πέρασε NODE_ENV=production με -e και επιβεβαίωσε μέσα με docker exec ... printenv."
+  ]}
+  checkpoints={[
+    "Φτάνεις την εφαρμογή από τον browser μέσω της host πόρτας.",
+    "Τα δεδομένα της βάσης επιβιώνουν σε rm/recreate του container.",
+    "Οι ρυθμίσεις έρχονται από env vars, όχι hardcoded στο image."
+  ]}
+  mistakes={[
+    "Να ξεχνάς -p → η εφαρμογή τρέχει αλλά δεν τη φτάνεις.",
+    "Να αντιστρέφεις τη σειρά host:container στο -p.",
+    "Να κρατάς δεδομένα βάσης χωρίς volume → χάνονται στο πρώτο rm.",
+    "Να βάζεις secrets στο image αντί για runtime env vars."
+  ]}
+  mastery="Πέτυχες όταν σηκώνεις, εκθέτεις, κρατάς δεδομένα και ρυθμίζεις containers χωρίς να κοιτάς τις εντολές — και εξηγείς γιατί το filesystem είναι εφήμερο."
+/>

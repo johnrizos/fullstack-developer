@@ -1,0 +1,203 @@
+# Production Images
+
+Ένα image που «δουλεύει» δεν είναι το ίδιο με ένα image **έτοιμο για production**. Το πρώτο μπορεί να είναι 1.5GB, να τρέχει ως **root**, να κουβαλά compilers και source, και να κρύβει μέσα του το `.env` σου. Αυτό το μάθημα σε πάει από «τρέχει» σε «μικρό, ασφαλές, γρήγορο» — τα πράγματα που σε ξεχωρίζουν σε code review και σε συνέντευξη.
+
+## Το πρόβλημα με το «απλό» image
+
+Θυμήσου το Dockerfile από πριν:
+
+```dockerfile
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci          # εγκαθιστά ΚΑΙ τα devDependencies
+COPY . .
+RUN npm run build   # χρειάζεται compiler/build tools
+CMD ["node", "dist/server.js"]
+```
+
+Δουλεύει — αλλά το τελικό image κουβαλά **όλα** τα devDependencies (TypeScript, bundlers, test frameworks), τον **source** κώδικα, και τα build tools. Τίποτα απ' αυτά δεν χρειάζεται για να **τρέξει** το compiled app. Αποτέλεσμα: τεράστιο image, αργό pull, και **μεγάλη επιφάνεια επίθεσης** (κάθε extra πακέτο = πιθανή ευπάθεια).
+
+## Multi-stage builds: η μεγάλη ιδέα
+
+Χωρίζεις το Dockerfile σε **στάδια (stages)**: ένα «βρώμικο» στάδιο που **χτίζει** (με όλα τα εργαλεία), και ένα καθαρό στάδιο **runtime** που παίρνει **μόνο το αποτέλεσμα**.
+
+```dockerfile
+# ---- Stage 1: build (με όλα τα devDependencies & compilers) ----
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build          # παράγει το /app/dist
+
+# ---- Stage 2: runtime (ΜΟΝΟ ό,τι χρειάζεται για να τρέξει) ----
+FROM node:20-alpine
+WORKDIR /app
+ENV NODE_ENV=production
+COPY package*.json ./
+RUN npm ci --omit=dev      # ΜΟΝΟ production dependencies
+COPY --from=builder /app/dist ./dist   # αντιγράφει ΜΟΝΟ το build artifact
+USER node
+CMD ["node", "dist/server.js"]
+```
+
+Το κλειδί είναι το **`COPY --from=builder /app/dist ./dist`**: από το τελικό image, ό,τι υπήρχε στο `builder` stage (compilers, source, devDeps) **πετιέται** — κρατάς μόνο το `dist`. Το production image περιέχει: το runtime (Node), τα production dependencies, και το compiled app. Τίποτα παραπάνω.
+
+Αποτέλεσμα: image συχνά **μικρότερο κατά τάξεις μεγέθους** — γρηγορότερο pull/deploy και δραματικά **μικρότερη επιφάνεια επίθεσης**.
+
+## USER node: μην τρέχεις ως root
+
+Από προεπιλογή, η διεργασία **μέσα** στον container τρέχει ως **root**. Αν κάποιος βρει τρόπο να «σπάσει» την εφαρμογή σου (π.χ. RCE), το να είναι root μέσα στον container του δίνει πολύ περισσότερες δυνατότητες — και σε ορισμένες περιπτώσεις δρόμο προς τον host. Ο κανόνας: **τρέξε ως μη-προνομιούχος χρήστης.**
+
+```dockerfile
+USER node    # τα επίσημα node images έχουν έτοιμο χρήστη 'node'
+```
+
+(Για custom images: `RUN adduser -D appuser` και μετά `USER appuser`.) Είναι μία γραμμή και είναι από τα πρώτα πράγματα που ψάχνει ένας reviewer.
+
+## Secrets: ΠΟΤΕ μέσα στο image
+
+Το πιο επικίνδυνο λάθος. Ένα image **δεν είναι κρυφό**: κυκλοφορεί σε registries, και **`docker history <image>`** δείχνει κάθε εντολή και κάθε αρχείο που μπήκε. Αν έβαλες `.env` ή έγραψες `ENV API_KEY=...` στο Dockerfile, **το secret διέρρευσε** — για πάντα, σε κάθε layer.
+
+Οι κανόνες:
+
+- **Ποτέ** `COPY .env` μέσα στο image, ποτέ hardcoded secret στο Dockerfile.
+- Πρόσθεσε `.env` στο **`.dockerignore`** (και τα `node_modules`, `.git`).
+- Τα secrets έρχονται στο **runtime**: env vars από τον orchestrator, CI/CD secrets store (π.χ. GitHub Actions secrets), ή secret manager.
+
+## Ακόμα λίγα production essentials
+
+- **Pin εκδόσεις**: `node:20-alpine`, όχι `node:latest`. Το `latest` σπάει αναπαραγωγιμότητα — το build σου αλλάζει σιωπηλά όταν βγει νέα έκδοση.
+- **Μικρά base images**: `alpine` ή `-slim` variants → λιγότερα bytes, λιγότερες ευπάθειες. (Προσοχή: το Alpine χρησιμοποιεί musl αντί glibc — σπάνια σπάει native deps.)
+- **`HEALTHCHECK`**: δήλωσε πώς ελέγχεται η υγεία, ώστε ο orchestrator να ξέρει αν το container είναι όντως λειτουργικό.
+- **Scan για ευπάθειες**: `docker scout` ή Trivy στο CI — πιάνουν γνωστά CVEs στα layers σου πριν φτάσεις production.
+- **`.dockerignore` πάντα**: μικρότερο context, σταθερό caching, καμία διαρροή.
+
+## Ένα production-ready Dockerfile με τη μία
+
+```dockerfile
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM node:20-alpine
+WORKDIR /app
+ENV NODE_ENV=production
+COPY package*.json ./
+RUN npm ci --omit=dev
+COPY --from=builder /app/dist ./dist
+USER node
+HEALTHCHECK CMD node healthcheck.js || exit 1
+CMD ["node", "dist/server.js"]
+```
+
+<PredictOutput
+  title="Πού διαρρέει το secret;"
+  code={`# Dockerfile:
+#   FROM node:20-alpine
+#   ENV DATABASE_PASSWORD=super-secret-123
+#   COPY . .
+#   CMD ["node","server.js"]
+# Χτίζεις και κάνεις push το image σε registry.
+# Πόσο ασφαλές είναι το password;`}
+  options={[
+    "Ασφαλές — το ENV είναι κρυπτογραφημένο μέσα στο image",
+    "Ασφαλές — φαίνεται μόνο σε όποιον τρέχει τον container",
+    "Εκτεθειμένο — το docker history και τα layers του image το αποκαλύπτουν σε όποιον έχει το image",
+    "Εξαρτάται από το registry"
+  ]}
+  correctOptionIndex={2}
+  answer="Εκτεθειμένο — το docker history το αποκαλύπτει"
+  explanation="Το ENV στο Dockerfile ψήνεται σε layer του image. Ένα docker history <image> (ή απλή εξέταση layers) δείχνει την τιμή — και το image κυκλοφορεί σε registry. Το secret διέρρευσε ανεπανόρθωτα. Τα secrets έρχονται ΜΟΝΟ στο runtime (env vars/secret manager), ποτέ μέσα στο image."
+/>
+
+<Exercise
+  question="Τι κερδίζεις με ένα multi-stage build;"
+  options={[
+    "Τίποτα ουσιαστικό, απλώς πιο όμορφο Dockerfile.",
+    "Το τελικό image κρατά ΜΟΝΟ το runtime + production deps + build artifact (όχι compilers/devDeps/source) → πολύ μικρότερο image και μικρότερη επιφάνεια επίθεσης.",
+    "Τρέχει την εφαρμογή σε δύο containers ταυτόχρονα."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το builder stage έχει όλα τα εργαλεία χτισίματος· το τελικό stage αντιγράφει με COPY --from ΜΟΝΟ το artifact (π.χ. dist). Έτσι compilers/devDependencies/source δεν φτάνουν στο production image — μικρότερο, γρηγορότερο pull, λιγότερες ευπάθειες."
+/>
+
+<Exercise
+  question="Γιατί βάζεις USER node (ή άλλον non-root) στο Dockerfile;"
+  options={[
+    "Για να τρέχει πιο γρήγορα.",
+    "Για ασφάλεια: by default η διεργασία τρέχει ως root μέσα στον container· ένας μη-προνομιούχος χρήστης περιορίζει τη ζημιά αν παραβιαστεί η εφαρμογή.",
+    "Είναι υποχρεωτικό αλλιώς δεν χτίζεται το image."
+  ]}
+  correctOptionIndex={1}
+  explanation="Container process = root by default. Αν εκμεταλλευτούν την εφαρμογή, το root δίνει περισσότερες δυνατότητες (και δυνητικά δρόμο προς τον host). Το USER node/appuser εφαρμόζει least privilege — μία γραμμή, μεγάλο κέρδος ασφάλειας."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you make a Docker image production-ready?»
+
+> I start with a multi-stage build: a builder stage with all the dev dependencies and compilers produces the artifact, then a clean runtime stage does COPY --from=builder to pull in only the built output plus production-only dependencies via npm ci --omit=dev. That drops compilers, devDependencies, and source from the final image, so it's far smaller — faster to pull and a much smaller attack surface. I run as a non-root user with USER node for least privilege, and secrets never go in the image — no COPY .env, no ENV secrets, because docker history and the layers expose them in the registry; they come in at runtime as env vars from the orchestrator or a secrets store. I pin base image versions instead of latest for reproducibility, prefer small alpine or slim bases, add a HEALTHCHECK, keep a .dockerignore, and scan images for CVEs in CI with something like Docker Scout or Trivy.
+
+<Flashcards
+  title="Production Images — interview drills"
+  cards={[
+    {
+      question: "Τι είναι το multi-stage build και γιατί;",
+      answer: "Πολλά FROM: builder stage με compilers/devDeps χτίζει το artifact, το τελικό stage κάνει COPY --from=builder μόνο το artifact + production deps. Αποτέλεσμα: μικρό image χωρίς build tools/source — γρηγορότερο pull, μικρότερη επιφάνεια επίθεσης."
+    },
+    {
+      question: "Γιατί USER node (non-root);",
+      answer: "By default η διεργασία τρέχει ως root μέσα στον container. Non-root χρήστης = least privilege: περιορίζει τη ζημιά αν παραβιαστεί η εφαρμογή (και μπλοκάρει δρόμους προς τον host)."
+    },
+    {
+      question: "Πού ζουν τα secrets σε dockerized app;",
+      answer: "ΠΟΤΕ στο image — το docker history/τα layers τα εκθέτουν, και το image κυκλοφορεί σε registry. Έρχονται στο runtime: env vars από orchestrator, CI/CD secrets store, secret manager. Το .env μπαίνει στο .dockerignore."
+    },
+    {
+      question: "Γιατί όχι node:latest;",
+      answer: "Το latest αλλάζει σιωπηλά όταν βγει νέα έκδοση → σπάει την αναπαραγωγιμότητα. Pin συγκεκριμένη έκδοση (node:20-alpine) ώστε το build να είναι ντετερμινιστικό."
+    },
+    {
+      question: "Τι κάνει το COPY --from=builder;",
+      answer: "Αντιγράφει αρχεία από προηγούμενο stage (builder) στο τρέχον. Έτσι κρατάς μόνο το build artifact (π.χ. dist) και αφήνεις πίσω compilers/devDeps/source."
+    },
+    {
+      question: "Δύο τρόποι να μικρύνεις/ασφαλίσεις ένα image;",
+      answer: "Μικρό base (alpine/slim) + multi-stage build για να φύγουν build tools· non-root user, .dockerignore, pinned versions, HEALTHCHECK, και CVE scanning (Docker Scout/Trivy) στο CI."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Κάνε το image σου production-ready"
+  scenario="Πάρε ένα λειτουργικό αλλά 'χοντρό' image και μετέτρεψέ το σε μικρό, ασφαλές, αναπαραγώγιμο production image."
+  outcomes={[
+    "Να γράφεις multi-stage Dockerfile που αφήνει έξω build tools/source.",
+    "Να εφαρμόζεις least privilege (non-root) και σωστή διαχείριση secrets.",
+    "Να κρίνεις μέγεθος/ασφάλεια image."
+  ]}
+  steps={[
+    "Μέτρα το μέγεθος του τρέχοντος image (docker images).",
+    "Ξαναγράψε το σε δύο stages: builder (npm ci + build) και runtime (npm ci --omit=dev + COPY --from=builder).",
+    "Πρόσθεσε USER node και βεβαιώσου ότι δεν υπάρχει COPY .env / ENV secret· βάλε .env στο .dockerignore.",
+    "Pin το base image (node:20-alpine) και πρόσθεσε HEALTHCHECK.",
+    "Ξαναχτίσε, ξαναμέτρα το μέγεθος, και τρέξε ένα CVE scan (docker scout ή trivy)."
+  ]}
+  checkpoints={[
+    "Το τελικό image δεν περιέχει compilers/devDependencies/source.",
+    "Η διεργασία τρέχει ως non-root.",
+    "Κανένα secret δεν είναι ψημένο μέσα στο image (το docker history είναι καθαρό)."
+  ]}
+  mistakes={[
+    "Ένα μόνο stage → devDeps/compilers/source στο production image.",
+    "Τρέξιμο ως root.",
+    "COPY .env ή ENV secret στο Dockerfile → μη αναστρέψιμη διαρροή.",
+    "Χρήση :latest → μη αναπαραγώγιμα builds."
+  ]}
+  mastery="Πέτυχες όταν παραδίδεις μικρό, non-root, reproducible image χωρίς secrets μέσα του — και εξηγείς κάθε απόφαση σε reviewer/interviewer."
+/>
