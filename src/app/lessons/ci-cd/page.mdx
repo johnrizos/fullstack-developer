@@ -69,6 +69,97 @@ jobs:
 
 Σε clean environment (όπως το CI runner), το `npm ci` είναι και ταχύτερο και ντετερμινιστικό — ακριβώς ό,τι θες.
 
+## Ταχύτητα: caching & matrix
+
+Ένα αργό pipeline είναι ένα pipeline που η ομάδα αρχίζει να **αγνοεί** ή να κάνει bypass. Δύο εργαλεία που το κρατούν γρήγορο:
+
+- **Dependency caching** — μη ξανακατεβάζεις τα ίδια packages σε κάθε run. Το `setup-node` με `cache: npm` (που ήδη έχεις) το κάνει: αν το `package-lock.json` δεν άλλαξε, επαναχρησιμοποιεί το cached `~/.npm`.
+- **Matrix** — τρέξε το **ίδιο** job σε πολλούς συνδυασμούς **παράλληλα** (π.χ. πολλές εκδόσεις Node), χωρίς copy-paste:
+
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm test
+```
+
+Αυτό σηκώνει **δύο παράλληλα** jobs (Node 20 & 22). Ανεξάρτητα jobs τρέχουν ταυτόχρονα — άρα σπάσε τα βαριά βήματα σε παράλληλα jobs αντί για ένα μακρύ σειριακό.
+
+## CD στην πράξη: ένα deploy job με approval
+
+Το CI workflow που είδες σταματά στο build. Ας δούμε πώς μοιάζει το **CD** — ένα `deploy` job που τρέχει **μόνο** μετά το πράσινο CI και **μόνο** στο `main`:
+
+```yaml
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  deploy:
+    needs: checks                     # τρέχει ΜΟΝΟ αν πέρασε το checks
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production           # ← το κλειδί για approval
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/deploy.sh
+```
+
+Δύο κρίσιμα σημεία:
+
+- **`needs: checks`** — το `deploy` δεν ξεκινά αν το `checks` απέτυχε. Ποτέ deploy από σπασμένο build.
+- **`environment: production`** — δηλώνεις ένα GitHub **Environment**. Πάνω του βάζεις **protection rules**: **required reviewers** (κάποιος πρέπει να πατήσει «Approve» πριν τρέξει το deploy), wait timers, ή περιορισμό branches.
+
+Εδώ γίνεται **χειροπιαστή** η διάκριση Delivery vs Deployment:
+
+- Βάζεις **required reviewer** στο environment → **Continuous Delivery** (άνθρωπος πατά το κουμπί).
+- Το αφήνεις **χωρίς** reviewer → **Continuous Deployment** (μόλις περάσει το CI, βγαίνει αυτόματα).
+
+Ίδιο pipeline — η μόνη διαφορά είναι το protection rule.
+
+## Secrets & OIDC: πρόσβαση χωρίς μόνιμα κλειδιά
+
+Το `deploy` job χρειάζεται credentials (π.χ. για AWS/Vercel). **Ποτέ hardcoded** — δύο σωστοί τρόποι, από τον καλό στον καλύτερο:
+
+**1. GitHub Actions Secrets** — αποθηκεύεις το secret στο repo/environment settings και το διαβάζεις ως `${{ secrets.NAME }}`. Το GitHub τα **κρύβει (masks)** στα logs.
+
+```yaml
+- run: ./deploy.sh
+  env:
+    DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+```
+
+**2. OIDC (το σύγχρονο best practice)** — αντί να αποθηκεύεις ένα **μακρόβιο** cloud key (που μπορεί να διαρρεύσει και ζει για πάντα), το GitHub Actions ανταλλάσσει ένα **βραχύβιο, per-run** token με τον cloud provider. Δεν υπάρχει μόνιμο μυστικό να κλαπεί:
+
+```yaml
+    permissions:
+      id-token: write        # επιτρέπει στο job να ζητήσει OIDC token
+      contents: read
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789:role/deploy
+          aws-region: eu-central-1
+```
+
+Ο cloud provider εμπιστεύεται το GitHub ως identity provider και δίνει προσωρινά credentials μόνο σε **αυτό** το workflow run. Μηδέν long-lived keys στο repo — αυτό ψάχνει ένας security-minded reviewer.
+
 ## Πώς διαβάζεις ένα αποτυχημένο pipeline
 
 Όταν «κοκκινίσει» το CI, μην πανικοβάλλεσαι — διάβασέ το με σειρά:
@@ -126,11 +217,33 @@ jobs:
   explanation="Delivery = πάντα-έτοιμο release, με ανθρώπινο approve στο τέλος. Deployment = πλήρως αυτόματο μόλις περάσουν τα checks. Και τα δύο προϋποθέτουν αξιόπιστο CI."
 />
 
+<Exercise
+  question="Στο GitHub Actions, πώς μετατρέπεις ένα Continuous Deployment σε Continuous Delivery (χειροκίνητο approve);"
+  options={[
+    "Αλλάζεις το on: από push σε pull_request.",
+    "Βάζεις το deploy job σε ένα Environment με protection rule 'required reviewers' — κάποιος πρέπει να πατήσει Approve πριν τρέξει.",
+    "Προσθέτεις ένα δεύτερο runs-on."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το ίδιο pipeline: με environment: production + required reviewer, το deploy μπλοκάρεται μέχρι κάποιος να εγκρίνει (Delivery). Χωρίς reviewer, τρέχει αυτόματα μόλις περάσει το CI (Deployment). Η διαφορά είναι μόνο το protection rule."
+/>
+
+<Exercise
+  question="Γιατί OIDC αντί για αποθηκευμένο (long-lived) cloud key στα secrets;"
+  options={[
+    "Είναι πιο γρήγορο στο τρέξιμο.",
+    "Δίνει βραχύβια, per-run credentials μέσω trust με τον cloud provider — δεν υπάρχει μόνιμο μυστικό στο repo που μπορεί να διαρρεύσει.",
+    "Επιτρέπει να τυπώνεις το κλειδί στα logs με ασφάλεια."
+  ]}
+  correctOptionIndex={1}
+  explanation="Ένα long-lived key ζει για πάντα και, αν διαρρεύσει, δίνει μόνιμη πρόσβαση. Με OIDC ο provider εμπιστεύεται το GitHub ως identity provider και εκδίδει προσωρινά credentials μόνο για αυτό το run — μηδέν μόνιμο secret να κλαπεί."
+/>
+
 ## Πώς απαντάς στη συνέντευξη
 
 > «Explain CI/CD.»
 
-> CI, continuous integration, runs automated checks on every PR and push — install, lint, typecheck, tests, and build — on a clean machine, before anything merges. It's the quality gate that protects main and catches regressions early because everyone integrates small changes often. I run these in GitHub Actions with npm ci for reproducible, lockfile-exact installs. CD comes in two flavors: continuous delivery produces an always-ready, tested release but a human clicks deploy, while continuous deployment ships automatically once all checks pass — both depend on trustworthy CI. When a pipeline fails I read which job and command failed and the first error, reproduce it locally, and fix the root cause rather than bypassing the check. I keep jobs fast, never print secrets, and require passing checks via branch protection before merge.
+> CI, continuous integration, runs automated checks on every PR and push — install, lint, typecheck, tests, and build — on a clean machine, before anything merges. It's the quality gate that protects main and catches regressions early because everyone integrates small changes often. I run these in GitHub Actions with npm ci for reproducible, lockfile-exact installs, and keep them fast with dependency caching and matrix jobs running in parallel. CD comes in two flavors: continuous delivery produces an always-ready, tested release but a human clicks deploy, while continuous deployment ships automatically once all checks pass — both depend on trustworthy CI. In practice the deploy job uses needs so it only runs after green checks, and an Environment with a required reviewer is what turns deployment into delivery — same pipeline, just a protection rule. For cloud credentials I prefer OIDC over long-lived keys so each run gets short-lived, per-run access with no permanent secret to leak. When a pipeline fails I read which job and command failed and the first error, reproduce it locally, and fix the root cause rather than bypassing the check.
 
 <Flashcards
   title="CI/CD — interview drills"
@@ -158,6 +271,22 @@ jobs:
     {
       question: "Δύο κανόνες υγιούς pipeline;",
       answer: "Κράτα τα jobs γρήγορα (αλλιώς η ομάδα τα αγνοεί) και ποτέ μην τυπώνεις secrets στα logs (χρήση Actions secrets). Επίσης: branch protection ώστε τα checks να είναι προαπαιτούμενο για merge."
+    },
+    {
+      question: "Τι κάνει το needs: σε ένα job;",
+      answer: "Ορίζει εξάρτηση: το job τρέχει ΜΟΝΟ αν πέτυχε το job που δηλώνεις (π.χ. deploy needs: checks → ποτέ deploy από σπασμένο build). Χωρίς needs, τα jobs τρέχουν παράλληλα."
+    },
+    {
+      question: "Πώς κάνεις approval-gated deploy στο GitHub Actions;",
+      answer: "Βάζεις το deploy job σε ένα Environment (environment: production) με protection rule 'required reviewers'. Το deploy μπλοκάρεται μέχρι κάποιος να πατήσει Approve → αυτό είναι Continuous Delivery. Χωρίς reviewer → Continuous Deployment."
+    },
+    {
+      question: "OIDC vs long-lived cloud key;",
+      answer: "Long-lived key: μόνιμο secret στο repo — αν διαρρεύσει, μόνιμη πρόσβαση. OIDC: το GitHub ανταλλάσσει βραχύβιο, per-run token με τον cloud provider (trust ως identity provider). Κανένα μόνιμο μυστικό να κλαπεί — το σύγχρονο best practice."
+    },
+    {
+      question: "Πώς κρατάς το CI γρήγορο;",
+      answer: "Dependency caching (setup-node cache: npm — δεν ξανακατεβάζει αν δεν άλλαξε το lockfile), matrix για παράλληλα jobs (π.χ. πολλές εκδόσεις Node), και σπάσιμο βαρέων βημάτων σε ανεξάρτητα παράλληλα jobs."
     }
   ]}
 />
@@ -175,7 +304,8 @@ jobs:
     "Steps: checkout, setup-node (cache npm), npm ci, lint, typecheck, test, build.",
     "Ενεργοποίησε branch protection ώστε τα checks να απαιτούνται πριν το merge.",
     "Κάνε ένα σκόπιμο lint failure σε PR και δες το CI να κοκκινίζει και να μπλοκάρει το merge.",
-    "Διόρθωσε το, δες το να γίνεται πράσινο, και μετά επίτρεψε το merge."
+    "Πρόσθεσε deploy job με needs: checks + if main + environment: production, και βάλε required reviewer στο environment.",
+    "Πέρασε credentials μέσω secrets (ή OIDC αν κάνεις deploy σε cloud), ποτέ hardcoded."
   ]}
   checkpoints={[
     "Το CI τρέχει σε clean environment σε κάθε PR.",
