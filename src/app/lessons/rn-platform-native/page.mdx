@@ -1,0 +1,214 @@
+# Platform APIs & Native Capabilities
+
+Ένα mobile app έχει πράγματα που το web δεν μπορεί να αγγίξει με την ίδια ευκολία: κάμερα, GPS, contacts, push notifications, βιομετρικά, τοπική αποθήκευση, background tasks. Επίσης τρέχει σε **δύο πλατφόρμες** που δεν είναι ίδιες — iOS και Android έχουν διαφορετικά UI conventions, permissions και συμπεριφορές. Αυτό το μάθημα καλύπτει πώς προσπελαύνεις native δυνατότητες, πώς χειρίζεσαι permissions σωστά, και πώς γράφεις platform-aware κώδικα.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να γράφεις **platform-specific** κώδικα (`Platform`, `.ios/.android` files),
+- να ζητάς & χειρίζεσαι **permissions** με το σωστό UX,
+- να χρησιμοποιείς **Expo modules** για native APIs (camera, location, notifications),
+- να καταλαβαίνεις τι είναι ένα **native module** και πότε το χρειάζεσαι,
+- να χειρίζεσαι **push notifications** (concept-level),
+- να σέβεσαι τις διαφορές iOS vs Android.
+
+## Platform-specific κώδικας
+
+Το 95% του κώδικά σου είναι κοινό. Για το υπόλοιπο:
+
+```tsx
+import { Platform } from "react-native";
+
+// 1) Απλός έλεγχος
+const padding = Platform.OS === "ios" ? 20 : 16;
+
+// 2) Επιλογή τιμών ανά πλατφόρμα
+const font = Platform.select({ ios: "System", android: "Roboto", default: "System" });
+
+// 3) Έλεγχος έκδοσης
+if (Platform.OS === "android" && Platform.Version >= 33) { /* Android 13+ */ }
+```
+
+Για μεγαλύτερες διαφορές, **platform-specific αρχεία**: το Metro διαλέγει αυτόματα το σωστό.
+
+```
+Button.ios.tsx     ← iOS build
+Button.android.tsx ← Android build
+// import "./Button"  → παίρνει το σωστό ανά πλατφόρμα
+```
+
+> Στόχος: **shared-first**. Χωρίζεις μόνο εκεί που το UX/behavior πραγματικά διαφέρει (π.χ. date picker, share sheet, σκιές), όχι παντού.
+
+## Permissions — το μεγαλύτερο mobile UX θέμα
+
+Κάθε ευαίσθητη δυνατότητα (camera, location, contacts, notifications, mic) απαιτεί **ρητή άδεια** από τον χρήστη. Και τα δύο OS έχουν αυστηρούς κανόνες:
+
+- Ζητάς permission **τη στιγμή που το χρειάζεσαι**, με context — όχι όλα μαζί στο πρώτο άνοιγμα.
+- Ο χρήστης μπορεί να πει **«όχι»** (ή «μόνο μία φορά», ή «while using»). Ο κώδικάς σου **πρέπει** να δουλεύει και στο «όχι» — graceful degradation, όχι crash.
+- Αν αρνηθεί, δεν μπορείς να ξαναρωτήσεις με popup — τον στέλνεις στα **Settings** του συστήματος.
+- Πρέπει να δηλώσεις **γιατί** χρειάζεσαι κάθε permission: iOS στο `Info.plist` (usage descriptions, π.χ. `NSCameraUsageDescription`), Android στο `AndroidManifest.xml`. Χωρίς σωστές δηλώσεις, το App Store / Play Store σε απορρίπτει.
+
+```tsx
+import * as Location from "expo-location";
+
+async function getLocation() {
+  const { status } = await Location.requestForegroundPermissionsAsync();
+  if (status !== "granted") {
+    // Graceful: εξήγησε & πρόσφερε fallback (π.χ. χειροκίνητη εισαγωγή πόλης)
+    return null;
+  }
+  return Location.getCurrentPositionAsync();
+}
+```
+
+## Native APIs μέσω Expo modules
+
+Στο Expo, οι περισσότερες native δυνατότητες έρχονται ως έτοιμα modules — δεν γράφεις native κώδικα:
+
+| Ανάγκη | Expo module |
+|---|---|
+| Κάμερα / φωτό | `expo-camera`, `expo-image-picker` |
+| Τοποθεσία / GPS | `expo-location` |
+| Τοπική αποθήκευση | `expo-secure-store`, `AsyncStorage` |
+| Push notifications | `expo-notifications` |
+| Βιομετρικά (Face/Touch ID) | `expo-local-authentication` |
+| Αρχεία / filesystem | `expo-file-system` |
+| Επαφές / ημερολόγιο | `expo-contacts`, `expo-calendar` |
+| Sensors (accelerometer κ.λπ.) | `expo-sensors` |
+
+Παράδειγμα (image picker):
+
+```tsx
+import * as ImagePicker from "expo-image-picker";
+
+async function pickPhoto() {
+  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!perm.granted) return;
+  const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.7 });
+  if (!result.canceled) setPhoto(result.assets[0].uri);
+}
+```
+
+## Τι είναι ένα native module — και πότε το χρειάζεσαι
+
+Ένα **native module** είναι κώδικας γραμμένος σε **Swift/Objective-C (iOS)** ή **Kotlin/Java (Android)** που εκθέτει native λειτουργικότητα στο JS σου. Το χρειάζεσαι όταν:
+
+- υπάρχει native SDK/δυνατότητα που **δεν** καλύπτεται από υπάρχον module (π.χ. ένα ειδικό payment/hardware SDK),
+- θέλεις να «κατέβεις» σε native για performance-critical δουλειά.
+
+Στην πράξη, το 90%+ των αναγκών καλύπτεται από έτοιμα modules (Expo ή community). Γράφεις δικό σου native module μόνο όταν σε μπλοκάρει κάτι συγκεκριμένο — και τότε το ενσωματώνεις με Expo **config plugin**/prebuild ή σε bare workflow. (Εδώ κλείνει ο κύκλος με το «Kotlin για Android, Swift για iOS» — αν γράψεις native, αυτές είναι οι γλώσσες.)
+
+## Push notifications (concept)
+
+Ροή σε γενικές γραμμές:
+1. Ζητάς **permission** για notifications.
+2. Παίρνεις ένα **push token** (device-specific) — π.χ. μέσω `expo-notifications` / Expo Push service, ή απευθείας APNs (Apple) / FCM (Firebase Cloud Messaging, Android).
+3. Στέλνεις το token στον server σου.
+4. Ο server στέλνει notification → APNs/FCM → συσκευή.
+5. Το tap στο notification κάνει **deep link** στη σωστή οθόνη (θυμήσου το navigation μάθημα).
+
+Ξεχώρισε: **local notifications** (τα προγραμματίζεις στη συσκευή, χωρίς server, π.χ. υπενθύμιση) vs **remote/push** (έρχονται από server μέσω APNs/FCM).
+
+## iOS vs Android — σεβάσου τις διαφορές
+
+- **Back navigation:** Android hardware/gesture back· iOS μόνο swipe + header button.
+- **UI conventions:** date pickers, share sheets, switches, alerts δείχνουν/συμπεριφέρονται διαφορετικά — χρησιμοποίησε native components ώστε να νιώθουν σωστά.
+- **Permissions model:** διαφορετικά prompts & granularity (π.χ. Android «approximate vs precise location», iOS «while using vs always»).
+- **Design:** iOS τείνει σε Human Interface Guidelines, Android σε Material. Δεν χρειάζεται δύο σχέδια, αλλά μη «φοράς» iOS look σε Android αδιάκριτα.
+- **Safe areas & sizes:** notches, status bars, navigation bars διαφέρουν — χρησιμοποίησε safe-area context.
+
+<PredictOutput
+  title="Ο χρήστης λέει 'όχι' στην κάμερα"
+  code={`async function scan() {
+  const { granted } = await Camera.requestCameraPermissionsAsync();
+  // ο χρήστης πάτησε "Don't Allow"
+  const photo = await takePhoto(); // υποθέτει άδεια
+}`}
+  options={[
+    "Δουλεύει κανονικά — το RN δίνει άδεια αυτόματα",
+    "Το app κρασάρει ή αποτυγχάνει· έπρεπε να ελέγξεις το granted και να κάνεις graceful fallback",
+    "Το OS ξαναρωτά αυτόματα μέχρι να πει ναι",
+    "Η κάμερα ανοίγει έτσι κι αλλιώς"
+  ]}
+  correctOptionIndex={1}
+  answer="Πρέπει να ελέγξεις το granted και να χειριστείς το 'όχι' — αλλιώς σκάει"
+  explanation="Οι χρήστες μπορούν (και πρέπει να μπορούν) να αρνηθούν permissions. Ο κώδικας που προχωρά υποθέτοντας άδεια θα αποτύχει/κρασάρει. Σωστό UX: έλεγξε granted, εξήγησε γιατί χρειάζεσαι την κάμερα, πρόσφερε fallback, και αν αρνήθηκε μόνιμα στείλ' τον στα system Settings — δεν μπορείς να ξαναδείξεις το popup."
+/>
+
+<Exercise
+  question="Χρειάζεσαι κάμερα, GPS και push notifications σε Expo app. Ποιο είναι το σωστό πρώτο βήμα;"
+  options={[
+    "Γράψε native modules σε Kotlin & Swift για το καθένα.",
+    "Χρησιμοποίησε τα έτοιμα Expo modules (expo-camera, expo-location, expo-notifications) και ζήτα permissions με context.",
+    "Βάλ' τα σε WebView.",
+    "Ζήτα και τα τρία permissions μαζί στο πρώτο άνοιγμα."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το 90%+ των native αναγκών καλύπτεται από έτοιμα Expo/community modules — δεν γράφεις native κώδικα. Native module γράφεις μόνο για κάτι που δεν καλύπτεται. Και ζητάς κάθε permission τη στιγμή που το χρειάζεσαι με context, όχι όλα μαζί μπροστά (κακό UX + απορρίψεις)."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you access native device features and handle platform differences in React Native?»
+
+> Most of my code is shared. For the parts that differ I use the Platform API — Platform.OS, Platform.select, Platform.Version — or platform-specific files like Button.ios.tsx and Button.android.tsx that Metro picks automatically, but I stay shared-first and only split where UX genuinely differs. For native capabilities like camera, location, notifications, secure storage, or biometrics, I use ready-made modules — Expo modules or community ones — so I rarely write native code. A native module is Swift or Objective-C on iOS and Kotlin or Java on Android that exposes functionality to JS, and I only write one when a specific SDK isn't already wrapped. Permissions are the biggest UX concern: I request them at the moment of need with context, declare usage strings in Info.plist and the Android manifest, and handle denial gracefully with a fallback, since the user can say no and I can't just re-prompt — I send them to Settings. For push I request permission, get a device token via APNs or FCM, send it to my server, and deep-link the notification tap to the right screen. And I respect platform conventions — back behavior, pickers, safe areas — so each platform feels native.
+
+<Flashcards
+  title="RN platform & native — interview drills"
+  cards={[
+    {
+      question: "Πώς γράφεις platform-specific κώδικα;",
+      answer: "Platform.OS / Platform.select / Platform.Version για μικρές διαφορές· platform-specific αρχεία (.ios.tsx/.android.tsx) που το Metro διαλέγει αυτόματα για μεγαλύτερες. Shared-first — split μόνο όπου χρειάζεται."
+    },
+    {
+      question: "Οι κανόνες των permissions;",
+      answer: "Ζήτα τη στιγμή της ανάγκης με context (όχι όλα μπροστά). Ο χρήστης μπορεί να αρνηθεί → graceful fallback, όχι crash. Μετά από 'όχι' → system Settings (όχι re-prompt). Δήλωσε usage strings (Info.plist / AndroidManifest)."
+    },
+    {
+      question: "Τι είναι native module & πότε το θες;",
+      answer: "Κώδικας Swift/ObjC (iOS) ή Kotlin/Java (Android) που εκθέτει native λειτουργικότητα στο JS. Το θες μόνο για SDK/δυνατότητα που δεν καλύπτεται από έτοιμο module (90%+ καλύπτεται από Expo/community)."
+    },
+    {
+      question: "Πώς παίρνεις native features σε Expo;",
+      answer: "Έτοιμα modules: expo-camera/image-picker, expo-location, expo-notifications, expo-secure-store, expo-local-authentication, expo-file-system κ.λπ. Χωρίς να γράψεις native κώδικα."
+    },
+    {
+      question: "Push notifications ροή (concept);",
+      answer: "Permission → device push token (Expo/APNs/FCM) → στέλνεις token στον server → server push → APNs(iOS)/FCM(Android) → συσκευή → tap = deep link σε οθόνη. Local (on-device schedule) vs remote/push (από server)."
+    },
+    {
+      question: "Βασικές iOS vs Android διαφορές;",
+      answer: "Back (Android hardware vs iOS swipe), UI conventions (pickers/share/switch), permissions granularity, design (HIG vs Material), safe areas/notches. Χρησιμοποίησε native components + safe-area context."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Σχεδίασε ένα feature με native δυνατότητες"
+  scenario="Φτιάχνεις feature 'check-in': ο χρήστης βγάζει φωτό, καταγράφεις την τοποθεσία, και στέλνεις notification επιβεβαίωσης. Σχεδίασε permissions & platform handling (concept-level)."
+  outcomes={[
+    "Να ενσωματώνεις native APIs με σωστό permission UX.",
+    "Να χειρίζεσαι άρνηση χωρίς crash.",
+    "Να σέβεσαι platform διαφορές."
+  ]}
+  steps={[
+    "Φωτό: expo-image-picker/camera· ζήτα camera permission ΜΟΝΟ όταν πατά 'φωτό', με εξήγηση.",
+    "Τοποθεσία: expo-location· foreground permission· fallback χειροκίνητη πόλη αν 'όχι'.",
+    "Δήλωσε usage strings (NSCameraUsageDescription / NSLocationWhenInUseUsageDescription / Android manifest).",
+    "Notification: permission → token → server → confirmation push· tap = deep link στο check-in.",
+    "Platform: date/time εμφάνιση & share sheet με native components· safe areas.",
+    "Έλεγξε ροή όταν ο χρήστης αρνείται κάθε permission — το feature υποβαθμίζεται, δεν σκάει."
+  ]}
+  checkpoints={[
+    "Κάθε permission ζητείται με context τη σωστή στιγμή.",
+    "Η άρνηση οδηγεί σε fallback, όχι crash.",
+    "Υπάρχουν usage descriptions και για τα δύο OS.",
+    "Το notification tap ανοίγει τη σωστή οθόνη (deep link)."
+  ]}
+  mistakes={[
+    "Να ζητάς όλα τα permissions μαζί στο πρώτο άνοιγμα.",
+    "Να υποθέτεις ότι δόθηκε άδεια (crash στο 'όχι').",
+    "Να ξεχνάς usage strings → store rejection.",
+    "Να γράφεις native module για κάτι που υπάρχει ήδη ως Expo module."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν ενσωματώνεις native δυνατότητες με σωστό permission UX, χειρίζεσαι την άρνηση, και ξέρεις πότε (σπάνια) χρειάζεσαι native module."
+/>

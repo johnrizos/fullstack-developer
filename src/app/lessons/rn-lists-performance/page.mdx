@@ -1,0 +1,198 @@
+# Lists & Performance: το πιο κρίσιμο mobile skill
+
+Οι λίστες είναι παντού στα mobile apps — feeds, chats, καλάθια, αποτελέσματα αναζήτησης. Και είναι η **#1 πηγή performance προβλημάτων**: jank στο scroll, «παγωμένο» UI, υπερβολική μνήμη. Ένα mid-range Android τηλέφωνο είναι πολύ πιο αδύναμο από το laptop σου, οπότε ό,τι «περνάει» στο web μπορεί να κολλήσει εδώ. Αυτό το μάθημα καλύπτει το virtualization με `FlatList`/`SectionList` και τα mobile-specific performance gotchas που ρωτάνε σε κάθε RN συνέντευξη.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς **virtualization** και γιατί το χρειάζεσαι,
+- να χρησιμοποιείς `FlatList`/`SectionList` σωστά (`keyExtractor`, `renderItem`),
+- να αποφεύγεις τα κλασικά λάθη που σκοτώνουν την απόδοση,
+- να ξέρεις πότε φεύγεις σε `FlashList`,
+- να κατανοείς JS thread vs UI thread και γιατί κολλάει το scroll,
+- να βελτιστοποιείς με `memo`, σταθερές references, `getItemLayout`.
+
+## Virtualization — η βασική ιδέα
+
+Αν έχεις 10.000 items και τα renderάρεις όλα (`ScrollView` + `.map()`), φτιάχνεις 10.000 native views ταυτόχρονα: τεράστια μνήμη, αργό mount, jank. **Virtualization** σημαίνει: renderάρω μόνο ό,τι φαίνεται στην οθόνη (+ ένα μικρό buffer πάνω/κάτω), και καθώς κάνεις scroll **ανακυκλώνω** views για τα νέα items. Ανεξάρτητα αν η λίστα έχει 100 ή 100.000 items, στη μνήμη μένουν λίγες δεκάδες.
+
+Το `FlatList` (και το `SectionList` για grouped δεδομένα) το κάνει αυτό αυτόματα. Γι' αυτό: **ποτέ** μεγάλη λίστα σε `ScrollView`.
+
+## `FlatList` — σωστή χρήση
+
+```tsx
+<FlatList
+  data={products}
+  keyExtractor={(item) => item.id}
+  renderItem={({ item }) => <ProductRow product={item} />}
+  ListEmptyComponent={<EmptyState />}
+  ListHeaderComponent={<SearchBar />}
+  onEndReached={loadMore}
+  onEndReachedThreshold={0.5}
+  refreshing={isRefreshing}
+  onRefresh={refetch}
+/>
+```
+
+Τα βασικά props:
+- **`data`** — ο πίνακας.
+- **`renderItem`** — πώς φτιάχνεται μια γραμμή (παίρνει `{ item, index }`).
+- **`keyExtractor`** — σταθερό, μοναδικό key ανά item (σαν το `key` στο web· κρίσιμο για σωστό recycling).
+- **`onEndReached`** + **`onEndReachedThreshold`** — infinite scroll / pagination.
+- **`onRefresh`** + **`refreshing`** — pull-to-refresh (native gesture).
+- **`ListHeaderComponent` / `ListFooterComponent` / `ListEmptyComponent`** — αντί να τα φτιάχνεις έξω.
+- **`ItemSeparatorComponent`** — διαχωριστικά μεταξύ γραμμών.
+
+## `SectionList` — grouped δεδομένα
+
+Για λίστες με **sections & headers** (π.χ. επαφές ανά αρχικό γράμμα, μηνύματα ανά ημέρα):
+
+```tsx
+<SectionList
+  sections={[
+    { title: "A", data: contactsA },
+    { title: "B", data: contactsB },
+  ]}
+  keyExtractor={(item) => item.id}
+  renderItem={({ item }) => <ContactRow contact={item} />}
+  renderSectionHeader={({ section }) => <SectionHeader title={section.title} />}
+  stickySectionHeadersEnabled
+/>
+```
+
+## Τα λάθη που σκοτώνουν την απόδοση
+
+**1. Inline functions & objects στο `renderItem`.** Κάθε render φτιάχνει νέα reference → κάθε row ξανα-renderάρει.
+
+```tsx
+// ❌ νέα function κάθε render → σπάει το memo του row
+renderItem={({ item }) => <Row onPress={() => open(item.id)} style={{ padding: 8 }} />}
+
+// ✅ memoized row + σταθερό style (StyleSheet) + σταθερός handler
+const Row = memo(function Row({ item, onPress }) { /* ... */ });
+```
+
+**2. Μη-memoized row component.** Τύλιξε το row σε `React.memo` ώστε να μην ξανα-renderάρει όταν δεν άλλαξαν τα props του. (Ισχύουν τα ίδια όπως στο web React performance μάθημα — reference equality.)
+
+**3. Ασταθές `keyExtractor` (π.χ. `index`).** Αν χρησιμοποιήσεις index ως key και η λίστα αλλάξει σειρά/φιλτραριστεί, το recycling μπερδεύεται — λάθος περιεχόμενο σε λάθος γραμμή. Χρησιμοποίησε σταθερό id.
+
+**4. Βαριά items.** Μεγάλες μη-βελτιστοποιημένες εικόνες, βαθιά nested views, sync υπολογισμοί μέσα στο `renderItem`. Κράτα το row ελαφρύ.
+
+**5. `getItemLayout` για σταθερά ύψη.** Αν όλες οι γραμμές έχουν **ίδιο, γνωστό ύψος**, δώσε `getItemLayout` — το FlatList δεν χρειάζεται να μετρήσει, οπότε το scroll & το scroll-to-index γίνονται στιγμιαία.
+
+## JS thread vs UI thread — γιατί κολλάει το scroll
+
+Θυμήσου από τα foundations: ο JS σου τρέχει σε **ένα JS thread**. Το scrolling/gestures χειρίζεται (στη νέα αρχιτεκτονική) το native UI thread, αλλά το **`renderItem` και τα state updates τρέχουν στο JS thread**. Αν φορτώσεις το JS thread (βαρύ render, μεγάλα state updates, JSON parsing), το thread δεν προλαβαίνει → **dropped frames** → jank.
+
+Πρακτικά:
+- Κράτα τα rows ελαφριά και memoized.
+- Κάνε βαριά δουλειά (parsing, sorting) **εκτός** render, ιδανικά μια φορά.
+- Για animations που πρέπει να είναι στα 60fps ενώ γίνεται δουλειά, χρησιμοποίησε **Reanimated** (τρέχει animations στο UI thread, όχι στο JS thread).
+
+## `FlashList` — όταν το FlatList δεν φτάνει
+
+Το **FlashList** (από τη Shopify) είναι drop-in πιο γρήγορη λίστα: πιο αποδοτικό recycling, λιγότερα blank cells σε γρήγορο scroll. Το διαλέγεις για **πολύ μεγάλες ή σύνθετες** λίστες όπου το FlatList αφήνει κενά ή κολλάει. Χρειάζεται `estimatedItemSize`. Κανόνας: ξεκίνα με FlatList· πήγαινε σε FlashList αν μετρήσεις πρόβλημα.
+
+## Μέτρα, μην μαντεύεις
+
+Χρησιμοποίησε τα εργαλεία: **Flipper**/**React DevTools Profiler**, το **Perf Monitor** του RN (δείχνει JS & UI fps), και δοκίμασε σε **πραγματικό mid-range Android** — όχι μόνο στον iPhone simulator, που κρύβει τα προβλήματα. «Βελτιστοποίηση» χωρίς μέτρηση είναι εικασία.
+
+<PredictOutput
+  title="Γιατί ξανα-renderάρουν όλα τα rows;"
+  code={`<FlatList
+  data={items}
+  keyExtractor={(it) => it.id}
+  renderItem={({ item }) => (
+    <Row item={item} onPress={() => select(item.id)} />
+  )}
+/>
+// Το Row είναι τυλιγμένο σε React.memo.
+// Παρόλα αυτά κάθε γραμμή ξανα-renderάρει σε κάθε update. Γιατί;`}
+  options={[
+    "Το React.memo δεν δουλεύει σε FlatList",
+    "Η inline onPress function φτιάχνει νέα reference κάθε render → το memo του Row 'σπάει'",
+    "Το keyExtractor είναι λάθος",
+    "Οι λίστες πάντα ξανα-renderάρουν όλα"
+  ]}
+  correctOptionIndex={1}
+  answer="Η inline onPress δίνει νέο prop reference κάθε φορά, ακυρώνοντας το memo"
+  explanation="Το React.memo συγκρίνει props με reference equality. Το () => select(item.id) φτιάχνει ΝΕΑ function σε κάθε render του parent, άρα το onPress prop 'αλλάζει' πάντα → το memo θεωρεί ότι άλλαξαν props → re-render. Λύση: σταθερός handler (π.χ. περνάς το item.id και ο Row καλεί onPress(id) με useCallback στον parent, ή handler μέσα στο memoized Row)."
+/>
+
+<Exercise
+  question="Έχεις λίστα 20.000 μηνυμάτων, όλα ίδιου ύψους. Ποιο ΔΕΝ βοηθά την απόδοση;"
+  options={[
+    "Να τη βάλεις σε FlatList αντί για ScrollView.",
+    "Να δώσεις getItemLayout αφού το ύψος είναι σταθερό.",
+    "Να τυλίξεις το row σε React.memo με σταθερές references.",
+    "Να renderάρεις και τα 20.000 rows εκ των προτέρων για να είναι έτοιμα."
+  ]}
+  correctOptionIndex={3}
+  explanation="Το να renderάρεις όλα εκ των προτέρων ακυρώνει το virtualization — 20.000 native views = τεράστια μνήμη & jank, ακριβώς το πρόβλημα που λύνει το FlatList. Τα άλλα τρία βοηθούν: FlatList (virtualization), getItemLayout (skip measurement σε σταθερό ύψος), memo+σταθερές refs (λιγότερα re-renders)."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you build a performant list in React Native?»
+
+> The core idea is virtualization: never put a large list in a ScrollView with map, because that mounts every native view at once and blows up memory. FlatList — or SectionList for grouped data — renders only what's on screen plus a small buffer and recycles views as you scroll, so memory stays flat whether it's a hundred or a hundred thousand items. I give it a stable keyExtractor using a real id, not the index, so recycling doesn't put the wrong content in a row. Then I keep rows cheap: wrap the row in React.memo and avoid inline functions and objects in renderItem, since a new reference every render breaks the memo and re-renders every row. If rows are a fixed known height I add getItemLayout so it skips measurement and scroll-to-index is instant. I remember my JS runs on one thread, so heavy work in renderItem drops frames — I move parsing and sorting out of render and use Reanimated for animations so they run on the UI thread. If FlatList still leaves blank cells on fast scroll I switch to FlashList. And I actually measure with the Perf Monitor on a real mid-range Android, not just the iOS simulator.
+
+<Flashcards
+  title="RN lists & performance — interview drills"
+  cards={[
+    {
+      question: "Τι είναι virtualization και γιατί το θες;",
+      answer: "Renderάρεις μόνο τα ορατά items (+buffer) και ανακυκλώνεις views στο scroll. Η μνήμη μένει σταθερή ανεξ. μεγέθους λίστας. Το FlatList/SectionList το κάνει· το ScrollView όχι (renderάρει τα πάντα)."
+    },
+    {
+      question: "Βασικά FlatList props;",
+      answer: "data, renderItem, keyExtractor (σταθερό id!). Επίσης onEndReached/threshold (pagination), onRefresh/refreshing (pull-to-refresh), List{Header,Footer,Empty}Component, ItemSeparatorComponent, getItemLayout."
+    },
+    {
+      question: "Top λόγοι για list jank;",
+      answer: "Inline functions/objects στο renderItem (σπάνε memo), μη-memoized rows, index ως key, βαριά items (μεγάλες εικόνες/nested views), βαρύς JS στο render thread."
+    },
+    {
+      question: "Πότε getItemLayout;",
+      answer: "Όταν όλα τα rows έχουν ίδιο γνωστό ύψος. Δίνεις {length, offset, index} ώστε το FlatList να μη μετράει → στιγμιαίο scroll & scrollToIndex."
+    },
+    {
+      question: "Γιατί κολλάει το scroll (thread-wise);",
+      answer: "renderItem & state updates τρέχουν στο JS thread (ένα). Βαρύ render/parsing → dropped frames. Κράτα rows ελαφριά, βγάλε heavy work εκτός render, χρησιμοποίησε Reanimated (UI thread) για animations."
+    },
+    {
+      question: "FlatList vs FlashList;",
+      answer: "FlatList: default virtualized λίστα. FlashList (Shopify): πιο αποδοτικό recycling, λιγότερα blank cells σε γρήγορο scroll, θέλει estimatedItemSize. Πήγαινε εκεί όταν μετρήσεις πρόβλημα με FlatList."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Βελτιστοποίησε μια αργή λίστα"
+  scenario="Έχεις ένα feed 50.000 posts που κολλάει στο scroll σε mid-range Android. Διάγνωσε και διόρθωσε (concept-level)."
+  outcomes={[
+    "Να αναγνωρίζεις anti-patterns σε λίστες.",
+    "Να εφαρμόζεις virtualization + memoization σωστά.",
+    "Να μετράς αντί να μαντεύεις."
+  ]}
+  steps={[
+    "Βεβαιώσου ότι είναι FlatList/SectionList — όχι ScrollView+map.",
+    "Σταθερό keyExtractor με πραγματικό id (όχι index).",
+    "Τύλιξε το PostRow σε React.memo· βγάλε inline functions/objects από το renderItem.",
+    "Αν το ύψος είναι σταθερό, πρόσθεσε getItemLayout.",
+    "Βελτιστοποίησε εικόνες (expo-image, σωστές διαστάσεις/caching).",
+    "Μέτρα με Perf Monitor σε πραγματικό Android· αν μένουν blank cells → FlashList."
+  ]}
+  checkpoints={[
+    "Η μνήμη μένει σταθερή στο scroll (virtualization ενεργό).",
+    "Τα rows δεν ξανα-renderάρουν χωρίς λόγο (memo + σταθερές refs).",
+    "Το scroll είναι smooth σε mid-range Android, όχι μόνο σε iPhone sim.",
+    "Οι αποφάσεις βασίζονται σε μέτρηση, όχι εικασία."
+  ]}
+  mistakes={[
+    "ScrollView+map για μεγάλη λίστα.",
+    "index ως key → λάθος περιεχόμενο μετά από reorder/filter.",
+    "Inline handlers/styles στο renderItem που σπάνε το memo.",
+    "Δοκιμή μόνο σε iOS simulator (κρύβει τα Android προβλήματα)."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν χτίζεις virtualized λίστες με memoized ελαφριά rows, ξέρεις γιατί κολλάει το JS thread, και βελτιστοποιείς με βάση μετρήσεις."
+/>

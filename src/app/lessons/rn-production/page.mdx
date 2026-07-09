@@ -1,0 +1,181 @@
+# Shipping to Production: builds, stores & updates
+
+Στο web κάνεις `git push` και σε δευτερόλεπτα οι χρήστες βλέπουν το νέο σου κώδικα. Στο mobile **δεν** είναι έτσι. Πρέπει να χτίσεις native binaries (`.ipa`/`.aab`), να περάσεις **app store review**, και οι χρήστες πρέπει να **κατεβάσουν update** — που μπορεί να αργήσει μέρες ή να μη γίνει ποτέ. Αυτό το μάθημα καλύπτει το τελευταίο και πιο παρεξηγημένο κομμάτι: builds με EAS, δημοσίευση στα stores, over-the-air updates, versioning, και monitoring σε production.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να χτίζεις production binaries με **EAS Build** (χωρίς local Xcode/Android Studio),
+- να δημοσιεύεις σε **App Store** & **Google Play** και να ξέρεις τη διαδικασία review,
+- να διαλέγεις **OTA update** (EAS Update) vs **store submission** — και τα όριά τους,
+- να χειρίζεσαι **versioning** (native version vs OTA),
+- να στήνεις **crash reporting & analytics** (Sentry κ.λπ.),
+- να σέβεσαι store guidelines ώστε να μην απορρίπτεσαι.
+
+## Το mobile release είναι διαφορετικό
+
+Τρεις θεμελιώδεις διαφορές από web deploy:
+
+1. **Binaries, όχι files.** Παράγεις native πακέτα: `.ipa` (iOS) και `.aab`/`.apk` (Android), υπογεγραμμένα με certificates/keystores.
+2. **Gatekeepers.** Το Apple App Store κάνει **ανθρώπινο + αυτόματο review** (ώρες έως μέρες, μπορεί να απορρίψει). Το Google Play είναι πιο γρήγορο αλλά επίσης κάνει review.
+3. **Ο χρήστης πρέπει να κάνει update.** Ακόμη κι όταν εγκριθεί, πολλοί χρήστες μένουν σε παλιές εκδόσεις για εβδομάδες. Πρέπει να υποστηρίζεις **παλιά clients** και συχνά **force-update** για critical fixes.
+
+## EAS Build — cloud builds
+
+Το **EAS (Expo Application Services) Build** χτίζει τα native binaries **στο cloud** — δεν χρειάζεσαι Mac για iOS build, ούτε να παλέψεις με Xcode/Gradle/signing τοπικά:
+
+```bash
+eas build --platform ios      # παράγει .ipa στο cloud
+eas build --platform android  # παράγει .aab
+eas build --platform all --profile production
+```
+
+Ρυθμίζεις **build profiles** (`development`, `preview`, `production`) στο `eas.json` — π.χ. dev client για testing, internal distribution για QA, production για stores. Το EAS διαχειρίζεται και τα **credentials** (certificates, provisioning profiles, keystores) αντί για σένα.
+
+**Development builds vs Expo Go:** το Expo Go είναι για γρήγορο prototyping με τα built-in modules· μόλις προσθέσεις custom native code / config plugins, φτιάχνεις **development build** (δικό σου dev client) για να τα δοκιμάσεις.
+
+## Submission στα stores
+
+```bash
+eas submit --platform ios      # ανεβάζει στο App Store Connect
+eas submit --platform android  # ανεβάζει στο Google Play Console
+```
+
+Χρειάζεσαι:
+- **Apple Developer account** (99$/έτος) & **Google Play Developer** (25$ εφάπαξ).
+- **Store listing**: screenshots ανά μέγεθος συσκευής, περιγραφή, privacy policy, **App Privacy / Data Safety** δηλώσεις (τι δεδομένα μαζεύεις).
+- Πέρασμα από **review** — απορρίψεις είναι συχνές: ελλιπές functionality, λάθος permissions χωρίς εξήγηση, crashes, παραβίαση guidelines.
+
+Κανάλια δοκιμών πριν το public: **TestFlight** (iOS) και **Google Play internal/closed testing** (Android) — δίνεις σε beta testers πριν το πλήρες release.
+
+## OTA updates — το «git push» του mobile (με αστερίσκο)
+
+Το **EAS Update** (over-the-air) σου επιτρέπει να στέλνεις **JS/asset αλλαγές** κατευθείαν στους χρήστες **χωρίς store review**:
+
+```bash
+eas update --branch production --message "Fix checkout bug"
+```
+
+Η συσκευή κατεβάζει το νέο JS bundle στο επόμενο άνοιγμα. Ιδανικό για: bug fixes, μικρές αλλαγές UI/λογικής, γρήγορα hotfixes.
+
+**Ο κρίσιμος περιορισμός:** το OTA στέλνει **μόνο** ό,τι ζει στο JS layer. **ΔΕΝ** μπορείς να αλλάξεις native κώδικα OTA — αν προσθέσεις/αναβαθμίσεις native module, αλλάξεις permissions, ή αλλάξεις native config, χρειάζεσαι **νέο store build**. Επίσης τα stores απαγορεύουν να αλλάζεις ουσιωδώς τη λειτουργία του app μέσω OTA (παράκαμψη review) — OTA για fixes/βελτιώσεις, όχι για «άλλο app».
+
+> Interview point: «τι μπορείς και τι δεν μπορείς να στείλεις OTA;» → JS/assets ναι· native code/config/permissions/νέα modules όχι (θέλουν rebuild + resubmit).
+
+## Versioning: δύο επίπεδα
+
+- **Native version** (`version` + iOS `buildNumber` / Android `versionCode`) — αλλάζει με κάθε **store** release. Το `versionCode`/`buildNumber` πρέπει να **αυξάνεται** σε κάθε upload.
+- **OTA update** — δένεται σε ένα **runtime version**· ένα update πάει μόνο σε builds με συμβατό runtime. Αν αλλάξεις native κώδικα, ανεβάζεις runtime version ώστε παλιά OTA να μην «σπάσουν» νέα native.
+
+Το να μπερδέψεις αυτά τα δύο = crashes: OTA update με νέο JS που καλεί native που δεν υπάρχει στο παλιό binary.
+
+## Monitoring: crashes, όχι console.log
+
+Σε production δεν βλέπεις τα σφάλματα του χρήστη — πρέπει να τα **στείλεις σε σένα**:
+
+- **Crash/error reporting**: **Sentry** (δημοφιλές σε RN) — stack traces, source maps για να δεις την πραγματική γραμμή, breadcrumbs. Στέλνει native crashes ΚΑΙ JS errors.
+- **Analytics**: screen views, funnels, feature usage (Amplitude, PostHog, Firebase Analytics).
+- **Performance**: startup time, slow screens, ANRs (Android «app not responding»).
+- **Store vitals**: crash-free rate στο Play Console / App Store Connect — αν πέσει, τα stores σε υποβαθμίζουν.
+
+Ανέβασε **source maps** στο Sentry σε κάθε build ώστε τα minified stack traces να γίνονται αναγνώσιμα.
+
+## Το production release checklist (νοερά)
+
+App icon & splash · σωστά permissions + usage strings · privacy policy & data safety · crash reporting ενεργό · versioning σωστό · δοκιμή σε πραγματικές συσκευές (iOS + mid-range Android) · TestFlight/internal testing πριν public · force-update μηχανισμός για critical fixes.
+
+<PredictOutput
+  title="Τι μπορείς να στείλεις OTA;"
+  code={`Θες hotfix. Οι αλλαγές:
+A) Διόρθωση σε μια JS συνάρτηση υπολογισμού τιμής
+B) Προσθήκη expo-camera (νέο native module) + camera permission
+
+Ποιο μπορείς να στείλεις με eas update (OTA);`}
+  options={[
+    "Και τα δύο — το OTA στέλνει τα πάντα",
+    "Μόνο το A — το B προσθέτει native module/permission, θέλει νέο store build",
+    "Μόνο το B",
+    "Κανένα — όλα περνούν από store review"
+  ]}
+  correctOptionIndex={1}
+  answer="Μόνο το A· το B έχει native αλλαγές που δεν στέλνονται OTA"
+  explanation="Το OTA (EAS Update) στέλνει μόνο JS/assets. Το A είναι καθαρά JS → OTA. Το B προσθέτει native module (expo-camera) + permission (native config) → δεν υπάρχει στο ήδη εγκατεστημένο binary· χρειάζεται νέο build + store submission (+ ίσως runtime version bump). OTA update που καλεί native που λείπει = crash."
+/>
+
+<Exercise
+  question="Ένα critical checkout bug χτύπησε σε production (καθαρά JS λάθος). Πιο γρήγορος σωστός τρόπος να το διορθώσεις;"
+  options={[
+    "Νέο store build + submission και περίμενε το review (ώρες/μέρες).",
+    "eas update (OTA) στο production branch — φτάνει στους χρήστες χωρίς store review στο επόμενο άνοιγμα.",
+    "Στείλε email στους χρήστες να προσέχουν.",
+    "Δεν γίνεται τίποτα μέχρι το επόμενο release."
+  ]}
+  correctOptionIndex={1}
+  explanation="Αφού το bug είναι καθαρά JS, το EAS Update (OTA) το στέλνει άμεσα χωρίς να περιμένεις store review — οι χρήστες παίρνουν το fix στο επόμενο άνοιγμα. Αυτός ακριβώς είναι ο λόγος ύπαρξης του OTA. Νέο store build θα χρειαζόταν μόνο αν το fix άγγιζε native κώδικα."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you ship and maintain a React Native app in production?»
+
+> Unlike web, I ship native binaries — an ipa and an aab — signed and reviewed. I build them with EAS Build in the cloud, so I don't need a Mac or local Xcode and Gradle, using build profiles in eas.json for dev, preview, and production, with EAS managing credentials. I submit with eas submit to App Store Connect and Play Console, and I test through TestFlight and Play internal testing before public. The key mobile reality is that users must download updates and many stay on old versions, so I support old clients and keep a force-update path for critical fixes. For fast fixes I use EAS Update, over-the-air, which pushes JS and asset changes without store review — but only the JS layer: anything native, new modules, permissions, or config, needs a fresh build and resubmission, and I bump the runtime version so OTA updates don't call native that isn't there. I keep two version tracks, the native version and versionCode which must increase per store upload, and the OTA runtime version. And since I can't see users' errors, I wire up Sentry for native and JS crashes with source maps, plus analytics and performance monitoring, and watch the crash-free rate in the store dashboards.
+
+<Flashcards
+  title="RN production — interview drills"
+  cards={[
+    {
+      question: "Γιατί το mobile release διαφέρει από web deploy;",
+      answer: "Παράγεις signed binaries (.ipa/.aab), περνάς store review (Apple ώρες/μέρες, μπορεί να απορρίψει), και ο χρήστης πρέπει να κάνει update — πολλοί μένουν σε παλιές εκδόσεις. Άρα: υποστήριξη old clients + force-update."
+    },
+    {
+      question: "Τι κάνει το EAS Build;",
+      answer: "Χτίζει τα native binaries στο cloud (χωρίς local Mac/Xcode/Gradle/signing). Build profiles (dev/preview/production) στο eas.json· διαχειρίζεται credentials. eas submit → ανεβάζει στα stores."
+    },
+    {
+      question: "OTA (EAS Update): τι στέλνει και τι ΟΧΙ;",
+      answer: "Στέλνει JS/assets χωρίς store review (γρήγορα fixes). ΔΕΝ στέλνει native code/config/permissions/νέα native modules — αυτά θέλουν νέο store build + resubmit (+ runtime version bump)."
+    },
+    {
+      question: "Τα δύο επίπεδα versioning;",
+      answer: "Native version (version + buildNumber/versionCode, αυξάνει ανά store upload) και OTA runtime version (ένα update πάει μόνο σε συμβατό runtime). Μπέρδεμα = crash (JS καλεί native που λείπει)."
+    },
+    {
+      question: "Πώς κάνεις monitoring σε production;",
+      answer: "Crash/error reporting (Sentry: native+JS, source maps, breadcrumbs), analytics (screens/funnels), performance (startup/ANRs), και crash-free rate στα store dashboards. Console.log δεν φτάνει — τα errors ζουν στη συσκευή του χρήστη."
+    },
+    {
+      question: "Πώς δοκιμάζεις πριν το public release;",
+      answer: "TestFlight (iOS) & Google Play internal/closed testing (Android) — beta testers σε πραγματικές συσκευές (iOS + mid-range Android) πριν το full rollout."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Σχεδίασε το release pipeline ενός RN app"
+  scenario="Έχεις ένα Expo app έτοιμο για launch. Σχεδίασε (concept-level) build, submission, updates, versioning και monitoring — και πώς θα κάνεις hotfix ένα JS bug μετά το launch."
+  outcomes={[
+    "Να χτίζεις & δημοσιεύεις με EAS.",
+    "Να διαλέγεις OTA vs store build σωστά.",
+    "Να στήνεις versioning & monitoring."
+  ]}
+  steps={[
+    "eas.json profiles (development/preview/production)· eas build --profile production.",
+    "Store listings (screenshots, privacy/data safety, permissions με usage strings).",
+    "Beta μέσω TestFlight / Play internal testing σε πραγματικές συσκευές.",
+    "eas submit στα δύο stores· πέρασε review.",
+    "Στήσε Sentry (source maps ανά build) + analytics + crash-free monitoring.",
+    "Hotfix JS bug: eas update στο production branch (OTA)· αν το fix ήταν native → νέο build + resubmit + runtime bump."
+  ]}
+  checkpoints={[
+    "Το build γίνεται στο cloud χωρίς local native toolchain.",
+    "Σωστό versioning (versionCode/buildNumber αυξάνει· OTA runtime συμβατό).",
+    "Ξεχωρίζεις σωστά τι πάει OTA vs τι θέλει store build.",
+    "Crash reporting με readable stack traces (source maps) είναι ενεργό."
+  ]}
+  mistakes={[
+    "Να προσπαθείς να στείλεις native αλλαγή μέσω OTA (crash/no effect).",
+    "Να μην αυξάνεις versionCode/buildNumber (store reject).",
+    "Καθόλου crash reporting → 'τυφλός' σε production errors.",
+    "Δοκιμή μόνο σε simulator, όχι σε πραγματικές συσκευές πριν το launch."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν χτίζεις/δημοσιεύεις με EAS, διαλέγεις σωστά OTA vs store build, διαχειρίζεσαι versioning, και έχεις monitoring για production crashes."
+/>

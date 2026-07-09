@@ -1,0 +1,221 @@
+# Core Components: το νέο vocabulary
+
+Στο web «σκέφτεσαι σε divs». Στο React Native το `<div>` δεν υπάρχει. Αντ' αυτού συνθέτεις UI από ένα μικρό σετ **core components** που η RN αντιστοιχίζει σε native widgets. Αυτό το μάθημα είναι το mapping από HTML στα RN primitives — και τα gotchas που πιάνουν κάθε web developer τις πρώτες μέρες: γιατί το κείμενο πρέπει να μπει σε `<Text>`, γιατί δεν υπάρχει `onClick`, και γιατί ένα `<Image>` δεν εμφανίζεται χωρίς διαστάσεις.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να αντιστοιχίζεις HTML elements στα RN core components,
+- να ξέρεις γιατί όλο το κείμενο ζει μέσα σε `<Text>`,
+- να χειρίζεσαι touch με `Pressable` / `onPress` (όχι `onClick`),
+- να δείχνεις εικόνες τοπικές & remote με σωστές διαστάσεις,
+- να διαλέγεις `ScrollView` vs `FlatList` σωστά,
+- να φτιάχνεις inputs & buttons με τα native components.
+
+## Το mapping από HTML
+
+| Web (HTML) | React Native | Σημείωση |
+|---|---|---|
+| `<div>`, `<section>` | `<View>` | Το βασικό container. Flexbox by default. |
+| `<p>`, `<span>`, `<h1>` | `<Text>` | **Όλο** το κείμενο. Μπορεί να φωλιάζει. |
+| `<img>` | `<Image>` | Χρειάζεται ρητές διαστάσεις (ή flex). |
+| `<button>`, `<a>` | `<Pressable>` | Touchable· `onPress` όχι `onClick`. |
+| `<input>` | `<TextInput>` | Controlled με `value` + `onChangeText`. |
+| scrollable div | `<ScrollView>` / `<FlatList>` | ScrollView = λίγα, FlatList = πολλά. |
+| `<ul>`/`<ol>` λίστα | `<FlatList>` | Virtualized (μάθημα λιστών). |
+
+Δεν υπάρχει semantic HTML (`<article>`, `<nav>`) — accessibility γίνεται με **props** (`accessibilityRole`, `accessibilityLabel`), όχι με tags.
+
+## `<View>` — το κουτί για όλα
+
+Το `<View>` είναι το θεμελιώδες building block: ένα container που στηρίζει layout (Flexbox), style, touch handling και accessibility. Είναι το αντίστοιχο του `<div>`, αλλά **δεν** μπορεί να περιέχει γυμνό κείμενο.
+
+```tsx
+<View style={{ padding: 16, gap: 8 }}>
+  <View style={{ height: 40, backgroundColor: "#2563eb" }} />
+  <View style={{ height: 40, backgroundColor: "#16a34a" }} />
+</View>
+```
+
+## `<Text>` — όλο το κείμενο, χωρίς εξαιρέσεις
+
+Ο #1 λόγος crash για αρχάριους: **γυμνό string μέσα σε `<View>`**. Στο RN, κάθε χαρακτήρας κειμένου πρέπει να είναι μέσα σε `<Text>`.
+
+```tsx
+// ❌ Σκάει: "Text strings must be rendered within a <Text> component"
+<View>Γεια</View>
+
+// ✅ Σωστά
+<View><Text>Γεια</Text></View>
+```
+
+Το `<Text>` **φωλιάζει** και κληρονομεί style από γονικό `<Text>` (σε αντίθεση με το `<View>`, που δεν κληρονομεί styling):
+
+```tsx
+<Text style={{ fontSize: 16 }}>
+  Τιμή: <Text style={{ fontWeight: "700" }}>29€</Text>
+</Text>
+```
+
+Χρήσιμα props: `numberOfLines={1}` + `ellipsizeMode="tail"` για truncation, `onPress` για tappable text.
+
+## Touch: `Pressable` και `onPress`
+
+Δεν υπάρχει `onClick`, δεν υπάρχει hover (δεν υπάρχει ποντίκι). Το touch handling γίνεται με **`Pressable`** — το μοντέρνο, ευέλικτο touchable:
+
+```tsx
+<Pressable
+  onPress={() => addToCart(item)}
+  style={({ pressed }) => [
+    styles.button,
+    pressed && { opacity: 0.7 },
+  ]}
+>
+  <Text style={styles.buttonLabel}>Προσθήκη</Text>
+</Pressable>
+```
+
+Το `style` του `Pressable` δέχεται **function** που παίρνει `{ pressed }` — έτσι δίνεις οπτικό feedback στο άγγιγμα (το ανάλογο του `:active`). Υπάρχουν και τα παλιότερα `TouchableOpacity`/`TouchableHighlight`, αλλά το `Pressable` είναι το σημερινό default. Το `<Button>` υπάρχει αλλά είναι πολύ περιοριστικό (δεν στυλάρεται) — σπάνια το χρησιμοποιείς σε production.
+
+## `<Image>` — χρειάζεται διαστάσεις
+
+Μια εικόνα **δεν εμφανίζεται** αν δεν ξέρει μέγεθος. Για remote εικόνες πρέπει να δώσεις `width`/`height` (ή flex):
+
+```tsx
+// Remote — ΧΡΕΙΑΖΕΤΑΙ διαστάσεις
+<Image
+  source={{ uri: "https://example.com/cat.jpg" }}
+  style={{ width: 120, height: 120, borderRadius: 8 }}
+/>
+
+// Local — bundled, το μέγεθος είναι γνωστό από το asset
+<Image source={require("./assets/logo.png")} style={{ width: 80, height: 80 }} />
+```
+
+Το `source` είναι object `{ uri }` για remote, ή `require(...)` για local asset. Το `resizeMode` (`cover`/`contain`/`stretch`) ελέγχει πώς γεμίζει τον χώρο. Για production προτιμάς συχνά το `expo-image` (caching, placeholders, καλύτερο performance).
+
+## Input: `<TextInput>` controlled
+
+```tsx
+const [email, setEmail] = useState("");
+
+<TextInput
+  value={email}
+  onChangeText={setEmail}
+  placeholder="email@example.com"
+  keyboardType="email-address"
+  autoCapitalize="none"
+  style={styles.input}
+/>
+```
+
+Προσοχή στις διαφορές από web: `onChangeText` σου δίνει **κατευθείαν το string** (όχι `event.target.value`). Το `keyboardType` αλλάζει το native πληκτρολόγιο (`numeric`, `email-address`, `phone-pad`). Το `autoCapitalize`/`autoCorrect`/`secureTextEntry` (για passwords) είναι mobile-specific.
+
+## `ScrollView` vs `FlatList` — μη το μπερδέψεις
+
+- **`ScrollView`**: renderάρει **όλα** τα παιδιά του **αμέσως**. Τέλειο για λίγο, γνωστό περιεχόμενο (μια φόρμα, ένα άρθρο). Αν βάλεις 1000 items, τα φτιάχνει όλα μαζί → σπαταλά μνήμη, κολλάει.
+- **`FlatList`**: **virtualized** — renderάρει μόνο ό,τι φαίνεται, τα υπόλοιπα ανακυκλώνονται. Για μεγάλες/άγνωστου μήκους λίστες (το βλέπουμε αναλυτικά στο μάθημα λιστών).
+
+> Κανόνας: πεπερασμένο & μικρό → `ScrollView`. Μεγάλο ή δυναμικό → `FlatList`. Ένα από τα πιο συχνά interview/review findings σε RN είναι `.map()` πάνω από τεράστια λίστα μέσα σε `ScrollView`.
+
+## `SafeAreaView` & το notch
+
+Τα σύγχρονα τηλέφωνα έχουν notch, status bar, home indicator. Χωρίς φροντίδα, το UI σου μπαίνει από κάτω τους. Χρησιμοποιείς `SafeAreaView` (ή το `react-native-safe-area-context`) ώστε το περιεχόμενο να μένει στην «ασφαλή» περιοχή.
+
+<PredictOutput
+  title="Το κλασικό πρώτο crash"
+  code={`function Card() {
+  return (
+    <View style={{ padding: 12 }}>
+      Καλάθι (3)
+    </View>
+  );
+}`}
+  options={[
+    "Renderάρει το κείμενο κανονικά μέσα στο View",
+    "Runtime error: 'Text strings must be rendered within a <Text> component'",
+    "Το κείμενο εμφανίζεται αλλά χωρίς styling",
+    "Το View αγνοεί το κείμενο σιωπηλά"
+  ]}
+  correctOptionIndex={1}
+  answer="Error — γυμνό string μέσα σε <View> δεν επιτρέπεται"
+  explanation="Στο RN κάθε κείμενο πρέπει να είναι μέσα σε <Text>. Γυμνό string μέσα σε <View> ρίχνει το γνωστό 'Text strings must be rendered within a <Text> component'. Σωστό: <View style={{padding:12}}><Text>Καλάθι (3)</Text></View>."
+/>
+
+<Exercise
+  question="Έχεις μια οθόνη που δείχνει 5.000 προϊόντα σε λίστα. Τι χρησιμοποιείς;"
+  options={[
+    "ScrollView με .map() πάνω από όλα — απλό και αρκετό.",
+    "FlatList — virtualized, renderάρει μόνο τα ορατά items.",
+    "Πολλά nested Views χειροκίνητα.",
+    "Image list γιατί το ScrollView δεν κάνει scroll."
+  ]}
+  correctOptionIndex={1}
+  explanation="ScrollView renderάρει ΟΛΑ τα παιδιά αμέσως — 5.000 items = τεράστια μνήμη & jank. FlatList είναι virtualized: κρατά στη μνήμη μόνο ό,τι φαίνεται (+ λίγο buffer) και ανακυκλώνει views καθώς κάνεις scroll. Για μεγάλες/δυναμικές λίστες πάντα FlatList."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «What are the core building blocks in React Native and how do they map from the web?»
+
+> There's no DOM, so I compose UI from a small set of core components. View is the container, like a div but it can't hold bare text and it's Flexbox by default. Text wraps all text — literally every string must live inside a Text, and Text nests and inherits style, unlike View. For touch I use Pressable with onPress; there's no onClick and no hover, and Pressable's style can be a function of the pressed state for feedback. Image needs explicit dimensions for remote sources and takes a source of either a uri object or a require for local assets. TextInput is controlled with value and onChangeText, which hands me the string directly, plus mobile props like keyboardType and secureTextEntry. For scrolling, ScrollView renders all children immediately so it's for small finite content, while FlatList is virtualized for large lists. And I wrap screens in a safe-area component so content clears the notch and status bar. The mental shift is that semantics and layout that were HTML tags and CSS on the web are now components and props.
+
+<Flashcards
+  title="RN core components — interview drills"
+  cards={[
+    {
+      question: "div/p/img/button/input → RN;",
+      answer: "div→View, p/span/h1→Text, img→Image, button/a→Pressable, input→TextInput, scrollable→ScrollView/FlatList."
+    },
+    {
+      question: "Γιατί σκάει γυμνό string σε <View>;",
+      answer: "Όλο το κείμενο ΠΡΕΠΕΙ να είναι μέσα σε <Text>. 'Text strings must be rendered within a <Text> component'. Το <Text> φωλιάζει & κληρονομεί style (το <View> όχι)."
+    },
+    {
+      question: "onClick στο RN;",
+      answer: "Δεν υπάρχει. Touch με Pressable + onPress. Δεν υπάρχει hover (δεν υπάρχει ποντίκι). Pressable style μπορεί να είναι function του {pressed} για feedback (αντί :active)."
+    },
+    {
+      question: "Γιατί δεν εμφανίζεται το <Image> μου;",
+      answer: "Remote εικόνες χρειάζονται ρητές width/height (ή flex). source: {uri} για remote, require(...) για local. resizeMode ελέγχει το γέμισμα."
+    },
+    {
+      question: "ScrollView vs FlatList;",
+      answer: "ScrollView renderάρει ΟΛΑ αμέσως → μικρό/πεπερασμένο περιεχόμενο. FlatList virtualized (μόνο ορατά) → μεγάλες/δυναμικές λίστες. Ποτέ .map() τεράστιας λίστας σε ScrollView."
+    },
+    {
+      question: "TextInput: πώς παίρνεις την τιμή;",
+      answer: "Controlled: value={x} + onChangeText={setX}. Το onChangeText δίνει ΚΑΤΕΥΘΕΙΑΝ το string (όχι e.target.value). keyboardType/secureTextEntry/autoCapitalize = mobile props."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Χτίσε ένα product card μόνο με core components"
+  scenario="Φτιάξε (concept-level) ένα card προϊόντος: εικόνα, τίτλος, τιμή, ένα πεδίο ποσότητας και ένα κουμπί 'Προσθήκη' — χωρίς κανένα HTML."
+  outcomes={[
+    "Να συνθέτεις UI μόνο με View/Text/Image/TextInput/Pressable.",
+    "Να αποφεύγεις τα κλασικά first-day gotchas.",
+    "Να διαλέγεις ScrollView vs FlatList σωστά."
+  ]}
+  steps={[
+    "Container: <View> με padding & Flexbox.",
+    "Εικόνα προϊόντος: <Image> με ρητές διαστάσεις + borderRadius.",
+    "Τίτλος & τιμή: <Text> (η τιμή nested bold μέσα στο ίδιο Text).",
+    "Ποσότητα: <TextInput> controlled με keyboardType='numeric'.",
+    "Κουμπί: <Pressable onPress> με pressed feedback και <Text> label μέσα.",
+    "Αν είναι λίστα από cards: τύλιξέ τα σε FlatList, όχι ScrollView."
+  ]}
+  checkpoints={[
+    "Κανένα γυμνό string — όλα σε <Text>.",
+    "Το κουμπί είναι Pressable με onPress + οπτικό feedback.",
+    "Η εικόνα έχει διαστάσεις και εμφανίζεται.",
+    "Επέλεξες σωστά ScrollView vs FlatList."
+  ]}
+  mistakes={[
+    "Γυμνό text μέσα σε <View>.",
+    "Να ψάχνεις onClick/hover/className.",
+    "Image χωρίς διαστάσεις (δεν φαίνεται).",
+    "Τεράστια λίστα σε ScrollView αντί για FlatList."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν χτίζεις σύνθετο UI μόνο με τα core components, χωρίς να ψάχνεις HTML/CSS αντίστοιχα."
+/>

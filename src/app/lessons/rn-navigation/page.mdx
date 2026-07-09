@@ -1,0 +1,229 @@
+# Navigation: πλοήγηση χωρίς URLs
+
+Στο web η πλοήγηση είναι δεδομένη: URLs, `<a href>`, browser history, ο router σου. Στο mobile **τίποτα από αυτά δεν υπάρχει out of the box** — δεν υπάρχει address bar, δεν υπάρχει back button του browser (το Android hardware back είναι άλλο πράγμα), και ο χρήστης περιμένει native transitions (slide, modal, tabs στο κάτω μέρος). Χρειάζεσαι βιβλιοθήκη. Το de-facto standard είναι το **React Navigation**· η Expo προσφέρει και το **Expo Router** (file-based, σαν Next.js) από πάνω του. Αυτό το μάθημα καλύπτει τα navigation patterns που περιμένει κάθε mobile app.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να διαλέγεις ανάμεσα σε **stack / tab / drawer** navigators,
+- να στήνεις navigation με **React Navigation** (και τι δίνει το Expo Router),
+- να περνάς **params** μεταξύ οθονών και να τα διαβάζεις typed,
+- να χειρίζεσαι **nested navigators** (tabs μέσα σε stack κ.λπ.),
+- να ρυθμίζεις **deep linking** ώστε ένα URL/notification να ανοίγει τη σωστή οθόνη,
+- να χειρίζεσαι το **Android hardware back** σωστά.
+
+## Γιατί χρειάζεσαι navigation library
+
+Ένα mobile app δεν είναι σελίδες με URLs — είναι **screens σε στοίβες** με native transitions και gestures (swipe-back στο iOS, hardware back στο Android). Η βιβλιοθήκη διαχειρίζεται:
+
+- τη **navigation state** (ποια οθόνη είναι πάνω, το ιστορικό),
+- τα **native transitions & gestures**,
+- τα **headers** (title, back button) και **tab bars**,
+- το **deep linking** (URL/notification → οθόνη).
+
+## Οι τρεις navigator τύποι
+
+| Navigator | UX | Πότε |
+|---|---|---|
+| **Stack** | Οθόνες στοιβάζονται· push/pop με slide· back button/swipe | Ροές με βάθος: List → Detail → Edit |
+| **Tab** | Σταθερή μπάρα (συνήθως κάτω)· εναλλαγή top-level περιοχών | Home / Search / Profile |
+| **Drawer** | Πλαϊνό μενού που ανοίγει με swipe/κουμπί | Δευτερεύουσα πλοήγηση, settings |
+
+Στην πράξη τα **συνδυάζεις**: ένα Tab navigator όπου κάθε tab περιέχει το δικό του Stack.
+
+## Stack navigator — το ψωμοτύρι
+
+```tsx
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { NavigationContainer } from "@react-navigation/native";
+
+type RootStackParamList = {
+  Products: undefined;
+  ProductDetail: { id: string };
+};
+
+const Stack = createNativeStackNavigator<RootStackParamList>();
+
+function App() {
+  return (
+    <NavigationContainer>
+      <Stack.Navigator>
+        <Stack.Screen name="Products" component={ProductsScreen} />
+        <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
+      </Stack.Navigator>
+    </NavigationContainer>
+  );
+}
+```
+
+Το `createNativeStackNavigator` χρησιμοποιεί τα **native** stack primitives της πλατφόρμας (γρήγορα transitions, σωστά gestures) — προτίμησέ το έναντι του παλιού JS stack.
+
+## Navigating & περνώντας params
+
+```tsx
+function ProductsScreen({ navigation }) {
+  return (
+    <Pressable onPress={() => navigation.navigate("ProductDetail", { id: "42" })}>
+      <Text>Άνοιξε προϊόν 42</Text>
+    </Pressable>
+  );
+}
+
+function ProductDetailScreen({ route }) {
+  const { id } = route.params; // typed αν έδωσες RootStackParamList
+  // ...fetch/render προϊόν id
+}
+```
+
+Το κάθε screen component παίρνει `navigation` (μέθοδοι: `navigate`, `push`, `goBack`, `popToTop`, `replace`) και `route` (`route.params`). Εναλλακτικά, από οποιοδήποτε nested component χρησιμοποιείς τα hooks **`useNavigation()`** και **`useRoute()`** αντί να περνάς props.
+
+> `navigate` vs `push`: το `navigate("X")` πάει στην X — αν υπάρχει ήδη στη στοίβα, **δεν** την ξαναπροσθέτει. Το `push("X")` βάζει **νέο** instance πάντα (χρήσιμο σε ροές τύπου «άνοιξε άλλο προϊόν από μέσα στο προϊόν»).
+
+## Nested navigators
+
+Το κλασικό production layout: **Tabs** στο root, με **Stack** μέσα σε κάθε tab.
+
+```tsx
+function HomeTab() {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen name="Feed" component={FeedScreen} />
+      <Stack.Screen name="Post" component={PostScreen} />
+    </Stack.Navigator>
+  );
+}
+
+function RootTabs() {
+  return (
+    <Tab.Navigator>
+      <Tab.Screen name="HomeTab" component={HomeTab} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
+    </Tab.Navigator>
+  );
+}
+```
+
+Έτσι, κάθε tab κρατά **το δικό του history**: πας βαθιά στο Home, αλλάζεις σε Profile και πίσω — το Home είναι ακόμα εκεί που το άφησες. Ακριβώς όπως περιμένει ένας χρήστης mobile.
+
+## Deep linking
+
+**Deep link** = ένα URL (ή notification) που ανοίγει το app **κατευθείαν σε συγκεκριμένη οθόνη με params**, όχι στην αρχική. Απαραίτητο για: push notifications, share links, email campaigns, universal links.
+
+```tsx
+const linking = {
+  prefixes: ["myapp://", "https://myapp.com"],
+  config: {
+    screens: {
+      ProductDetail: "product/:id", // myapp://product/42 → ProductDetail {id:"42"}
+    },
+  },
+};
+
+<NavigationContainer linking={linking}>{/* ... */}</NavigationContainer>;
+```
+
+Ορίζεις **prefixes** (custom scheme + universal link domain) και ένα mapping από paths σε screens/params. Το `product/:id` κάνει parse το `id` σαν param — ίδια ιδέα με web routing, αλλά η «διεύθυνση» έρχεται από έξω (link/notification), όχι από address bar.
+
+## Expo Router — file-based εναλλακτική
+
+Αν είσαι σε Expo, το **Expo Router** δίνει **file-system routing** πάνω από το React Navigation: κάθε αρχείο στο `app/` γίνεται route (`app/product/[id].tsx` → `/product/42`), με built-in deep linking και typed routes. Αν έρχεσαι από Next.js App Router, το mental model είναι σχεδόν ίδιο. Από κάτω τρέχει React Navigation — άρα οι έννοιες (stack/tab, params) είναι οι ίδιες.
+
+## Android hardware back
+
+Το Android έχει **φυσικό/gesture back**. Το React Navigation το συνδέει αυτόματα με το `goBack` του τρέχοντος stack. Αλλά σε ειδικές περιπτώσεις (π.χ. «είσαι σίγουρος; έχεις unsaved changes») το **παρεμποδίζεις** με το `BackHandler` API ή το `beforeRemove` event. Στο iOS δεν υπάρχει hardware back — μόνο swipe-back gesture και το header back button.
+
+<PredictOutput
+  title="navigate vs push"
+  code={`Είσαι στην οθόνη ProductDetail (id: 42).
+Πατάς 'σχετικό προϊόν' που καλεί:
+navigation.navigate("ProductDetail", { id: "99" })
+
+Τι γίνεται;`}
+  options={[
+    "Ανοίγει νέα οθόνη ProductDetail για το 99 πάνω από το 42",
+    "Επειδή ProductDetail υπάρχει ήδη στη στοίβα, το navigate μπορεί να ΜΗΝ ανοίξει νέα — μένεις/επιστρέφεις στο υπάρχον",
+    "Κρασάρει γιατί δεν επιτρέπεται ίδια οθόνη δύο φορές",
+    "Κάνει replace της 42 με 99"
+  ]}
+  correctOptionIndex={1}
+  answer="navigate σε υπάρχουσα route δεν κάνει πάντα push νέο instance — για νέο instance θες push"
+  explanation="navigate('X') πάει στην X αλλά αν το ίδιο route υπάρχει ήδη, δεν προσθέτει απαραίτητα νέο instance (ενημερώνει params/επιστρέφει). Για ροή 'άνοιξε άλλο προϊόν από μέσα σε προϊόν' θες push('ProductDetail', {id:'99'}) ώστε να στοιβαχτεί νέο instance και το back να γυρίσει στο 42."
+/>
+
+<Exercise
+  question="Θέλεις: bottom tabs (Home/Search/Profile), και μέσα στο Home ροή Feed → Post → Comments. Πώς το δομείς;"
+  options={[
+    "Ένα μόνο Stack με όλες τις οθόνες.",
+    "Tab navigator στο root· κάθε tab περιέχει το δικό του Stack navigator (nested).",
+    "Drawer navigator με όλες τις οθόνες.",
+    "Ξεχωριστό app ανά tab."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το production pattern: Tabs στο root για τις top-level περιοχές, και μέσα σε κάθε tab ένα Stack για το βάθος (Feed→Post→Comments). Έτσι κάθε tab κρατά το δικό του history — αλλάζεις tab και πίσω, βρίσκεις την οθόνη εκεί που την άφησες."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How does navigation work in a React Native app?»
+
+> There are no URLs or browser history, so I use a navigation library — React Navigation is the standard, and Expo Router adds file-based routing on top of it. The three building blocks are a stack navigator for depth like list to detail to edit, with native push/pop transitions and swipe-back; a tab navigator for top-level areas like Home, Search, Profile; and a drawer for side menus. In production I nest them — tabs at the root with a stack inside each tab so every tab keeps its own history. I move between screens with navigation.navigate or push and read route.params, or use the useNavigation and useRoute hooks from nested components, and I type the param list so params are checked. navigate reuses an existing route while push always adds a new instance. For deep links I configure prefixes and a path-to-screen map so a URL or push notification opens the right screen with params directly. And on Android I respect the hardware back button, intercepting it with BackHandler only when I need to confirm unsaved changes.
+
+<Flashcards
+  title="RN navigation — interview drills"
+  cards={[
+    {
+      question: "Γιατί χρειάζεσαι navigation library στο RN;",
+      answer: "Δεν υπάρχουν URLs/browser history/back button. Η lib διαχειρίζεται navigation state, native transitions & gestures (iOS swipe-back, Android hardware back), headers/tab bars, deep linking. Standard: React Navigation."
+    },
+    {
+      question: "Stack vs Tab vs Drawer;",
+      answer: "Stack: push/pop βάθος (List→Detail). Tab: σταθερή μπάρα, top-level περιοχές (Home/Search/Profile). Drawer: πλαϊνό μενού. Συνήθως nested: Tabs στο root, Stack μέσα σε κάθε tab."
+    },
+    {
+      question: "Πώς περνάς & διαβάζεις params;",
+      answer: "navigation.navigate('X', { id }) και route.params.id στην X. Ή hooks useNavigation()/useRoute(). Type με ParamList ώστε να είναι typed."
+    },
+    {
+      question: "navigate vs push;",
+      answer: "navigate('X'): πάει στην X· αν υπάρχει ήδη στη στοίβα δεν προσθέτει νέο instance. push('X'): πάντα νέο instance (π.χ. προϊόν→σχετικό προϊόν→…)."
+    },
+    {
+      question: "Τι είναι deep linking;",
+      answer: "URL ή notification που ανοίγει το app κατευθείαν σε συγκεκριμένη οθόνη+params (όχι home). Ορίζεις prefixes (scheme/domain) + path→screen mapping (product/:id). Απαραίτητο για notifications/share links."
+    },
+    {
+      question: "Expo Router vs React Navigation;",
+      answer: "Expo Router = file-based routing (app/product/[id].tsx) πάνω από το React Navigation, σαν Next.js App Router. Ίδιες έννοιες (stack/tab/params), απλώς routes ως αρχεία + built-in deep linking/typed routes."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Σχεδίασε τη navigation ενός e-shop app"
+  scenario="Δομήσε (concept-level) την πλοήγηση: bottom tabs (Shop/Cart/Profile), βάθος στο Shop (Categories→Products→ProductDetail), και ένα push notification 'η παραγγελία σου έφτασε' που ανοίγει το OrderDetail."
+  outcomes={[
+    "Να συνδυάζεις tab + stack navigators.",
+    "Να περνάς typed params.",
+    "Να ρυθμίζεις deep linking για notifications."
+  ]}
+  steps={[
+    "Root: Tab navigator (Shop / Cart / Profile).",
+    "Shop tab: Stack (Categories → Products → ProductDetail με { id }).",
+    "Type το ParamList ώστε το route.params.id να είναι typed.",
+    "Deep link config: order/:id → OrderDetail (prefixes myapp:// + https domain).",
+    "Χειρίσου Android hardware back στο Cart checkout (confirm αν άδειασμα).",
+    "Απόφαση: navigate ή push για 'σχετικά προϊόντα' μέσα από ProductDetail;"
+  ]}
+  checkpoints={[
+    "Κάθε tab κρατά ξεχωριστό history (nested stack).",
+    "Τα params είναι typed, όχι any.",
+    "Το notification order/:id ανοίγει το σωστό OrderDetail με id.",
+    "Το Android back συμπεριφέρεται σωστά (και interception όπου χρειάζεται)."
+  ]}
+  mistakes={[
+    "Ένα flat stack για τα πάντα (χάνεις per-tab history).",
+    "Untyped params (route.params any).",
+    "Καθόλου deep linking → τα notifications ανοίγουν πάντα home.",
+    "Να αγνοείς το Android hardware back."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν στήνεις nested tab+stack navigation, περνάς typed params, και ρυθμίζεις deep linking ώστε links/notifications να πάνε στη σωστή οθόνη."
+/>

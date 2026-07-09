@@ -1,0 +1,199 @@
+# Data, State & Offline
+
+Ένα mobile app ζει σε έναν εχθρικό κόσμο δικτύου: το σήμα πέφτει στο ασανσέρ, ο χρήστης μπαίνει σε flight mode, το 4G γίνεται 3G στη μέση ενός request. Σε αντίθεση με το web, όπου συνήθως υποθέτεις σταθερή σύνδεση, στο mobile η **offline-first** σκέψη είναι βασική. Αυτό το μάθημα καλύπτει data fetching, τοπική αποθήκευση (και τη διαφορά ασφαλούς vs απλής), state management σε mobile context, και το να κάνεις το app σου να δουλεύει όταν το δίκτυο σε εγκαταλείπει.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να κάνεις data fetching με server-state βιβλιοθήκη (React Query) στο RN,
+- να διαλέγεις σωστά **AsyncStorage** vs **SecureStore** vs SQLite/MMKV,
+- να χειρίζεσαι **network state** (online/offline) και retries,
+- να σχεδιάζεις **offline-first**: cache, optimistic updates, sync,
+- να διαχειρίζεσαι client/UI state (Zustand/Context) σε mobile,
+- να προσέχεις τη διαφορά app **foreground/background**.
+
+## Data fetching: ίδια βιβλιοθήκη, νέες παραδοχές
+
+Η καλή είδηση: το **React Query (TanStack Query)** δουλεύει στο RN ακριβώς όπως στο web — queries, caching, retries, `staleTime`, mutations. Ό,τι έμαθες στο React data-fetching μεταφέρεται.
+
+Οι νέες παραδοχές που πρέπει να προσθέσεις για mobile:
+- Το δίκτυο **θα** πέσει — retries & offline handling δεν είναι προαιρετικά.
+- Οι χρήστες βλέπουν **stale δεδομένα** συχνά (μπήκαν, βγήκαν, ξαναμπήκαν) — καλό caching + background refetch.
+- Η μπαταρία & το data plan μετράνε — μη κάνεις aggressive polling χωρίς λόγο.
+
+```tsx
+import { useQuery } from "@tanstack/react-query";
+
+function useProducts() {
+  return useQuery({
+    queryKey: ["products"],
+    queryFn: fetchProducts,
+    staleTime: 60_000,   // θεώρησέ το φρέσκο για 1 λεπτό
+    retry: 3,            // ξαναπροσπάθησε σε αποτυχία δικτύου
+  });
+}
+```
+
+Το React Query μπορεί να συνδεθεί με το **NetInfo** ώστε να κάνει pause/resume queries με βάση τη σύνδεση, και υποστηρίζει **persistence** του cache στο δίσκο για offline-first.
+
+## Storage: διάλεξε το σωστό
+
+Στο mobile έχεις πολλές επιλογές αποθήκευσης — και το να βάλεις κάτι ευαίσθητο σε λάθος μέρος είναι security bug:
+
+| Επιλογή | Τι είναι | Χρήση |
+|---|---|---|
+| **AsyncStorage** | Απλό async key-value (unencrypted) | UI prefs, cache, μη-ευαίσθητα flags |
+| **SecureStore** (`expo-secure-store`) | Κρυπτογραφημένο (Keychain iOS / Keystore Android) | **Tokens, credentials, secrets** |
+| **MMKV** | Πολύ γρήγορο sync key-value | High-perf cache, μεγάλος όγκος reads |
+| **SQLite** (`expo-sqlite`) | Τοπική relational βάση | Σύνθετα δεδομένα, offline queries, relations |
+
+> Κανόνας ασφάλειας: **ποτέ** auth tokens/passwords σε `AsyncStorage` (είναι plaintext, προσβάσιμο). Πάντα **SecureStore**. Αυτό είναι κλασικό interview/security-review finding.
+
+```tsx
+import * as SecureStore from "expo-secure-store";
+
+await SecureStore.setItemAsync("authToken", token); // κρυπτογραφημένο
+const token = await SecureStore.getItemAsync("authToken");
+```
+
+## Network state — ξέρε πότε είσαι offline
+
+Το **`@react-native-community/netinfo`** σου λέει αν υπάρχει σύνδεση και τι τύπου (wifi/cellular/none):
+
+```tsx
+import NetInfo from "@react-native-community/netinfo";
+
+const unsubscribe = NetInfo.addEventListener((state) => {
+  setIsOnline(state.isConnected && state.isInternetReachable);
+});
+```
+
+Με αυτό: δείχνεις offline banner, κάνεις pause requests, ή σειρώνεις actions για sync όταν επανέλθει το δίκτυο. Πρόσεξε: `isConnected` (υπάρχει interface) ≠ `isInternetReachable` (φτάνεις πραγματικά το internet) — μπορεί να είσαι σε wifi χωρίς internet.
+
+## Offline-first σχεδιασμός
+
+Το «offline-first» σημαίνει: το app δουλεύει **πρώτα** από τοπικά δεδομένα, και το δίκτυο είναι sync layer από πάνω.
+
+**Δομικά στοιχεία:**
+1. **Cache persistence** — αποθήκευσε το τελευταίο γνωστό state στο δίσκο (React Query persister / MMKV / SQLite). Ο χρήστης βλέπει δεδομένα αμέσως, ακόμη κι offline.
+2. **Optimistic updates** — όταν ο χρήστης κάνει action (π.χ. like), ενημέρωσε το UI **αμέσως**, στείλε το request στο παρασκήνιο, και κάνε rollback αν αποτύχει. Κρίσιμο για mobile: το δίκτυο είναι αργό, το UI πρέπει να νιώθει άμεσο.
+3. **Mutation queue / sync** — αν είναι offline, βάλε τα actions σε ουρά και κάνε sync όταν επανέλθει η σύνδεση.
+4. **Conflict handling** — τι γίνεται αν δύο συσκευές άλλαξαν το ίδιο πράγμα; (last-write-wins, ή server-authoritative merge — ίδιες έννοιες με distributed systems.)
+
+## Client/UI state σε mobile
+
+Ξεχώρισε (όπως στο web):
+- **Server state** → React Query (data από API, με caching/sync).
+- **Client/UI state** → local `useState`/reducer· για global (theme, auth, cart) → **Zustand** (ελαφρύ, δημοφιλές σε RN) ή Context.
+
+Το ίδιο δίδαγμα με το React context μάθημα: μη βάζεις server data σε global store χειροκίνητα — άσ' το στο React Query.
+
+## App lifecycle: foreground / background
+
+Σε αντίθεση με μια web σελίδα, ένα app **μπαίνει στο παρασκήνιο** (ο χρήστης αλλάζει app, κλειδώνει το τηλέφωνο) και επιστρέφει. Το **`AppState`** σου το λέει:
+
+```tsx
+import { AppState } from "react-native";
+
+AppState.addEventListener("change", (state) => {
+  if (state === "active") refetchOnResume(); // επέστρεψε → refresh
+});
+```
+
+Χρήσεις: refetch φρέσκων δεδομένων στο resume, pause timers/animations στο background, κλείδωμα με βιομετρικά όταν επιστρέφει. Το React Query έχει built-in `refetchOnAppFocus` λογική για αυτό.
+
+<PredictOutput
+  title="Πού αποθηκεύεις το auth token;"
+  code={`Μετά το login παίρνεις ένα JWT.
+Το αποθηκεύεις με:
+await AsyncStorage.setItem("token", jwt);
+
+Ποιο είναι το πρόβλημα;`}
+  options={[
+    "Κανένα — το AsyncStorage είναι ο σωστός τρόπος",
+    "Το AsyncStorage είναι unencrypted plaintext — tokens/credentials πρέπει να πάνε σε SecureStore (Keychain/Keystore)",
+    "Πρέπει να χρησιμοποιήσεις localStorage",
+    "Το JWT δεν αποθηκεύεται ποτέ στη συσκευή"
+  ]}
+  correctOptionIndex={1}
+  answer="Το AsyncStorage είναι plaintext — τα tokens πάνε σε SecureStore"
+  explanation="Το AsyncStorage αποθηκεύει unencrypted — σε rooted/jailbroken ή μέσω backups μπορεί να διαβαστεί. Auth tokens, passwords και secrets πάνε ΠΑΝΤΑ σε SecureStore (κρυπτογράφηση μέσω iOS Keychain / Android Keystore). Το AsyncStorage είναι για μη-ευαίσθητα (prefs, cache)."
+/>
+
+<Exercise
+  question="Θέλεις το app να δείχνει δεδομένα και να δέχεται likes ακόμη κι όταν πέφτει το δίκτυο. Ποιος συνδυασμός;"
+  options={[
+    "Τίποτα ειδικό — απλά fetch κάθε φορά· αν δεν υπάρχει δίκτυο, δείξε error.",
+    "Persist το cache (offline read) + optimistic updates + mutation queue που κάνει sync όταν επανέλθει το δίκτυο (NetInfo).",
+    "Αποθήκευσε τα πάντα σε global Context.",
+    "Κάνε polling κάθε δευτερόλεπτο για να μη χαθεί τίποτα."
+  ]}
+  correctOptionIndex={1}
+  explanation="Offline-first: persist το cache ώστε ο χρήστης να βλέπει τελευταία γνωστά δεδομένα offline· optimistic update ώστε το like να φαίνεται αμέσως· και mutation queue που κρατά τα offline actions και τα συγχρονίζει όταν το NetInfo δείξει ότι επανήλθε η σύνδεση. Polling κάθε δευτερόλεπτο σπαταλά μπαταρία/data και δεν λύνει το offline."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you handle data, storage, and offline in a React Native app?»
+
+> For server state I use React Query exactly like on the web — queries, caching, staleTime, retries, mutations — but with mobile assumptions baked in: the network will drop, so retries and offline handling aren't optional, and I persist the query cache to disk so the user sees last-known data instantly, even offline. For storage I pick deliberately: AsyncStorage for non-sensitive prefs and cache, MMKV for fast high-volume reads, SQLite for relational offline data, and crucially SecureStore for anything sensitive — auth tokens and credentials never go in AsyncStorage because it's plaintext. I watch connectivity with NetInfo, distinguishing an interface from actual internet reachability, to show offline UI and pause requests. For offline-first I combine persisted cache, optimistic updates so actions feel instant on slow networks, and a mutation queue that syncs when connectivity returns, with a conflict strategy on the server. Client and UI state stays local or in a light store like Zustand, separate from server state. And I use AppState to refetch on resume and pause work in the background, since unlike a web page an app constantly moves between foreground and background.
+
+<Flashcards
+  title="RN data, state & offline — interview drills"
+  cards={[
+    {
+      question: "React Query στο RN — τι αλλάζει από web;",
+      answer: "Ίδιο API (queries/cache/retries/mutations). Νέες παραδοχές: δίκτυο θα πέσει (retries+offline), συχνά stale δεδομένα (caching+background refetch), μπαταρία/data (όχι aggressive polling). Persist cache + NetInfo integration + refetchOnAppFocus."
+    },
+    {
+      question: "AsyncStorage vs SecureStore vs SQLite/MMKV;",
+      answer: "AsyncStorage: απλό async KV, unencrypted → prefs/cache. SecureStore: κρυπτογραφημένο (Keychain/Keystore) → tokens/secrets. MMKV: πολύ γρήγορο sync KV. SQLite: relational/offline queries. ΠΟΤΕ tokens σε AsyncStorage."
+    },
+    {
+      question: "Πώς ξέρεις αν είσαι offline;",
+      answer: "NetInfo (@react-native-community/netinfo): isConnected (interface) vs isInternetReachable (πραγματικά internet). Listener → offline banner, pause requests, sync στο resume. Wifi χωρίς internet = connected αλλά not reachable."
+    },
+    {
+      question: "Στοιχεία ενός offline-first app;",
+      answer: "1) Persist cache (offline read). 2) Optimistic updates (άμεσο UI, rollback σε fail). 3) Mutation queue → sync όταν επανέλθει δίκτυο. 4) Conflict handling (last-write-wins ή server-authoritative)."
+    },
+    {
+      question: "Server state vs client state σε mobile;",
+      answer: "Server state → React Query (API data + caching/sync). Client/UI state → useState/reducer, global (theme/auth/cart) → Zustand/Context. Μη βάζεις server data χειροκίνητα σε global store."
+    },
+    {
+      question: "Τι κάνει το AppState;",
+      answer: "Λέει αν το app είναι active/background/inactive. Χρήση: refetch στο resume, pause timers/animations στο background, biometric lock στην επιστροφή. Web σελίδα δεν έχει αυτό το lifecycle."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Σχεδίασε το data layer ενός offline-first app"
+  scenario="Notes app: ο χρήστης διαβάζει & γράφει σημειώσεις ακόμη κι offline, με sync όταν επανέλθει το δίκτυο, και ασφαλή αποθήκευση session. Σχεδίασέ το (concept-level)."
+  outcomes={[
+    "Να διαλέγεις σωστό storage ανά δεδομένο.",
+    "Να σχεδιάζεις offline read/write + sync.",
+    "Να χειρίζεσαι network & app lifecycle."
+  ]}
+  steps={[
+    "Session/token → SecureStore (κρυπτογραφημένο). Prefs → AsyncStorage.",
+    "Σημειώσεις → SQLite (ή persisted React Query cache) για offline read.",
+    "Γράψιμο offline: optimistic update + mutation queue.",
+    "NetInfo listener: όταν επανέλθει σύνδεση → flush την ουρά (sync).",
+    "Conflict: όρισε στρατηγική (server-authoritative merge ή last-write-wins).",
+    "AppState 'active' → refetch φρέσκα· background → lock με βιομετρικά."
+  ]}
+  checkpoints={[
+    "Token σε SecureStore, όχι AsyncStorage.",
+    "Το app διαβάζει & γράφει offline (persisted data + queue).",
+    "Το sync ενεργοποιείται από πραγματική επαναφορά δικτύου (NetInfo).",
+    "Υπάρχει σαφής conflict strategy."
+  ]}
+  mistakes={[
+    "Token/credentials σε AsyncStorage (plaintext).",
+    "Καθόλου offline handling — error σε κάθε drop.",
+    "Optimistic update χωρίς rollback σε αποτυχία.",
+    "Να αγνοείς isInternetReachable (wifi χωρίς internet)."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν σχεδιάζεις offline-first data layer με σωστό storage, optimistic updates + sync queue, και σεβασμό στο network & app lifecycle."
+/>

@@ -1,0 +1,168 @@
+# React Native Foundations
+
+Ξέρεις ήδη React. Το **React Native** σου δίνει να χτίσεις **πραγματικά native apps** για iOS και Android με τα ίδια εργαλεία — components, JSX, hooks, props, state. Η μεγάλη διαφορά: δεν renderάρεις σε DOM. Δεν υπάρχει `<div>`, δεν υπάρχει CSS αρχείο, δεν υπάρχει browser. Αυτό το μάθημα είναι το mental shift από web σε mobile — τι κρατάς, τι πετάς, και πώς πραγματικά τρέχει ο κώδικάς σου σε ένα κινητό.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς τι είναι το React Native και πώς διαφέρει από web React,
+- να καταλαβαίνεις πώς ο JS κώδικάς σου ελέγχει **native** UI (το bridge/JSI),
+- να διαλέγεις **Expo** vs **bare** workflow και να ξέρεις γιατί,
+- να ξέρεις τι μεταφέρεται από τη γνώση σου σε React και τι όχι,
+- να στήνεις νοερά ένα RN project και να τρέχεις σε συσκευή/emulator.
+
+## Τι είναι (και τι ΔΕΝ είναι) το React Native
+
+Το React Native **δεν** είναι μια ιστοσελίδα μέσα σε app (αυτό είναι WebView / Cordova). Ούτε «μεταγλωττίζει» JavaScript σε Swift/Kotlin.
+
+Αντ' αυτού: γράφεις components σε JavaScript/TypeScript, και το RN τα αντιστοιχίζει σε **πραγματικά native widgets** της πλατφόρμας. Ένα `<View>` γίνεται `UIView` στο iOS και `android.view.ViewGroup` στο Android. Ένα `<Text>` γίνεται `UILabel` / `TextView`. Ο χρήστης βλέπει native κουμπιά, native scrolling, native πληκτρολόγιο — όχι HTML.
+
+> Το mental model: **γράφεις React· η React Native ζωγραφίζει native.** Ο ίδιος declarative τρόπος (UI = f(state)), αλλά ο «renderer» δεν είναι ο browser — είναι το iOS/Android.
+
+## Πώς τρέχει πραγματικά: JS thread + native, με μια γέφυρα
+
+Μια RN εφαρμογή τρέχει τον JavaScript σου σε ένα **JS engine** (σήμερα το **Hermes**, φτιαγμένο από τη Meta) σε ξεχωριστό thread. Το native UI ζει σε άλλο thread (το UI/main thread). Οι δύο κόσμοι επικοινωνούν:
+
+- **Παλιό μοντέλο (bridge):** JS και native έστελναν ασύγχρονα **serialized JSON μηνύματα** μέσα από μια γέφυρα. Λειτουργικό, αλλά το πέρασμα μηνυμάτων μπορούσε να γίνει bottleneck (π.χ. σε γρήγορο scrolling/animations).
+- **Νέα αρχιτεκτονική (JSI + Fabric + TurboModules):** το JS καλεί **απευθείας** C++ αναφορές σε native αντικείμενα, σύγχρονα όπου χρειάζεται, χωρίς JSON serialization. Πιο γρήγορο, λιγότερο lag.
+
+Γιατί σε νοιάζει; Επειδή εξηγεί δύο πράγματα: (1) γιατί βαριοί υπολογισμοί στο JS thread «κολλάνε» το UI, και (2) γιατί κάποια features χρειάζονται **native module** — κώδικα στη native πλατφόρμα που εκθέτει λειτουργικότητα στο JS.
+
+## Τι κρατάς από τη React γνώση σου
+
+Σχεδόν όλο το μοντέλο μεταφέρεται:
+
+| Ίδιο με web React | Διαφορετικό στο RN |
+|---|---|
+| Components, JSX, props, `children` | Χωρίς DOM: `<View>` αντί `<div>`, `<Text>` αντί `<p>` |
+| `useState`, `useEffect`, custom hooks | Χωρίς CSS files: styling με JS objects (`StyleSheet`) |
+| One-way data flow, composition | Χωρίς `<a href>`: navigation με βιβλιοθήκη (React Navigation) |
+| Reconciliation, keys, re-renders | Χωρίς `className`: `style={styles.x}` |
+| Context, reducers, state management | Events: `onPress` αντί `onClick`· δεν υπάρχει hover |
+
+Το κρίσιμο σημείο για συνέντευξη: **το component/hooks μοντέλο είναι ταυτόσημο**· αλλάζει το **primitive vocabulary** (τα building blocks) και το **styling/layout** (όλα Flexbox σε JS).
+
+## Expo vs bare — ποιο workflow
+
+Δύο τρόποι να ξεκινήσεις ένα RN project:
+
+- **Expo (managed):** ένα framework/toolchain πάνω από το RN. Σου δίνει έτοιμο build system, over-the-air updates, ένα τεράστιο σετ από native APIs (camera, location, notifications) χωρίς να αγγίξεις Xcode/Android Studio, και το **Expo Go** app για instant preview στο τηλέφωνό σου. Σήμερα ο **προτεινόμενος** τρόπος για τους περισσότερους — και το ίδιο το RN documentation προτείνει framework (Expo) αντί για σκέτο RN.
+- **Bare / prebuild:** έχεις πλήρη πρόσβαση στα native `ios/` και `android/` folders. Το διαλέγεις όταν χρειάζεσαι custom native code που δεν καλύπτεται, ή πολύ ειδικά native builds. Το Expo πλέον υποστηρίζει **config plugins** και **prebuild** ώστε να προσθέτεις native modules χωρίς να «βγεις» εντελώς από το managed workflow.
+
+> Πρακτικός κανόνας: **ξεκίνα με Expo.** «Βγαίνεις» (prebuild/eject) μόνο όταν σε μπλοκάρει συγκεκριμένη native ανάγκη — όχι προληπτικά.
+
+## Πώς μοιάζει το πρώτο σου component
+
+```tsx
+import { View, Text, StyleSheet } from "react-native";
+
+export default function App() {
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Γεια σου Mobile 👋</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, justifyContent: "center", alignItems: "center" },
+  title: { fontSize: 24, fontWeight: "600" },
+});
+```
+
+Δες τι λείπει σε σχέση με web: κανένα `<div>`, κανένα `className`, κανένα `.css`. Κάθε κείμενο **πρέπει** να μπει μέσα σε `<Text>` (δεν βάζεις γυμνό string μέσα σε `<View>`). Το layout είναι Flexbox — και το `flex: 1` σημαίνει «γέμισε τον διαθέσιμο χώρο».
+
+## Development loop
+
+- **Metro** είναι ο JS bundler του RN (ανάλογο του Vite/webpack για web).
+- **Fast Refresh** κρατά το state σου ενώ αλλάζεις κώδικα — σαν HMR στο web.
+- Τρέχεις σε **iOS Simulator** (μόνο macOS), **Android Emulator**, ή σε **πραγματική συσκευή** μέσω Expo Go / dev build. Δοκίμασε πάντα σε πραγματική συσκευή πριν το release — performance και gestures διαφέρουν από τον emulator.
+
+<PredictOutput
+  title="Πού τρέχει ο κώδικας;"
+  code={`Γράφεις ένα RN component και βάζεις έναν βαρύ υπολογισμό
+(sync loop 500ms) μέσα σε ένα onPress handler.
+Τι θα παρατηρήσει ο χρήστης;`}
+  options={[
+    "Τίποτα — τρέχει σε background thread",
+    "Το UI 'παγώνει' για ~500ms γιατί ο JS μπλοκάρει το JS thread",
+    "Το app κρασάρει με out-of-memory",
+    "Το native thread το τρέχει, άρα το JS μένει ελεύθερο"
+  ]}
+  correctOptionIndex={1}
+  answer="Το UI παγώνει — ο βαρύς sync κώδικας μπλοκάρει το JS thread"
+  explanation="Ο JS σου τρέχει σε ΕΝΑ JS thread. Ένας σύγχρονος βαρύς υπολογισμός τον μπλοκάρει, οπότε δεν προλαβαίνει να στείλει updates στο UI — animations/gestures κολλάνε. Λύση: σπάσε τη δουλειά, χρησιμοποίησε async, ή σπρώξ' την σε native module/worker. Αυτός είναι κι ο λόγος που η νέα αρχιτεκτονική (JSI) βοηθά στην απόδοση."
+/>
+
+<Exercise
+  question="Ποια πρόταση περιγράφει σωστά το React Native;"
+  options={[
+    "Τυλίγει την ιστοσελίδα σου σε ένα WebView.",
+    "Μεταγλωττίζει τη JavaScript σε Swift και Kotlin.",
+    "Τρέχει JS που ελέγχει πραγματικά native widgets της πλατφόρμας μέσω μιας γέφυρας (bridge/JSI).",
+    "Είναι απλώς η React με άλλο όνομα — τρέχει στον browser."
+  ]}
+  correctOptionIndex={2}
+  explanation="Το RN δεν είναι WebView ούτε cross-compiler. Ο JS/TS κώδικάς σου τρέχει σε JS engine (Hermes) και ελέγχει native views (UIView/ViewGroup) μέσω bridge (παλιό) ή JSI (νέα αρχιτεκτονική). Ο χρήστης βλέπει πραγματικά native στοιχεία, όχι HTML."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «What is React Native and how does it differ from React on the web?»
+
+> React Native lets me build genuinely native iOS and Android apps using the same React model — components, JSX, hooks, props, one-way data flow. The difference is the render target: there's no DOM. Instead of divs and CSS, I compose native primitives like View and Text, and my JavaScript controls real native widgets — a View becomes a UIView on iOS and a ViewGroup on Android. My JS runs on a JS engine, Hermes, on its own thread, and talks to the native UI thread. The old architecture passed serialized JSON across a bridge asynchronously, which could bottleneck; the new architecture — JSI with Fabric and TurboModules — calls native directly from JS through C++ references, so it's faster and more synchronous. Practically, the component and hooks model transfers one-to-one; what changes is the primitive vocabulary, styling which is all Flexbox in JS objects, and navigation which needs a library. For most projects I'd start with Expo — it gives me the build system, OTA updates, and a huge set of native APIs without touching Xcode — and only go bare when a specific native need forces it.
+
+<Flashcards
+  title="React Native foundations — interview drills"
+  cards={[
+    {
+      question: "Το RN είναι WebView; Μεταγλωττίζει JS σε Swift/Kotlin;",
+      answer: "Όχι σε τίποτα από τα δύο. Ο JS τρέχει σε engine (Hermes) και ελέγχει πραγματικά native widgets μέσω bridge/JSI. Ο χρήστης βλέπει native UI, όχι HTML."
+    },
+    {
+      question: "bridge (παλιό) vs JSI/Fabric/TurboModules (νέο);",
+      answer: "Παλιό: JS↔native με ασύγχρονα serialized JSON μηνύματα (bottleneck σε γρήγορο UI). Νέο: JS καλεί απευθείας native μέσω C++ references, σύγχρονα, χωρίς JSON — πιο γρήγορο."
+    },
+    {
+      question: "Τι μεταφέρεται από web React και τι αλλάζει;",
+      answer: "Ίδιο: components/JSX/props/hooks/one-way flow/reconciliation. Αλλάζει: primitives (View/Text αντί div/p), styling (StyleSheet JS objects, όχι CSS), navigation (library), events (onPress)."
+    },
+    {
+      question: "Expo vs bare — ποιο και πότε;",
+      answer: "Expo (managed): default — build system, OTA updates, native APIs χωρίς Xcode/Android Studio, Expo Go preview. Bare/prebuild: όταν χρειάζεσαι custom native code που δεν καλύπτεται. Ξεκίνα Expo, βγες μόνο αν σε μπλοκάρει native ανάγκη."
+    },
+    {
+      question: "Τι είναι το Metro και το Hermes;",
+      answer: "Metro: ο JS bundler του RN (ανάλογο Vite/webpack). Hermes: το JS engine που τρέχει τον κώδικά σου στη συσκευή, βελτιστοποιημένο για mobile (γρήγορο startup, μικρό memory)."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Στήσε το mental model ενός RN app"
+  scenario="Πάρε μια απλή web React ιδέα (π.χ. λίστα με ένα κουμπί) και ξανασκέψου την ως React Native app: ποια primitives, ποιο styling, πώς τρέχει."
+  outcomes={[
+    "Να αντιστοιχίζεις web primitives (div/p/button) σε RN (View/Text/Pressable).",
+    "Να εξηγείς τη ροή JS thread → native UI.",
+    "Να δικαιολογείς Expo vs bare."
+  ]}
+  steps={[
+    "Γράψε ένα component μόνο με View/Text — χωρίς div/className.",
+    "Αντικατέστησε το CSS με ένα StyleSheet.create object.",
+    "Εντόπισε ποια features θα χρειάζονταν native module (π.χ. camera).",
+    "Αποφάσισε Expo ή bare και δικαιολόγησέ το.",
+    "Περίγραψε τι γίνεται όταν βαρύς κώδικας τρέχει στο JS thread."
+  ]}
+  checkpoints={[
+    "Κάθε κείμενο είναι μέσα σε <Text> (όχι γυμνό string σε <View>).",
+    "Το styling είναι JS object, όχι CSS αρχείο.",
+    "Εξηγείς γιατί το JS thread μπορεί να 'παγώσει' το UI.",
+    "Η επιλογή Expo/bare έχει συγκεκριμένο λόγο."
+  ]}
+  mistakes={[
+    "Να νομίζεις ότι το RN είναι WebView ή ότι 'μεταγλωττίζει' σε Swift/Kotlin.",
+    "Να βάζεις γυμνό text μέσα σε <View> (σπάει).",
+    "Να ψάχνεις CSS αρχεία / className / hover.",
+    "Να ξεκινάς bare 'για ασφάλεια' ενώ το Expo κάλυπτε τα πάντα."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν εξηγείς ότι γράφεις React αλλά renderάρεις native, ξέρεις τη ροή JS↔native, και διαλέγεις Expo/bare με λόγο."
+/>
