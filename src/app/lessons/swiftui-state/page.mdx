@@ -1,0 +1,280 @@
+# State & Data Flow
+
+Στο προηγούμενο μάθημα το UI ήταν **στατικό**. Τώρα το κάνουμε ζωντανό. Το SwiftUI, όπως το React και το Compose, στηρίζεται στην αρχή **UI = f(state)**: δεν αλλάζεις το UI με το χέρι — αλλάζεις την **κατάσταση**, και το framework ξαναϋπολογίζει τα views που εξαρτώνται από αυτήν. Το κλειδί είναι να ξέρεις **ποιος κατέχει** κάθε κομμάτι κατάστασης και **πώς ρέει** προς τα views.
+
+Θα δούμε τα property wrappers που ορίζουν αυτό το μοντέλο: `@State`, `@Binding`, το σύγχρονο `@Observable` (Observation framework, iOS 17+) και `@Environment`.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να καταλαβαίνεις το declarative state model (`UI = f(state)`),
+- να κατέχεις τοπική κατάσταση view με `@State`,
+- να μοιράζεσαι mutable κατάσταση προς τα κάτω με `@Binding` (state hoisting),
+- να μοντελοποιείς πιο σύνθετη κατάσταση με `@Observable` κλάσεις,
+- να διαχέεις shared κατάσταση χωρίς prop-drilling με `@Environment`,
+- να ξέρεις πού πρέπει να «ζει» κάθε κατάσταση (single source of truth).
+
+## Το declarative state model
+
+Στο SwiftUI **δεν** γράφεις «όταν αλλάξει το x, ενημέρωσε το label». Δηλώνεις ότι το label **παράγεται** από το x. Όταν το x αλλάξει, το SwiftUI ξανατρέχει το `body` και ενημερώνει μόνο ό,τι χρειάζεται:
+
+```swift
+struct CounterView: View {
+    @State private var count = 0
+
+    var body: some View {
+        VStack {
+            Text("Μετρητής: \(count)")   // παράγεται από το count
+            Button("Αύξηση") { count += 1 }   // αλλάζει το state
+        }
+    }
+}
+```
+
+Πατάς το κουμπί → αλλάζει το `count` → το SwiftUI ξαναϋπολογίζει το `body` → το `Text` δείχνει τη νέα τιμή. **Ποτέ** δεν αγγίζεις το `Text` άμεσα.
+
+## `@State` — τοπική κατάσταση ενός view
+
+Το `@State` δηλώνει ότι ένα view **κατέχει** ένα κομμάτι mutable κατάστασης. Επειδή τα views είναι structs (πετιούνται & ξαναφτιάχνονται συνέχεια), το SwiftUI αποθηκεύει την πραγματική τιμή **έξω** από το struct και τη διατηρεί ανάμεσα στα re-renders. Όταν αλλάζει, ενεργοποιεί re-render.
+
+```swift
+@State private var isOn = false
+@State private var text = ""
+```
+
+> Κανόνες: το `@State` είναι **`private`** (ανήκει σε αυτό το view, κανείς άλλος) και για **απλή, τοπική** κατάσταση (toggle, τιμή ενός field, ποιο tab είναι επιλεγμένο). Για κατάσταση που μοιράζεται ή έχει λογική, θα δούμε `@Observable` παρακάτω.
+
+## `@Binding` — state hoisting προς τα κάτω
+
+Τι γίνεται όταν ένα **child** view πρέπει να **διαβάζει και να γράφει** κατάσταση που κατέχει ο **parent**; Δεν αντιγράφεις την τιμή (θα ξεσυγχρονιστεί). Περνάς **`@Binding`** — μια αναφορά two-way στην πηγή:
+
+```swift
+struct ToggleRow: View {
+    let label: String
+    @Binding var isOn: Bool   // δεν κατέχει την τιμή — δείχνει στην πηγή
+
+    var body: some View {
+        Toggle(label, isOn: $isOn)
+    }
+}
+
+struct SettingsView: View {
+    @State private var notifications = true   // ο parent ΚΑΤΕΧΕΙ την τιμή
+
+    var body: some View {
+        ToggleRow(label: "Ειδοποιήσεις", isOn: $notifications)
+        //                                       ↑ το $ φτιάχνει binding στο @State
+    }
+}
+```
+
+- Το **`$`** μπροστά από ένα `@State`/`@Observable` property δίνει το **binding** (την two-way αναφορά).
+- Ο parent είναι ο **single source of truth**· το child απλώς διαβάζει/γράφει μέσω binding.
+- Αυτό είναι **state hoisting** + **unidirectional data flow**: η κατάσταση ζει ψηλά, τα events ρέουν πάνω, τα δεδομένα ρέουν κάτω — ίδια αρχή με React/Compose.
+
+## `@Observable` — reference-type κατάσταση με λογική
+
+Για κατάσταση με πολλά πεδία και λογική (ένα view model, ένα cart, ένα session) φτιάχνεις **class** με το macro **`@Observable`** (Observation framework, iOS 17+, αντικατέστησε το παλιό `ObservableObject`/`@Published`):
+
+```swift
+import Observation
+
+@Observable
+final class CartModel {
+    var items: [Product] = []
+    var isLoading = false
+
+    var total: Double { items.reduce(0) { $0 + $1.price } }   // computed
+
+    func add(_ p: Product) { items.append(p) }
+}
+```
+
+Το χρησιμοποιείς σε ένα view. Το SwiftUI **παρακολουθεί αυτόματα** ποια πεδία διαβάζει το `body` και ξανα-renderάρει **μόνο** όταν αλλάξει ένα πεδίο που όντως χρησιμοποιείς:
+
+```swift
+struct CartView: View {
+    @State private var cart = CartModel()   // το view κατέχει το model
+
+    var body: some View {
+        VStack {
+            Text("Σύνολο: €\(cart.total, specifier: "%.2f")")
+            List(cart.items) { Text($0.title) }
+        }
+    }
+}
+```
+
+> **Γιατί @Observable αντί για ObservableObject:** το νέο Observation framework κάνει **fine-grained tracking** — το view ξανα-renderάρει μόνο για τα πεδία που διαβάζει, όχι για κάθε αλλαγή του object. Λιγότερα περιττά re-renders, λιγότερο boilerplate (κανένα `@Published` σε κάθε property).
+
+## Πώς διαλέγεις wrapper όταν κρατάς ένα model
+
+- **`@State private var model = FooModel()`** — αυτό το view **δημιουργεί & κατέχει** το model.
+- **`@Bindable var model: FooModel`** — έχεις ήδη ένα `@Observable` model και θέλεις να φτιάξεις **bindings** στα πεδία του (`$model.name` σε ένα TextField).
+- Απλό pass-down χωρίς binding: απλώς περνάς το `model` ως κανονικό property.
+
+## `@Environment` — shared κατάσταση χωρίς prop-drilling
+
+Όταν πολλά, βαθιά views χρειάζονται το **ίδιο** πράγμα (theme, auth session, ρυθμίσεις), το να το περνάς χειροκίνητα σε κάθε επίπεδο είναι **prop-drilling**. Το `@Environment` το διαχέει στο δέντρο — όποιο view το χρειάζεται, το ζητά:
+
+```swift
+@Observable class Session { var user: User? }
+
+// Στη ρίζα:
+ContentView()
+    .environment(session)
+
+// Οποιοδήποτε βαθύ view:
+struct ProfileButton: View {
+    @Environment(Session.self) private var session
+    var body: some View {
+        Text(session.user?.name ?? "Guest")
+    }
+}
+```
+
+Το SwiftUI έχει και built-in environment values: `@Environment(\.colorScheme)` (light/dark), `@Environment(\.dismiss)` (κλείσε το τρέχον screen), κ.ά.
+
+## Single source of truth — πού ζει κάθε κατάσταση;
+
+Ο πιο συχνός λόγος για UI bugs είναι **διπλή κατάσταση** που ξεσυγχρονίζεται. Ο κανόνας:
+
+- Κάθε κομμάτι κατάστασης έχει **έναν** ιδιοκτήτη (single source of truth).
+- Τοπικό & απλό → `@State` σε αυτό το view.
+- Πρέπει child να το γράφει → κράτα το στον parent, πέρασε `@Binding`.
+- Μοιράζεται από πολλά, με λογική → `@Observable` model (και `@Environment` αν είναι πολύ διάχυτο).
+- **Μην** αντιγράφεις κατάσταση σε πολλά views· παρήγαγε ό,τι χρειάζεσαι με computed properties.
+
+<PredictOutput
+  title="Ποιος κατέχει το state;"
+  code={`struct Child: View {
+    @Binding var count: Int
+    var body: some View {
+        Button("+") { count += 1 }
+    }
+}
+struct Parent: View {
+    @State private var count = 0
+    var body: some View {
+        VStack {
+            Text("\\(count)")
+            Child(count: $count)
+        }
+    }
+}
+// Πατάς το + στο Child. Τι δείχνει το Text του Parent;`}
+  options={[
+    "Μένει 0 — το Child έχει δικό του αντίγραφο",
+    "Ανεβαίνει (1, 2, 3…) — το Child γράφει στο ίδιο state μέσω binding",
+    "Crash",
+    "Δείχνει nil"
+  ]}
+  correctOptionIndex={1}
+  answer="Ανεβαίνει"
+  explanation="Το count ανήκει στον Parent (@State). Ο Parent περνά $count (binding) στο Child, οπότε το @Binding var count στο Child ΔΕΝ είναι αντίγραφο — είναι two-way αναφορά στην ίδια πηγή. Όταν το Child κάνει count += 1, αλλάζει το state του Parent, το body του Parent ξανατρέχει, και το Text ενημερώνεται. Αυτό είναι state hoisting."
+/>
+
+<PredictOutput
+  title="@Observable fine-grained tracking"
+  code={`@Observable class M { var a = 0; var b = 0 }
+// Ένα view διαβάζει ΜΟΝΟ το model.a στο body του.
+// Αλλάζεις το model.b. Ξανα-renderάρει αυτό το view;`}
+  options={[
+    "Ναι, πάντα — κάθε αλλαγή του object ξανα-renderάρει",
+    "Όχι — το Observation κάνει fine-grained tracking· το view παρακολουθεί μόνο το a που διαβάζει",
+    "Crash",
+    "Μόνο αν το b είναι @Published"
+  ]}
+  correctOptionIndex={1}
+  answer="Όχι"
+  explanation="Το Observation framework (@Observable) παρακολουθεί σε επίπεδο property ποια πεδία διαβάζει το body. Αφού αυτό το view διαβάζει μόνο το a, αλλαγή στο b ΔΕΝ το ξανα-renderάρει. (Στο παλιό ObservableObject κάθε @Published αλλαγή ενημέρωνε όλους τους subscribers, ακόμα κι αν δεν χρησιμοποιούσαν το πεδίο.) Το @Published δεν υπάρχει καν στο @Observable μοντέλο."
+/>
+
+<Exercise
+  question="Πότε χρησιμοποιείς @Binding αντί για @State;"
+  options={[
+    "Πάντα — το @Binding αντικαθιστά το @State.",
+    "Όταν ένα child view πρέπει να ΔΙΑΒΑΖΕΙ ΚΑΙ ΝΑ ΓΡΑΦΕΙ κατάσταση που κατέχει ο parent — περνάς two-way αναφορά αντί για αντίγραφο.",
+    "Όταν η κατάσταση αποθηκεύεται στο disk.",
+    "Μόνο για booleans."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το @State σημαίνει «αυτό το view ΚΑΤΕΧΕΙ την τιμή». Το @Binding σημαίνει «δεν την κατέχω — δείχνω σε μια πηγή που ανήκει αλλού και μπορώ να τη διαβάσω/γράψω». Το χρησιμοποιείς όταν ένας parent κρατά την αλήθεια (single source of truth) και θέλει ένα child να την τροποποιεί, περνώντας του $value. Έτσι δεν δημιουργείται διπλή, ξεσυγχρονισμένη κατάσταση."
+/>
+
+<Exercise
+  question="Τι πρόβλημα λύνει το @Environment;"
+  options={[
+    "Κάνει τα views πιο γρήγορα να renderάρουν.",
+    "Prop-drilling: διαχέει shared κατάσταση (theme, session) σε βαθιά views χωρίς να την περνάς χειροκίνητα σε κάθε ενδιάμεσο επίπεδο.",
+    "Αποθηκεύει δεδομένα μόνιμα.",
+    "Αντικαθιστά το async/await."
+  ]}
+  correctOptionIndex={1}
+  explanation="Όταν πολλά βαθιά-φωλιασμένα views χρειάζονται το ίδιο αντικείμενο (auth session, theme, ρυθμίσεις), το να το περνάς ως property σε κάθε ενδιάμεσο view είναι κουραστικό prop-drilling. Το @Environment το τοποθετεί στο δέντρο μία φορά (.environment(...)) και όποιο view το χρειάζεται το ζητά κατευθείαν με @Environment(Type.self). Δεν έχει σχέση με persistence ή performance."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How does state and data flow work in SwiftUI?»
+
+> SwiftUI is declarative: the UI is a function of state. I never mutate views directly — I change state, and the framework re-evaluates the affected `body`. For a view's own simple, local state I use `@State`, kept private because the view owns it. When a child needs to read and write state the parent owns, I hoist the state up and pass a `@Binding` with the `$` prefix, so the parent stays the single source of truth and data flows one way — events up, data down. For richer state with logic I model it as an `@Observable` class from the Observation framework; SwiftUI tracks exactly which properties a view reads and only re-renders for those, which is finer-grained and less boilerplate than the old `ObservableObject`/`@Published`. And when many deep views need the same thing — a session or theme — I put it in the `@Environment` instead of prop-drilling. The rule underneath all of it is single source of truth: every piece of state has exactly one owner, and I derive everything else with computed properties.
+
+<Flashcards
+  title="SwiftUI state — interview drills"
+  cards={[
+    {
+      question: "Τι είναι το @State και γιατί private;",
+      answer: "Τοπική mutable κατάσταση που ΚΑΤΕΧΕΙ ένα view. private γιατί ανήκει αποκλειστικά σε αυτό. Το SwiftUI την κρατά έξω από το struct ώστε να επιβιώνει ανάμεσα στα re-renders."
+    },
+    {
+      question: "Τι είναι το @Binding και το $;",
+      answer: "@Binding = two-way αναφορά σε κατάσταση που ανήκει αλλού (όχι αντίγραφο). Το $ μπροστά από @State/@Observable property φτιάχνει το binding. Χρήση: state hoisting προς child."
+    },
+    {
+      question: "@Observable αντί για τι, και τι κερδίζεις;",
+      answer: "Αντικαθιστά ObservableObject/@Published. Fine-grained tracking: το view ξανα-renderάρει μόνο για τα πεδία που όντως διαβάζει — λιγότερα re-renders, λιγότερο boilerplate."
+    },
+    {
+      question: "Πότε @State model vs @Bindable;",
+      answer: "@State private var model = FooModel() → το view δημιουργεί/κατέχει το model. @Bindable var model → έχεις ήδη @Observable model και θες bindings στα πεδία του ($model.name)."
+    },
+    {
+      question: "Τι λύνει το @Environment;",
+      answer: "Prop-drilling: διαχέει shared κατάσταση (session/theme) σε βαθιά views χωρίς χειροκίνητο πέρασμα. .environment(x) στη ρίζα, @Environment(X.self) όπου χρειάζεται."
+    },
+    {
+      question: "Ο κανόνας single source of truth;",
+      answer: "Κάθε κομμάτι state έχει ΕΝΑΝ ιδιοκτήτη. Μην αντιγράφεις state σε πολλά views (ξεσυγχρονίζεται) — παρήγαγε ό,τι θες με computed properties."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Κάνε το product screen ζωντανό με state"
+  scenario="Πάρε τη στατική οθόνη προϊόντων του προηγούμενου μαθήματος και βάλε της κατάσταση: ένα cart που μεγαλώνει, ένα search field, και ένα detail που τροποποιεί κοινό state."
+  outcomes={[
+    "Να διαλέγεις σωστά @State / @Binding / @Observable.",
+    "Να κάνεις state hoisting με @Binding σε child views.",
+    "Να κρατάς single source of truth χωρίς διπλή κατάσταση."
+  ]}
+  steps={[
+    "Φτιάξε @Observable final class CartModel με items: [Product] και computed total.",
+    "Στο root view κράτα το cart με @State private var cart = CartModel().",
+    "Πρόσθεσε @State private var query = '' και ένα TextField(text: $query) που φιλτράρει τη λίστα (computed filtered).",
+    "Φτιάξε ένα child QuantityStepper με @Binding var qty: Int και δοκίμασέ το με $ από τον parent.",
+    "Πέρασε το cart ή μια session σε βαθύ view μέσω @Environment αντί για prop-drilling."
+  ]}
+  checkpoints={[
+    "Κάθε κομμάτι state έχει έναν σαφή ιδιοκτήτη (single source of truth).",
+    "Το child που τροποποιεί κοινό state παίρνει @Binding ($value), όχι αντίγραφο.",
+    "Το φιλτραρισμένο αποτέλεσμα είναι computed, όχι δεύτερη αποθηκευμένη λίστα.",
+    "Χρησιμοποιείς @Observable για το model με λογική, όχι σκόρπια @State."
+  ]}
+  mistakes={[
+    "Να αντιγράφεις μια τιμή σε child με @State αντί για @Binding (ξεσυγχρονίζεται).",
+    "Να κρατάς παράγωγα δεδομένα ως ξεχωριστό state αντί για computed property.",
+    "Να κάνεις @State μη-private / να το μοιράζεσαι λάθος.",
+    "Να περνάς το ίδιο αντικείμενο χειροκίνητα σε 5 επίπεδα αντί για @Environment."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν αλλάζεις μόνο κατάσταση (ποτέ views άμεσα), διαλέγεις σωστά ανάμεσα σε @State/@Binding/@Observable/@Environment, και κάθε δεδομένο έχει έναν μοναδικό ιδιοκτήτη."
+/>

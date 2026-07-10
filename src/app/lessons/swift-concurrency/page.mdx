@@ -1,0 +1,254 @@
+# Concurrency (async/await & actors)
+
+Κάθε iOS app κάνει async δουλειά: network calls, φόρτωμα εικόνων, διάβασμα από disk. Αν αυτά έτρεχαν στο **main thread**, το UI θα «κόλλαγε» (freeze). Παλιά η Swift το έλυνε με **completion handlers** (nested callbacks — το «pyramid of doom»). Από τη Swift 5.5 υπάρχει το μοντέλο **async/await**, structured concurrency και **actors** — γραμμικός κώδικας που διαβάζεται σαν σύγχρονος, αλλά με εγγυήσεις ασφάλειας από τον compiler.
+
+Αν ξέρεις JS/TS async/await ή Kotlin coroutines, η βάση θα σου φανεί οικεία. Η μεγάλη διαφορά της Swift: ο compiler ελέγχει στατικά τα **data races** μέσω `actor`, `@MainActor` και `Sendable`.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να γράφεις `async` functions και να τις καλείς με `await`,
+- να τρέχεις δουλειά σε `Task` και να ξεκινάς async από sync context,
+- να κάνεις **παράλληλα** calls με `async let` και `TaskGroup`,
+- να καταλαβαίνεις τι λύνει το `actor` και γιατί το UI πάει στο `@MainActor`,
+- να χειρίζεσαι **cancellation** και errors (`try await`),
+- να αναγνωρίζεις τι σημαίνει `Sendable`.
+
+## async / await — γραμμικός async κώδικας
+
+Μια function που κάνει async δουλειά σημειώνεται `async`. Την καλείς με `await` — που σημαίνει «εδώ μπορεί να υπάρξει suspension point: η function παγώνει, το thread ελευθερώνεται, και συνεχίζει όταν είναι έτοιμο το αποτέλεσμα».
+
+```swift
+func fetchUser(id: String) async throws -> User {
+    let url = URL(string: "https://api.example.com/users/\(id)")!
+    let (data, _) = try await URLSession.shared.data(from: url)  // suspension point
+    return try JSONDecoder().decode(User.self, from: data)
+}
+
+// Κλήση — μέσα σε άλλο async context
+let user = try await fetchUser(id: "1")
+print(user.name)
+```
+
+- `async` στη δήλωση → η function μπορεί να παγώσει και να συνεχίσει.
+- `await` στην κλήση → «περίμενε εδώ» χωρίς να μπλοκάρεις το thread.
+- `throws`/`try` → το async συνδυάζεται φυσικά με error handling (`try await`).
+
+> Το `await` **δεν** μπλοκάρει το thread όπως ένα sleep. Στο suspension point, το thread ελευθερώνεται για άλλη δουλειά· η function ξανα-ζωντανεύει (πιθανόν σε άλλο thread) όταν είναι έτοιμη. Γι' αυτό ένα async network call δεν παγώνει το UI.
+
+## `Task` — γέφυρα από sync σε async
+
+Δεν μπορείς να γράψεις `await` κατευθείαν μέσα σε συνηθισμένο (sync) κώδικα, π.χ. σε ένα button handler. Το **`Task`** ξεκινά νέα async δουλειά από sync context:
+
+```swift
+Button("Φόρτωσε") {
+    Task {
+        do {
+            let user = try await fetchUser(id: "1")
+            print(user.name)
+        } catch {
+            print("Απέτυχε: \(error)")
+        }
+    }
+}
+```
+
+Ένα `Task { }` κληρονομεί το context (actor, priority) από εκεί που ξεκίνησε. Επιστρέφει handle που μπορείς να **ακυρώσεις** (`task.cancel()`).
+
+## Παράλληλα calls — `async let`
+
+Αν κάνεις πολλά `await` στη σειρά, τρέχουν **σειριακά** (το ένα περιμένει το άλλο). Αν είναι ανεξάρτητα, τρέξ' τα **παράλληλα** με `async let`:
+
+```swift
+// ΣΕΙΡΙΑΚΑ — 2 × latency
+let user = try await fetchUser(id: "1")
+let posts = try await fetchPosts(userId: "1")
+
+// ΠΑΡΑΛΛΗΛΑ — max(latency), όχι sum
+async let user = fetchUser(id: "1")
+async let posts = fetchPosts(userId: "1")
+let (u, p) = try await (user, posts)   // περιμένεις και τα δύο μαζί
+```
+
+Το `async let` ξεκινά τη δουλειά **αμέσως** και δεσμεύεσαι στο αποτέλεσμα όταν κάνεις `await`. Για δυναμικό πλήθος παράλληλων tasks υπάρχει το `TaskGroup` (`withThrowingTaskGroup`).
+
+## Structured concurrency
+
+Το `async let` και τα task groups είναι **structured**: τα child tasks ζουν μέσα στο scope του parent. Αν το scope τελειώσει (ή πεταχτεί error ή γίνει cancel), όλα τα children **ακυρώνονται αυτόματα**. Δεν ξεχνάς «orphan» tasks που τρέχουν στο κενό — ο χρόνος ζωής τους είναι δεμένος με το δέντρο κλήσεων.
+
+## Το πρόβλημα: data races — και η λύση `actor`
+
+Όταν πολλά tasks γράφουν στην **ίδια** mutable κατάσταση ταυτόχρονα, έχεις **data race** — corrupted δεδομένα, crashes που δεν αναπαράγονται. Το **`actor`** το λύνει: είναι reference type που **σειριοποιεί** την πρόσβαση στην κατάστασή του — μόνο ένα task τη φορά μπορεί να μπει.
+
+```swift
+actor Counter {
+    private var value = 0
+    func increment() { value += 1 }   // ασφαλές: σειριοποιημένη πρόσβαση
+    func current() -> Int { value }
+}
+
+let counter = Counter()
+await counter.increment()   // η πρόσβαση απ' έξω απαιτεί await
+let n = await counter.current()
+```
+
+Η πρόσβαση στην κατάσταση ενός actor **από έξω** απαιτεί `await` (μπορεί να χρειαστεί να περιμένεις τη σειρά σου). Μέσα στον actor, ο δικός του κώδικας είναι synchronous.
+
+## `@MainActor` — το UI ζει στο main thread
+
+Όλες οι ενημερώσεις UI **πρέπει** να γίνονται στο main thread. Η Swift το εκφράζει με τον ειδικό **`@MainActor`**: ό,τι είναι σημειωμένο `@MainActor` τρέχει στο main thread, και ο compiler το επιβάλλει.
+
+```swift
+@MainActor
+final class ProductListModel {
+    var products: [Product] = []   // ασφαλές να το δει το UI — main thread
+
+    func load() async {
+        let items = try? await fetchProducts()   // το await «φεύγει» off-main
+        products = items ?? []                    // επιστρέφει στο main actor
+    }
+}
+```
+
+> Στο SwiftUI, τα view models συχνά σημειώνονται `@MainActor` ώστε κάθε ενημέρωση state να γίνεται στο main thread αυτόματα — τέλος στα χειροκίνητα `DispatchQueue.main.async`. Το `await fetchProducts()` τρέχει το network off-main, αλλά η γραμμή μετά το await επιστρέφει στον MainActor.
+
+## Cancellation
+
+Structured tasks ακυρώνονται όταν φεύγει το scope τους ή όταν καλέσεις `task.cancel()`. Η ακύρωση είναι **cooperative**: ο κώδικάς σου πρέπει να την τσεκάρει.
+
+```swift
+func process() async throws {
+    for item in items {
+        try Task.checkCancellation()   // πετάει CancellationError αν ακυρώθηκε
+        await handle(item)
+    }
+}
+```
+
+Στο SwiftUI, το `.task { }` modifier ξεκινά async δουλειά όταν εμφανίζεται ένα view και την **ακυρώνει αυτόματα** όταν το view φεύγει — ό,τι πρέπει για να μη σπαταλάς calls.
+
+## `Sendable` — τι μπορεί να περάσει τα όρια
+
+Ο compiler concurrency ελέγχει ότι μόνο **ασφαλή** δεδομένα διασχίζουν τα concurrency boundaries. Ένας τύπος είναι `Sendable` αν είναι ασφαλές να μοιραστεί ανάμεσα σε tasks — π.χ. value types (structs) με Sendable πεδία, ή actors. Ένα mutable class **δεν** είναι Sendable, γι' αυτό τα structs (value types) ταιριάζουν φυσικά στο concurrency μοντέλο.
+
+<PredictOutput
+  title="Σειριακό vs παράλληλο"
+  code={`// fetchA και fetchB παίρνουν 1s η καθεμία
+async let a = fetchA()
+async let b = fetchB()
+let (x, y) = await (a, b)
+// Πόσο περίπου διαρκεί συνολικά;`}
+  options={[
+    "~2 δευτερόλεπτα",
+    "~1 δευτερόλεπτο",
+    "~0 δευτερόλεπτα",
+    "Δεν προλαβαίνει — crash"
+  ]}
+  correctOptionIndex={1}
+  answer="~1 δευτερόλεπτο"
+  explanation="Με async let, το fetchA και το fetchB ξεκινούν ΑΜΕΣΩΣ και τρέχουν παράλληλα. Το await περιμένει και τα δύο μαζί, οπότε ο συνολικός χρόνος είναι ~max(1s, 1s) = 1s, όχι το άθροισμα. Αν τα είχαμε γράψει ως δύο ξεχωριστά `await fetchA(); await fetchB()` θα ήταν σειριακά (~2s)."
+/>
+
+<PredictOutput
+  title="Γιατί actor;"
+  code={`// Δύο tasks καλούν ταυτόχρονα increment() 1000 φορές το καθένα
+// σε ένα actor Counter. Τελικό value;`}
+  options={[
+    "Πάντα 2000 — σωστό",
+    "Απρόβλεπτο < 2000 λόγω data race",
+    "0",
+    "Crash"
+  ]}
+  correctOptionIndex={0}
+  answer="Πάντα 2000"
+  explanation="Ο actor σειριοποιεί την πρόσβαση στην κατάστασή του: μόνο ένα task τη φορά εκτελεί increment(), οπότε καμία ενημέρωση δεν χάνεται και το τελικό value είναι πάντα 2000. Αν το Counter ήταν σκέτο class χωρίς συγχρονισμό, οι ταυτόχρονες αυξήσεις θα δημιουργούσαν data race και το αποτέλεσμα θα ήταν απρόβλεπτα μικρότερο."
+/>
+
+<Exercise
+  question="Τι λύνει το @MainActor σε ένα view model;"
+  options={[
+    "Κάνει το networking πιο γρήγορο.",
+    "Εγγυάται ότι οι ενημερώσεις κατάστασης/UI γίνονται στο main thread — ο compiler το επιβάλλει — χωρίς χειροκίνητο DispatchQueue.main.async.",
+    "Ακυρώνει αυτόματα όλα τα tasks.",
+    "Μετατρέπει τα classes σε structs."
+  ]}
+  correctOptionIndex={1}
+  explanation="Οι ενημερώσεις UI πρέπει να γίνονται στο main thread. Το @MainActor δηλώνει ότι ο τύπος (ή η method) τρέχει στον main actor, και ο compiler ελέγχει στατικά ότι δεν αγγίζεις αυτή την κατάσταση από άλλο thread. Έτσι, μετά από ένα `await` off-main, η επόμενη γραμμή που ενημερώνει state επιστρέφει αυτόματα στο main — χωρίς χειροκίνητο dispatch. Το networking παραμένει το ίδιο γρήγορο· απλώς τρέχει off-main."
+/>
+
+<Exercise
+  question="Τι σημαίνει ότι το await είναι «suspension point»;"
+  options={[
+    "Μπλοκάρει το thread μέχρι να τελειώσει η δουλειά.",
+    "Η function μπορεί να παγώσει και να ελευθερώσει το thread για άλλη δουλειά· ξανα-συνεχίζει όταν το αποτέλεσμα είναι έτοιμο, χωρίς να μπλοκάρει.",
+    "Δημιουργεί νέο thread για κάθε κλήση.",
+    "Ακυρώνει το τρέχον Task."
+  ]}
+  correctOptionIndex={1}
+  explanation="Σε ένα await, αν το αποτέλεσμα δεν είναι ακόμα έτοιμο, η async function αναστέλλεται (suspends) και ΕΛΕΥΘΕΡΩΝΕΙ το thread — αυτό μπορεί να τρέξει άλλη δουλειά αντί να κάθεται μπλοκαρισμένο. Όταν το αποτέλεσμα είναι έτοιμο, η function συνεχίζει (πιθανόν σε άλλο thread). Γι' αυτό ένα async network call δεν παγώνει το UI, σε αντίθεση με ένα blocking sleep."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How does Swift's concurrency model work, and what problem do actors solve?»
+
+> Swift uses async/await for asynchronous code: a function marked `async` can suspend at an `await`, freeing the thread instead of blocking it, and resumes when the result is ready — so a network call never freezes the UI. I start async work from synchronous code with a `Task`, and I run independent work in parallel with `async let`, awaiting the results together so total time is the max, not the sum. It's structured: child tasks are scoped to their parent, so they cancel automatically when the scope exits. The safety piece is actors. When multiple tasks mutate shared state, you get data races; an `actor` serializes access to its state so only one task touches it at a time, and accessing it from outside requires `await`. UI has to run on the main thread, so I mark view models `@MainActor`, and the compiler enforces that state updates happen on main — no manual dispatch. Value types being `Sendable` is why structs fit this model so naturally.
+
+<Flashcards
+  title="Swift concurrency — interview drills"
+  cards={[
+    {
+      question: "Τι κάνει το await;",
+      answer: "Είναι suspension point: η async function μπορεί να παγώσει ΧΩΡΙΣ να μπλοκάρει το thread (το thread ελευθερώνεται για άλλη δουλειά) και συνεχίζει όταν είναι έτοιμο το αποτέλεσμα."
+    },
+    {
+      question: "Πώς ξεκινάς async δουλειά από sync context (π.χ. button);",
+      answer: "Με Task { ... }. Κληρονομεί context/priority, επιστρέφει handle που μπορείς να ακυρώσεις με cancel()."
+    },
+    {
+      question: "async let τι πετυχαίνει;",
+      answer: "Ξεκινά ανεξάρτητα calls ΠΑΡΑΛΛΗΛΑ (αμέσως) και τα κάνεις await μαζί — συνολικός χρόνος ~max αντί για sum. Για δυναμικό πλήθος: TaskGroup."
+    },
+    {
+      question: "Τι λύνει ο actor;",
+      answer: "Data races: σειριοποιεί την πρόσβαση στη mutable κατάστασή του — μόνο ένα task τη φορά. Πρόσβαση απ' έξω απαιτεί await."
+    },
+    {
+      question: "Γιατί @MainActor στα view models;",
+      answer: "Εγγυάται ότι οι ενημερώσεις state/UI γίνονται στο main thread (ο compiler το επιβάλλει), χωρίς χειροκίνητο DispatchQueue.main.async."
+    },
+    {
+      question: "Τι είναι structured concurrency;",
+      answer: "Τα child tasks ζουν μέσα στο scope του parent· όταν τελειώνει/ακυρώνεται/πετάει το scope, ακυρώνονται αυτόματα — κανένα orphan task."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Παράλληλο data loading χωρίς να παγώνει το UI"
+  scenario="Έχεις μια οθόνη προφίλ που χρειάζεται δύο ανεξάρτητα δεδομένα (user + posts) από το δίκτυο. Φόρτωσέ τα σωστά: παράλληλα, off-main, με ασφαλή ενημέρωση UI."
+  outcomes={[
+    "Να γράφεις async functions με try await για network + decoding.",
+    "Να τρέχεις ανεξάρτητα calls παράλληλα με async let.",
+    "Να ενημερώνεις UI state στο @MainActor χωρίς data races."
+  ]}
+  steps={[
+    "Γράψε async func fetchUser(id:) throws -> User και fetchPosts(userId:) throws -> [Post] (URLSession + JSONDecoder).",
+    "Φτιάξε @MainActor final class ProfileModel με properties user & posts.",
+    "Σε μια async load(): χρησιμοποίησε async let για να τρέξουν παράλληλα τα δύο calls.",
+    "Κάνε await (user, posts) μαζί και ανάθεσε τα αποτελέσματα στα @MainActor properties.",
+    "Κάλεσε το load() από ένα Task { } (ή SwiftUI .task) και χειρίσου το catch."
+  ]}
+  checkpoints={[
+    "Τα δύο calls τρέχουν ΠΑΡΑΛΛΗΛΑ (async let), όχι σειριακά.",
+    "Το view model είναι @MainActor — καμία χειροκίνητη dispatch στο main.",
+    "Τα errors χειρίζονται με do/catch γύρω από το try await.",
+    "Το network τρέχει off-main· το UI δεν παγώνει."
+  ]}
+  mistakes={[
+    "Να κάνεις δύο σειριακά await ενώ τα calls είναι ανεξάρτητα (διπλάσιος χρόνος).",
+    "Να ενημερώνεις UI state από background thread (data race / crash).",
+    "Να force-unwrap-άρεις optionals από το JSON decoding.",
+    "Να ξεχνάς το cancellation — να μη σταματάς tasks που δεν χρειάζονται πια."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν φορτώνεις ανεξάρτητα δεδομένα παράλληλα με async let, κρατάς το UI responsive, και εξηγείς γιατί ο actor/@MainActor αποτρέπει data races."
+/>

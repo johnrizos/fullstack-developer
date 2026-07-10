@@ -1,0 +1,266 @@
+# Navigation
+
+Μια πραγματική app έχει πολλές οθόνες: λίστα → λεπτομέρεια, tabs, modals, ρυθμίσεις. Το SwiftUI χειρίζεται την πλοήγηση **declaratively** — δεν λες «σπρώξε αυτή την οθόνη», αλλά περιγράφεις **ποια οθόνη αντιστοιχεί σε ποια κατάσταση/τιμή**. Από το iOS 16 το σύγχρονο εργαλείο είναι το **`NavigationStack`** με **value-based navigation**, που κάνει και το **programmatic** navigation (π.χ. deep links, «πήγαινε στο checkout») καθαρό.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να στήνεις stack navigation με `NavigationStack` + `NavigationLink`,
+- να κάνεis **value-based** navigation με `navigationDestination`,
+- να ελέγχεις προγραμματιστικά το back stack μέσω **path binding**,
+- να φτιάχνεις tabs με `TabView`,
+- να παρουσιάζεις modals με `.sheet` / `.fullScreenCover`,
+- να χειρίζεσαι deep links.
+
+## `NavigationStack` + `NavigationLink`
+
+Το πιο απλό push navigation: τυλίγεις το περιεχόμενο σε `NavigationStack` και βάζεις `NavigationLink`:
+
+```swift
+NavigationStack {
+    List {
+        NavigationLink("Ρυθμίσεις") {
+            SettingsView()   // η οθόνη-προορισμός
+        }
+        NavigationLink("Προφίλ") {
+            ProfileView()
+        }
+    }
+    .navigationTitle("Αρχική")
+}
+```
+
+Πατάς → push η νέα οθόνη με native back button & swipe-back **δωρεάν**. Ο τίτλος μπαίνει με `.navigationTitle(...)`.
+
+## Value-based navigation — `navigationDestination`
+
+Το inline `NavigationLink { DestinationView() }` είναι εντάξει για λίγες σταθερές οθόνες. Για **δεδομένα-οδηγούμενη** πλοήγηση (λίστα προϊόντων → σελίδα προϊόντος) το idiomatic pattern είναι να συνδέεις μια **τιμή** με έναν προορισμό:
+
+```swift
+NavigationStack {
+    List(products) { product in
+        NavigationLink(product.title, value: product)   // δίνεις ΤΙΜΗ, όχι view
+    }
+    .navigationDestination(for: Product.self) { product in
+        ProductDetailView(product: product)   // η τιμή → η οθόνη
+    }
+}
+```
+
+- Το `NavigationLink(value:)` λέει «όταν πατηθεί, βάλε αυτή την **τιμή** στο stack».
+- Το `.navigationDestination(for:)` λέει «για τιμές τύπου `Product`, δείξε αυτή την οθόνη».
+- Η τιμή πρέπει να είναι `Hashable`.
+
+> Γιατί value-based; **Αποσυνδέει το «τι» από το «πώς φαίνεται».** Ένα cell δεν χρειάζεται να ξέρει τη detail view· απλώς εκπέμπει μια τιμή. Το ίδιο pattern κάνει trivial το programmatic navigation και τα deep links — παρακάτω.
+
+## Programmatic navigation — path binding
+
+Μερικές φορές πρέπει να πλοηγηθείς **από κώδικα**: μετά από login πήγαινε στο home, από notification πήγαινε στο μήνυμα, ή «πίσω στη ρίζα». Δίνεις στο `NavigationStack` ένα **binding σε ένα path** (πίνακα τιμών) που εσύ ελέγχεις:
+
+```swift
+@State private var path: [Product] = []
+
+NavigationStack(path: $path) {
+    List(products) { p in
+        NavigationLink(p.title, value: p)
+    }
+    .navigationDestination(for: Product.self) { ProductDetailView(product: $0) }
+}
+
+// Οπουδήποτε στον κώδικα:
+path.append(someProduct)   // push προγραμματιστικά
+path.removeLast()          // pop
+path = []                  // πίσω στη ρίζα (pop to root)
+```
+
+Ο πίνακας `path` **ΕΙΝΑΙ** το back stack: κάθε στοιχείο = μία οθόνη στο stack. Το μεταλλάσσεις και το UI ακολουθεί — καθαρό declarative μοντέλο. (Για ανάμεικτους τύπους οθονών υπάρχει το `NavigationPath` που κρατά heterogeneous τιμές.)
+
+## Tabs — `TabView`
+
+Για top-level ενότητες (Home / Search / Profile) που ζουν παράλληλα:
+
+```swift
+TabView {
+    HomeView()
+        .tabItem { Label("Αρχική", systemImage: "house") }
+    SearchView()
+        .tabItem { Label("Αναζήτηση", systemImage: "magnifyingglass") }
+    ProfileView()
+        .tabItem { Label("Προφίλ", systemImage: "person") }
+}
+```
+
+> **Κάθε tab έχει το δικό του `NavigationStack`.** Έτσι κάθε tab κρατά ανεξάρτητο back stack — αλλάζεις tab, γυρνάς πίσω, και το προηγούμενο tab είναι εκεί που το άφησες. Μη βάζεις ένα `NavigationStack` γύρω από όλο το `TabView`.
+
+## Modals — `.sheet` & `.fullScreenCover`
+
+Οι modal παρουσιάσεις (φόρμα, φίλτρα, «νέο αντικείμενο») δεν είναι μέρος του stack — αναδύονται πάνω από την οθόνη. Ελέγχονται από **boolean state** ή από **optional item**:
+
+```swift
+@State private var showingFilters = false
+
+Button("Φίλτρα") { showingFilters = true }
+    .sheet(isPresented: $showingFilters) {
+        FiltersView()
+    }
+```
+
+Item-based (όταν το modal εξαρτάται από συγκεκριμένο δεδομένο):
+
+```swift
+@State private var editing: Product?
+
+.sheet(item: $editing) { product in
+    EditProductView(product: product)   // ανοίγει όταν editing != nil
+}
+```
+
+Μέσα στο modal, το κλείσιμο γίνεται με `@Environment(\.dismiss)`:
+
+```swift
+@Environment(\.dismiss) private var dismiss
+Button("Άκυρο") { dismiss() }
+```
+
+Το `.fullScreenCover` είναι το ίδιο αλλά καλύπτει όλη την οθόνη (π.χ. onboarding, camera).
+
+## Deep links
+
+Ένα deep link (`myapp://product/42`, universal link, ή notification tap) πρέπει να οδηγήσει σε συγκεκριμένη οθόνη. Με το value-based μοντέλο είναι απλό: **μετάφρασε το URL σε τιμές και βάλ' τις στο `path`**:
+
+```swift
+.onOpenURL { url in
+    if let id = parseProductId(url),
+       let product = store.product(id: id) {
+        path = [product]   // πηγαίνει κατευθείαν στη detail οθόνη
+    }
+}
+```
+
+Επειδή το `path` είναι απλός πίνακας κατάστασης, ένα deep link είναι απλώς «θέσε το σωστό path» — καμία ειδική μηχανική.
+
+<PredictOutput
+  title="Value-based navigation"
+  code={`NavigationStack {
+    List(products) { p in
+        NavigationLink(p.title, value: p)
+    }
+    // ΛΕΙΠΕΙ κάτι εδώ
+}
+// Πατάς ένα cell. Τι γίνεται;`}
+  options={[
+    "Ανοίγει η detail οθόνη κανονικά",
+    "Δεν ανοίγει τίποτα — λείπει το .navigationDestination(for: Product.self)",
+    "Crash",
+    "Ανοίγει modal"
+  ]}
+  correctOptionIndex={1}
+  answer="Δεν ανοίγει τίποτα"
+  explanation="Με το value-based NavigationLink(value:), το πάτημα βάζει την τιμή στο stack — αλλά χρειάζεται ΚΑΙ ένα .navigationDestination(for: Product.self) { ... } που να αντιστοιχίζει τιμές τύπου Product σε μια οθόνη. Χωρίς αυτό, το SwiftUI δεν ξέρει τι να δείξει και δεν πλοηγείται. Το inline NavigationLink { DestinationView() } δεν χρειάζεται destination modifier, αλλά το value-based ναι."
+/>
+
+<PredictOutput
+  title="Path = back stack"
+  code={`@State private var path: [Product] = []
+// path έχει 3 προϊόντα (3 οθόνες στο stack).
+// Εκτελείς: path = []
+// Τι συμβαίνει;`}
+  options={[
+    "Push μια νέα οθόνη",
+    "Pop to root — γυρνάει στην αρχική οθόνη, αδειάζοντας το stack",
+    "Τίποτα",
+    "Crash"
+  ]}
+  correctOptionIndex={1}
+  answer="Pop to root"
+  explanation="Το path binding ΕΙΝΑΙ το back stack: κάθε στοιχείο του πίνακα = μία pushed οθόνη. Θέτοντας path = [] αδειάζεις το stack, οπότε το SwiftUI κάνει pop όλες τις οθόνες και επιστρέφει στη ρίζα. Παρόμοια, path.append(x) κάνει push και path.removeLast() κάνει pop. Το navigation state είναι απλά δεδομένα που ελέγχεις."
+/>
+
+<Exercise
+  question="Γιατί προτιμάς value-based navigation (NavigationLink(value:) + navigationDestination);"
+  options={[
+    "Είναι το μόνο που δουλεύει στο iOS.",
+    "Αποσυνδέει το «τι επιλέχθηκε» από «ποια οθόνη δείχνεται», και κάνει το programmatic navigation & τα deep links απλά (απλώς θέτεις το path).",
+    "Είναι πιο γρήγορο στο rendering.",
+    "Δεν χρειάζεται NavigationStack."
+  ]}
+  correctOptionIndex={1}
+  explanation="Με value-based navigation, ένα cell εκπέμπει μια ΤΙΜΗ (π.χ. ένα Product) χωρίς να γνωρίζει τη detail view· η αντιστοίχιση τιμής→οθόνης ζει κεντρικά στο navigationDestination. Αυτό το decoupling κάνει το προγραμματιστικό navigation και τα deep links τετριμμένα: μεταφράζεις είσοδο (URL/notification) σε τιμές και τις βάζεις στο path. Το inline NavigationLink { View() } δεν προσφέρει αυτή την ευελιξία."
+/>
+
+<Exercise
+  question="Πού πρέπει να μπαίνει το NavigationStack σε σχέση με το TabView;"
+  options={[
+    "Ένα NavigationStack γύρω από όλο το TabView.",
+    "Κάθε tab να έχει το ΔΙΚΟ του NavigationStack, ώστε κάθε tab να κρατά ανεξάρτητο back stack.",
+    "Δεν χρειάζεται καθόλου NavigationStack με tabs.",
+    "Το TabView αντικαθιστά το NavigationStack."
+  ]}
+  correctOptionIndex={1}
+  explanation="Θέλεις κάθε tab να θυμάται πού βρισκόταν όταν επιστρέφεις σε αυτό. Αυτό πετυχαίνεται δίνοντας σε κάθε tab το δικό του NavigationStack, ώστε κάθε ένα να έχει ξεχωριστό back stack. Αν τυλίξεις ολόκληρο το TabView σε ένα NavigationStack, μοιράζονται stack και η συμπεριφορά back γίνεται μπερδεμένη. Το TabView και το NavigationStack λύνουν διαφορετικά προβλήματα (παράλληλες ενότητες vs βάθος)."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you handle navigation in modern SwiftUI?»
+
+> I use `NavigationStack` for push-style navigation. For anything data-driven I prefer value-based navigation: a `NavigationLink(value:)` pushes a `Hashable` value, and a `navigationDestination(for:)` centrally maps that value type to a destination view. This decouples a cell from the screen it opens — the cell just emits a value. It also makes programmatic navigation clean, because a `NavigationStack(path:)` binding gives me an array that *is* the back stack: I `append` to push, `removeLast` to pop, and set it to empty to pop to root. Deep links become trivial — I translate the URL into values and set the path. For top-level sections I use a `TabView` where each tab has its own `NavigationStack` so each keeps an independent back stack. And modals aren't part of the stack — I present them with `.sheet` driven by boolean or optional-item state, and dismiss with the `dismiss` environment action.
+
+<Flashcards
+  title="iOS navigation — interview drills"
+  cards={[
+    {
+      question: "NavigationStack + NavigationLink — το βασικό;",
+      answer: "NavigationStack τυλίγει το περιεχόμενο· NavigationLink κάνει push μια οθόνη με native back/swipe δωρεάν. .navigationTitle βάζει τίτλο."
+    },
+    {
+      question: "Τι είναι value-based navigation;",
+      answer: "NavigationLink(value:) βάζει μια Hashable ΤΙΜΗ στο stack· .navigationDestination(for: T.self) αντιστοιχίζει τον τύπο σε οθόνη. Αποσυνδέει «τι» από «ποια view»."
+    },
+    {
+      question: "Πώς πλοηγείσαι προγραμματιστικά;",
+      answer: "NavigationStack(path: $path) όπου path είναι πίνακας. append = push, removeLast = pop, path = [] = pop to root. Ο πίνακας ΕΙΝΑΙ το back stack."
+    },
+    {
+      question: "Πού μπαίνει το NavigationStack με TabView;",
+      answer: "Κάθε tab έχει το δικό του NavigationStack (ανεξάρτητο back stack ανά tab). ΟΧΙ ένα NavigationStack γύρω από όλο το TabView."
+    },
+    {
+      question: ".sheet vs .fullScreenCover;",
+      answer: "Modal παρουσιάσεις εκτός stack, οδηγούμενες από boolean (isPresented:) ή optional (item:). sheet = card, fullScreenCover = όλη η οθόνη. Κλείσιμο: @Environment(\\.dismiss)."
+    },
+    {
+      question: "Πώς χειρίζεσαι deep link;",
+      answer: "Στο .onOpenURL μεταφράζεις το URL σε τιμές και τις βάζεις στο path (π.χ. path = [product]). Επειδή το path είναι απλά state, το deep link = «θέσε σωστό path»."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Στήσε πλήρη πλοήγηση για μια app"
+  scenario="Φτιάξε τη ραχοκοκαλιά πλοήγησης μιας shopping app: tabs, list→detail, ένα modal φίλτρο και υποστήριξη deep link σε συγκεκριμένο προϊόν."
+  outcomes={[
+    "Να συνδυάζεις TabView + per-tab NavigationStack σωστά.",
+    "Να κάνεις value-based list→detail navigation.",
+    "Να ελέγχεις το stack προγραμματιστικά (path) και να χειρίζεσαι deep links & modals."
+  ]}
+  steps={[
+    "Φτιάξε TabView με 3 tabs (Home/Search/Profile), κάθε ένα με δικό του NavigationStack.",
+    "Στο Home, List με NavigationLink(value: product) + navigationDestination(for: Product.self).",
+    "Κράτα @State path και δοκίμασε path.append / path = [] από ένα κουμπί (programmatic).",
+    "Πρόσθεσε ένα κουμπί «Φίλτρα» με .sheet(isPresented:) και dismiss από μέσα.",
+    "Στο .onOpenURL μετάφρασε ένα myapp://product/<id> σε product και θέσε path = [product]."
+  ]}
+  checkpoints={[
+    "Κάθε tab κρατά ανεξάρτητο back stack (δικό του NavigationStack).",
+    "Το detail ανοίγει μέσω value + navigationDestination (όχι inline destination).",
+    "Το deep link καταλήγει στη σωστή οθόνη θέτοντας το path.",
+    "Το modal ελέγχεται από state και κλείνει με @Environment(\\.dismiss)."
+  ]}
+  mistakes={[
+    "Ένα NavigationStack γύρω από όλο το TabView (μπερδεμένο κοινό back stack).",
+    "value-based NavigationLink χωρίς αντίστοιχο navigationDestination (δεν πλοηγεί).",
+    "Να χειρίζεσαι το navigation imperatively αντί μέσω path state.",
+    "Να ξεχνάς το dismiss και να μη μπορεί ο χρήστης να κλείσει το sheet."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν στήνεις tabs + stacks σωστά, κάνεις value-based navigation, ελέγχεις το back stack μέσω path και χειρίζεσαι deep links & modals declaratively."
+/>

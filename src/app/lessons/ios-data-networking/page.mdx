@@ -1,0 +1,271 @@
+# Data & Networking
+
+Μια πραγματική app φέρνει δεδομένα από το δίκτυο, τα αποθηκεύει τοπικά, και δουλεύει ακόμα και offline. Σε αυτό το μάθημα ενώνουμε τρία κομμάτια: **URLSession** με async/await για REST, **Codable** για JSON, και **SwiftData** για local persistence — και τα δένουμε με το **repository pattern** ώστε το UI να μη νοιάζεται από πού έρχονται τα δεδομένα.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να κάνεις network requests με `URLSession` + async/await,
+- να κάνεις (de)serialize JSON με `Codable`,
+- να χειρίζεσαι HTTP status & errors σωστά,
+- να αποθηκεύεις τοπικά με **SwiftData** (`@Model`),
+- να εφαρμόζεις το **repository pattern** και **single source of truth**,
+- να σχεδιάζεις **offline-first** ροή δεδομένων.
+
+## `URLSession` + async/await
+
+Το built-in `URLSession` κάνει HTTP. Με το async μοντέλο, ένα GET είναι λίγες γραμμές:
+
+```swift
+func fetchProducts() async throws -> [Product] {
+    let url = URL(string: "https://api.example.com/products")!
+    let (data, response) = try await URLSession.shared.data(from: url)
+
+    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+        throw APIError.badStatus
+    }
+    return try JSONDecoder().decode([Product].self, from: data)
+}
+```
+
+- Το `data(from:)` επιστρέφει `(Data, URLResponse)` — **πάντα** ελέγχεις το `HTTPURLResponse.statusCode`· ένα 404/500 **δεν** πετάει από μόνο του, απλώς επιστρέφει data.
+- Για POST/PUT φτιάχνεις `URLRequest`, θέτεις `httpMethod`, headers και `httpBody`.
+
+## `Codable` — JSON ↔ Swift types
+
+Το `Codable` (= `Decodable` + `Encodable`) κάνει αυτόματο (de)serialization. Δηλώνεις το type να το conform-άρει και τελείωσες:
+
+```swift
+struct Product: Codable, Identifiable {
+    let id: String
+    let title: String
+    let price: Double
+}
+
+let product = try JSONDecoder().decode(Product.self, from: data)   // JSON → Swift
+let body    = try JSONEncoder().encode(product)                    // Swift → JSON
+```
+
+Όταν τα ονόματα JSON διαφέρουν από τα Swift (π.χ. `product_title` → `title`), χρησιμοποιείς `CodingKeys`:
+
+```swift
+struct Product: Codable {
+    let id: String
+    let title: String
+    enum CodingKeys: String, CodingKey {
+        case id
+        case title = "product_title"
+    }
+}
+```
+
+Ή, για snake_case παντού: `decoder.keyDecodingStrategy = .convertFromSnakeCase`.
+
+> **DTO vs domain:** συχνά ο τύπος που ταιριάζει το JSON (DTO) δεν είναι ο τύπος που θέλει το UI. Είναι ΟΚ να αποκωδικοποιείς σε ένα DTO struct και μετά να το χαρτογραφείς στο domain model σου — κρατά το UI ανεξάρτητο από το σχήμα του API.
+
+## `SwiftData` — local persistence
+
+Το **SwiftData** (iOS 17+, ο διάδοχος του Core Data) αποθηκεύει αντικείμενα τοπικά με ελάχιστο κώδικα. Σημειώνεις μια class με `@Model`:
+
+```swift
+import SwiftData
+
+@Model
+final class ProductEntity {
+    @Attribute(.unique) var id: String
+    var title: String
+    var price: Double
+    init(id: String, title: String, price: Double) {
+        self.id = id; self.title = title; self.price = price
+    }
+}
+```
+
+Στήνεις το container στη ρίζα και δουλεύεις μέσα από ένα `ModelContext`:
+
+```swift
+// App entry
+.modelContainer(for: ProductEntity.self)
+
+// Μέσα σε view — αυτόματα ενημερώνεται όταν αλλάξει το store
+@Query private var products: [ProductEntity]
+@Environment(\.modelContext) private var context
+
+context.insert(ProductEntity(id: "1", title: "Καφές", price: 3.5))
+try context.save()
+```
+
+Το `@Query` είναι το εντυπωσιακό: διαβάζει από το store και **ξανα-renderάρει αυτόματα** το view όταν αλλάξουν τα δεδομένα — reactive persistence.
+
+## Repository pattern — μία πηγή αλήθειας
+
+Αν τα views καλούν κατευθείαν `URLSession` και `SwiftData`, η λογική δεδομένων σκορπίζεται παντού. Το **repository** συγκεντρώνει το «από πού έρχονται τα δεδομένα» πίσω από ένα καθαρό interface (protocol):
+
+```swift
+protocol ProductRepository {
+    func products() async throws -> [Product]
+}
+
+final class DefaultProductRepository: ProductRepository {
+    private let api: APIClient
+    private let context: ModelContext
+
+    func products() async throws -> [Product] {
+        do {
+            let fresh = try await api.fetchProducts()   // 1. δίκτυο
+            cache(fresh)                                // 2. γράψε στο SwiftData
+            return fresh
+        } catch {
+            return cachedProducts()                     // 3. offline → τοπικά
+        }
+    }
+}
+```
+
+Το UI ζητά `repository.products()` και **δεν ξέρει** αν ήρθαν από το δίκτυο ή το cache. Αυτό είναι το **single source of truth**: το local store είναι η αλήθεια που βλέπει το UI, και το δίκτυο απλώς το **ανανεώνει**.
+
+## Offline-first
+
+Η ιδέα: **το UI διαβάζει πάντα από το local store· το δίκτυο ενημερώνει το store στο παρασκήνιο.** Ροή:
+
+1. Άνοιγμα οθόνης → δείξε αμέσως ό,τι υπάρχει τοπικά (instant, ακόμα κι offline).
+2. Ξεκίνα network refresh.
+3. Επιτυχία → γράψε στο store → το `@Query` ενημερώνει το UI αυτόματα.
+4. Αποτυχία → κράτα τα cached δεδομένα, δείξε διακριτικό indicator.
+
+> Πλεονεκτήματα: η app δείχνει περιεχόμενο **αμέσως** (χωρίς spinner σε κάθε άνοιγμα), δουλεύει σε τούνελ/αεροπλάνο, και είναι ανθεκτική σε flaky δίκτυο. Η τιμή που πληρώνεις είναι **cache invalidation / conflict handling** — πρέπει να αποφασίσεις πότε τα cached δεδομένα είναι «μπαγιάτικα» και τι γίνεται όταν local & remote διαφωνούν.
+
+## Loading & error states στο UI
+
+Μοντελοποίησε ρητά τις καταστάσεις (θυμήσου το enum με associated values):
+
+```swift
+enum LoadState<T> {
+    case loading
+    case loaded(T)
+    case failed(String)
+}
+```
+
+Έτσι το view δείχνει spinner / δεδομένα / μήνυμα λάθους — καθαρά, χωρίς σκόρπια boolean flags (`isLoading`, `hasError`) που μπερδεύονται.
+
+<PredictOutput
+  title="URLSession & status codes"
+  code={`let (data, response) = try await URLSession.shared.data(from: url)
+// Ο server απαντά 404 Not Found (με ένα error JSON body).
+// Χωρίς κανέναν έλεγχο, τι κάνει η επόμενη γραμμή decode;`}
+  options={[
+    "Πετάει αυτόματα σφάλμα λόγω 404",
+    "Προχωράει — το 404 ΔΕΝ πετάει· θα προσπαθήσει να αποκωδικοποιήσει το error body (πιθανό decoding error)",
+    "Επιστρέφει nil",
+    "Κάνει retry"
+  ]}
+  correctOptionIndex={1}
+  answer="Προχωράει (το 404 δεν πετάει)"
+  explanation="Το URLSession.data(from:) ΔΕΝ πετάει για HTTP error status — πετάει μόνο για network-level αποτυχίες (χωρίς σύνδεση, timeout). Ένα 404/500 επιστρέφει κανονικά (Data, URLResponse) με το error body ως data. Γι' αυτό ΠΑΝΤΑ κάνεις cast σε HTTPURLResponse και ελέγχεις το statusCode· αλλιώς η decode θα προσπαθήσει να διαβάσει το error JSON ως Product και πιθανόν θα σκάσει με μπερδεμένο decoding error."
+/>
+
+<PredictOutput
+  title="@Query reactivity"
+  code={`@Query private var products: [ProductEntity]
+// Ο repository κάνει context.insert(...) + save() νέο προϊόν
+// από ένα background refresh. Τι κάνει το view;`}
+  options={[
+    "Τίποτα — πρέπει να το φορτώσεις χειροκίνητα",
+    "Ξανα-renderάρει αυτόματα με το νέο προϊόν",
+    "Crash",
+    "Χρειάζεται pull-to-refresh"
+  ]}
+  correctOptionIndex={1}
+  answer="Ξανα-renderάρει αυτόματα"
+  explanation="Το @Query παρακολουθεί το SwiftData store: όταν αλλάζει (insert/update/delete + save), το SwiftUI ξαναϋπολογίζει το view με τα νέα δεδομένα — reactive persistence. Αυτό είναι που κάνει το offline-first καθαρό: το δίκτυο γράφει στο store, και το UI (που διαβάζει από το store μέσω @Query) ενημερώνεται μόνο του, χωρίς χειροκίνητο reload."
+/>
+
+<Exercise
+  question="Ποιο είναι το κύριο όφελος του repository pattern εδώ;"
+  options={[
+    "Κάνει τα requests πιο γρήγορα.",
+    "Συγκεντρώνει το «από πού έρχονται τα δεδομένα» (δίκτυο vs cache) πίσω από ένα protocol, ώστε το UI να ζητά δεδομένα χωρίς να ξέρει την πηγή — και γίνεται testable/mockable.",
+    "Αντικαθιστά το SwiftData.",
+    "Απαιτείται από το SwiftUI."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το repository κρύβει τη λογική πηγής δεδομένων (fetch από API, cache σε SwiftData, fallback offline) πίσω από ένα καθαρό protocol. Το UI καλεί repository.products() και δεν ξέρει/νοιάζεται αν ήρθαν από δίκτυο ή τοπικά. Αυτό δίνει single source of truth, κρατά τα views απλά, και επιτρέπει να περάσεις ένα mock repository στα tests. Δεν έχει σχέση με ταχύτητα ούτε είναι υποχρεωτικό από το framework."
+/>
+
+<Exercise
+  question="Τι σημαίνει «offline-first» ροή δεδομένων;"
+  options={[
+    "Η app δουλεύει μόνο offline.",
+    "Το UI διαβάζει πάντα από το local store (άμεσο, δουλεύει offline) και το δίκτυο ενημερώνει το store στο παρασκήνιο· το UI ακολουθεί το store.",
+    "Κατεβάζεις όλα τα δεδομένα στην εκκίνηση και μετά δεν ξανακάνεις request.",
+    "Αποθηκεύεις μόνο στη μνήμη."
+  ]}
+  correctOptionIndex={1}
+  explanation="Offline-first σημαίνει ότι το local store είναι η πηγή που βλέπει το UI: ανοίγεις οθόνη → δείχνεις αμέσως τα τοπικά δεδομένα (ακόμα κι χωρίς δίκτυο) → κάνεις refresh στο παρασκήνιο → γράφεις τα φρέσκα στο store → το UI ενημερώνεται μέσω @Query. Αν το δίκτυο αποτύχει, κρατάς τα cached. Το κόστος είναι cache invalidation/conflict handling. Δεν σημαίνει «μόνο offline» ούτε «κατέβασε τα πάντα μία φορά»."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How would you architect networking and local data in a SwiftUI app?»
+
+> I do networking with `URLSession` and async/await, and I always check the `HTTPURLResponse` status because a 404 or 500 doesn't throw — it just returns data. I decode JSON with `Codable`, using `CodingKeys` when the API field names differ, and I'll often decode into a DTO and map to a domain model so the UI isn't coupled to the API shape. For local persistence I use SwiftData with `@Model`, and `@Query` in the view so the UI re-renders automatically whenever the store changes. I tie it together with a repository behind a protocol: the view asks the repository for data and doesn't know whether it came from the network or the cache. That gives me a single source of truth and makes it testable with a mock repo. The overall flow is offline-first — the UI reads from the local store so it shows content instantly and works offline, while the network refreshes the store in the background. The trade-off I'm explicit about is cache invalidation and conflict handling.
+
+<Flashcards
+  title="iOS data & networking — interview drills"
+  cards={[
+    {
+      question: "Πετάει το URLSession.data(from:) σε HTTP 404/500;",
+      answer: "ΟΧΙ. Πετάει μόνο για network-level errors (no connection, timeout). Πρέπει ΕΣΥ να cast-άρεις σε HTTPURLResponse και να ελέγξεις το statusCode."
+    },
+    {
+      question: "Τι είναι το Codable;",
+      answer: "Decodable + Encodable: αυτόματο JSON ↔ Swift (de)serialization. JSONDecoder().decode(T.self, from:) και JSONEncoder().encode(). CodingKeys για διαφορετικά ονόματα πεδίων."
+    },
+    {
+      question: "Τι είναι το @Model / @Query στο SwiftData;",
+      answer: "@Model = class που αποθηκεύεται τοπικά (διάδοχος Core Data). @Query = διαβάζει από το store και ξανα-renderάρει το view αυτόματα σε κάθε αλλαγή (reactive persistence)."
+    },
+    {
+      question: "Τι κάνει το repository pattern;",
+      answer: "Κρύβει την πηγή δεδομένων (API/cache/offline fallback) πίσω από protocol· το UI ζητά δεδομένα αγνοώντας την πηγή. Δίνει single source of truth + testability (mock)."
+    },
+    {
+      question: "Τι είναι offline-first;",
+      answer: "Το UI διαβάζει πάντα από το local store (άμεσο, δουλεύει offline)· το δίκτυο ανανεώνει το store στο παρασκήνιο και το UI ακολουθεί. Κόστος: cache invalidation/conflicts."
+    },
+    {
+      question: "DTO vs domain model;",
+      answer: "DTO = struct που ταιριάζει ακριβώς το JSON του API. Domain = ο τύπος που θέλει το UI. Αποκωδικοποιείς σε DTO και χαρτογραφείς σε domain ώστε το UI να μην εξαρτάται από το API schema."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Offline-first repository για μια λίστα"
+  scenario="Φτιάξε ένα data layer που φέρνει προϊόντα από REST, τα αποθηκεύει με SwiftData, και σερβίρει το UI offline-first — με σωστό error handling."
+  outcomes={[
+    "Να κάνεις async network + JSON decoding με σωστό status handling.",
+    "Να αποθηκεύεις & διαβάζεις τοπικά με SwiftData (@Model/@Query).",
+    "Να ενώνεις τα δύο πίσω από ένα repository με single source of truth."
+  ]}
+  steps={[
+    "Όρισε struct Product: Codable, Identifiable (DTO) και @Model final class ProductEntity.",
+    "Γράψε async func fetchProducts() με URLSession + έλεγχο HTTPURLResponse.statusCode + JSONDecoder.",
+    "Φτιάξε protocol ProductRepository { func products() async throws -> [Product] }.",
+    "Στην υλοποίηση: fetch → γράψε στο SwiftData → return· σε catch, γύρνα τα cached.",
+    "Στο view: @Query τα ProductEntity, δείξέ τα αμέσως, και κάνε background refresh μέσω repository."
+  ]}
+  checkpoints={[
+    "Ελέγχεις πάντα το statusCode πριν το decode.",
+    "Το UI διαβάζει από το local store (@Query) — άμεσο & offline-capable.",
+    "Το repository κρύβει την πηγή· το view δεν καλεί URLSession απευθείας.",
+    "Οι καταστάσεις loading/loaded/failed μοντελοποιούνται ρητά (όχι σκόρπια flags)."
+  ]}
+  mistakes={[
+    "Να κάνεις decode χωρίς να ελέγξεις το HTTP status (κρυφά bugs σε 4xx/5xx).",
+    "Να καλείς URLSession/SwiftData κατευθείαν από τα views.",
+    "Να force-unwrap-άρεις προαιρετικά πεδία από το JSON.",
+    "Να αγνοείς το conflict/invalidation όταν local & remote διαφωνούν."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν το UI σου δείχνει δεδομένα άμεσα & offline μέσα από ένα repository, με σωστό status/error handling και single source of truth στο local store."
+/>

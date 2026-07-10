@@ -1,0 +1,309 @@
+# Swift Foundations
+
+Το **Swift** είναι η γλώσσα της Apple για iOS, iPadOS, macOS, watchOS και tvOS — από το 2014 αντικατέστησε το Objective-C ως η προτεινόμενη γλώσσα, και το **SwiftUI** είναι Swift-only. Είναι στατικά τυπωμένη (statically typed), compiled, και σχεδιάστηκε με **safety** ως πρώτη προτεραιότητα: όπως και το Kotlin, βάζει το **null safety** μέσα στο type system μέσω των **optionals**. Αν ξέρεις TypeScript ή Kotlin, πολλά θα σου φανούν οικεία — αλλά υπάρχουν δύο ιδέες που ορίζουν το Swift: τα **optionals** και η διάκριση **value types vs reference types**.
+
+Αυτό το μάθημα είναι **μόνο η γλώσσα** — όχι ακόμα SwiftUI. Χτίζουμε το vocabulary που θα χρησιμοποιείς σε κάθε επόμενο μάθημα.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να διαλέγεις `let` vs `var` και να εξηγείς γιατί προτιμάς immutability,
+- να χειρίζεσαι optionals με ασφάλεια (`if let`, `guard let`, `??`, `?.`) και να ξέρεις γιατί το force-unwrap `!` είναι code smell,
+- να ξεχωρίζεις **struct (value type)** από **class (reference type)** και να ξέρεις ποιο διαλέγεις,
+- να γράφεις `enum` με **associated values** και να το χειρίζεσαι με `switch`,
+- να ορίζεις `protocol` και να καταλαβαίνεις το protocol-oriented μοντέλο,
+- να χρησιμοποιείς closures και τα βασικά functional APIs (`map`/`filter`).
+
+## `let` vs `var` — immutability by default
+
+```swift
+let name = "Giannis"   // σταθερά — δεν μπορεί να ξανα-ανατεθεί
+var count = 0          // μεταβλητή — μπορεί να αλλάξει
+count += 1             // OK
+// name = "Άλλο"       // compile error
+```
+
+Ο τύπος **συνάγεται** (type inference): το `let name = "Giannis"` είναι αυτόματα `String`. Μπορείς να τον δηλώσεις ρητά: `let name: String = "Giannis"`.
+
+> Κανόνας: **ξεκίνα πάντα με `let`.** Άλλαξε σε `var` μόνο όταν πραγματικά χρειάζεσαι reassignment. Ο compiler μάλιστα σε προειδοποιεί αν δηλώσεις `var` που δεν άλλαξε ποτέ. Ο immutable κώδικας είναι κρίσιμος στο SwiftUI (θα το δεις στο state μάθημα).
+
+## Optionals — το χαρακτηριστικό που ορίζει το Swift
+
+Στη Swift, μια κανονική μεταβλητή **ΔΕΝ** μπορεί να είναι `nil` (το ισοδύναμο του null). Αν θέλεις να επιτρέψεις απουσία τιμής, δηλώνεις **optional** με `?`:
+
+```swift
+var a: String = "hello"
+// a = nil               // compile error — ο String ΔΕΝ δέχεται nil
+
+var b: String? = "hello" // το ? σημαίνει "String ή nil"
+b = nil                  // OK
+```
+
+Ο compiler σε **αναγκάζει** να ξετυλίξεις (unwrap) το optional πριν το χρησιμοποιήσεις. Οι τρόποι:
+
+```swift
+// 1. if let — μπες στο block μόνο αν έχει τιμή
+if let value = b {
+    print(value.count)   // εδώ το value είναι σκέτο String (non-optional)
+}
+
+// 2. guard let — βγες νωρίς αν είναι nil (early return, "happy path" μένει flat)
+func greet(_ b: String?) {
+    guard let value = b else { return }
+    print("Γεια \(value)")   // από εδώ και κάτω το value είναι non-optional
+}
+
+// 3. Nil-coalescing ?? — δώσε default
+let value = b ?? "άγνωστο"
+
+// 4. Optional chaining ?. — αν nil, όλη η έκφραση γίνεται nil
+let len: Int? = b?.count
+
+// 5. Force unwrap ! — "εγγυώμαι ότι δεν είναι nil" — CRASH αν κάνεις λάθος
+let len2 = b!.count
+```
+
+| Σύμβολο | Τι κάνει |
+|---|---|
+| `?` (στον τύπο) | Δηλώνει optional: `String?` |
+| `if let` / `guard let` | Ξετυλίγει με ασφάλεια σε binding |
+| `??` | Nil-coalescing — default όταν αριστερά είναι nil |
+| `?.` | Optional chaining — αν nil, η έκφραση γίνεται nil |
+| `!` | Force unwrap — «σκάσε (crash) αν είναι nil» |
+
+> Το force-unwrap `!` είναι **code smell**: λες στον compiler «εμπιστέψου με» και ξαναφέρνεις τα crashes. Χρησιμοποίησέ το μόνο όταν αποδεδειγμένα δεν γίνεται nil (π.χ. `@IBOutlet`, hardcoded resources)· αλλιώς προτίμησε `if let`/`guard let`/`??`.
+
+Το `guard let` είναι το πιο idiomatic pattern: κάνει **early return** για τις κακές περιπτώσεις και αφήνει το «καλό» μονοπάτι flat, χωρίς nesting.
+
+## Value types vs reference types — `struct` vs `class`
+
+Αυτή είναι η **πιο σημαντική** διάκριση του Swift και συχνή interview ερώτηση.
+
+```swift
+struct PointS { var x: Int }   // VALUE type — αντιγράφεται
+class  PointC { var x: Int; init(x: Int) { self.x = x } }  // REFERENCE type — μοιράζεται
+
+var a = PointS(x: 1)
+var b = a            // ΑΝΤΙΓΡΑΦΟ
+b.x = 99
+print(a.x)           // 1  — το a δεν επηρεάστηκε
+
+var c = PointC(x: 1)
+var d = c            // ΙΔΙΟ αντικείμενο (κοινό reference)
+d.x = 99
+print(c.x)           // 99 — άλλαξε και το c
+```
+
+- **`struct` = value type**: όταν το αναθέτεις ή το περνάς σε function, **αντιγράφεται**. Δύο μεταβλητές δεν μοιράζονται κατάσταση. Ζει (συνήθως) στο stack.
+- **`class` = reference type**: αναθέτεις/περνάς το **reference**· δύο μεταβλητές δείχνουν στο ίδιο αντικείμενο. Ζει στο heap, έχει identity (`===`), υποστηρίζει inheritance.
+
+> Στη Swift ο κανόνας είναι: **ξεκίνα με `struct`.** Τα περισσότερα models, τα SwiftUI views, ακόμα και `String`/`Array`/`Dictionary` είναι structs. Πήγαινε σε `class` μόνο όταν χρειάζεσαι **shared mutable state**, identity, inheritance, ή interop με UIKit/Objective-C. Το value semantics κάνει τον κώδικα προβλέψιμο — κανένα spooky action σε απόσταση.
+
+Τα structs έχουν αυτόματα **memberwise initializer** (`PointS(x: 1)`) — δεν γράφεις `init` με το χέρι.
+
+## Enums με associated values
+
+Τα `enum` της Swift είναι πολύ πιο δυνατά από άλλες γλώσσες: κάθε case μπορεί να κουβαλά **δικά του δεδομένα** (associated values) — ακριβώς σαν το `sealed class` του Kotlin:
+
+```swift
+enum UiState {
+    case loading
+    case success([Product])   // κουβαλά μια λίστα
+    case error(String)        // κουβαλά ένα μήνυμα
+}
+
+func render(_ state: UiState) -> String {
+    switch state {
+    case .loading:
+        return "Φόρτωση…"
+    case .success(let items):
+        return "\(items.count) προϊόντα"
+    case .error(let message):
+        return message
+    // χωρίς default! Ο compiler ξέρει ότι κάλυψες όλα τα cases
+    }
+}
+```
+
+> Το `switch` στη Swift είναι **exhaustive**: πρέπει να καλύψεις κάθε case (αλλιώς compile error). Αυτό το `enum` + `switch` pattern θα το δεις **παντού** στο iOS UI state (loading/success/error). Αν προσθέσεις νέο case, ο compiler σε αναγκάζει να ενημερώσεις κάθε `switch`.
+
+## Structs, computed properties & methods
+
+```swift
+struct Product {
+    let id: String
+    var title: String
+    var price: Double
+
+    // computed property — υπολογίζεται κάθε φορά
+    var displayPrice: String { "€\(price)" }
+
+    // method
+    func discounted(by pct: Double) -> Product {
+        var copy = self
+        copy.price = price * (1 - pct)
+        return copy      // immutable-style update: νέο αντίγραφο
+    }
+}
+
+let p = Product(id: "1", title: "Καφές", price: 3.5)
+print(p.displayPrice)          // €3.5
+let cheaper = p.discounted(by: 0.2)
+```
+
+Επειδή το `Product` είναι struct (value type), το `discounted` επιστρέφει **νέο αντίγραφο** αντί να μεταλλάσσει — ταιριάζει τέλεια με το state model του SwiftUI.
+
+## Protocols — το «interface» της Swift
+
+Ένα `protocol` ορίζει ένα **contract**: τι properties/methods πρέπει να έχει ένας τύπος. Structs, classes και enums μπορούν να το **conform**:
+
+```swift
+protocol Identifiable {
+    var id: String { get }
+}
+
+struct User: Identifiable {
+    let id: String
+    let name: String
+}
+```
+
+Η Swift είναι **protocol-oriented**: αντί για βαθιές ιεραρχίες κληρονομικότητας, συνθέτεις συμπεριφορά μέσω protocols (και protocol extensions με default implementations). Πολλά built-in protocols θα τα δεις συνέχεια: `Codable` (JSON), `Identifiable` (SwiftUI lists), `Equatable`, `Hashable`.
+
+## Closures & functional API
+
+Τα **closures** είναι anonymous functions (σαν τα JS arrow functions / Kotlin lambdas):
+
+```swift
+let nums = [3, 1, 2]
+
+let doubled = nums.map { $0 * 2 }          // [6, 2, 4]
+let evens   = nums.filter { $0 % 2 == 0 }  // [2]
+let sum     = nums.reduce(0, +)            // 6
+let sorted  = nums.sorted()                // [1, 2, 3]
+```
+
+Το `$0` είναι το implicit όνομα του πρώτου parameter. Το closure που είναι το **τελευταίο** argument βγαίνει έξω από τις παρενθέσεις (trailing closure): `nums.map { $0 * 2 }`.
+
+<PredictOutput
+  title="Value semantics στην πράξη"
+  code={`struct Box { var n: Int }
+var a = Box(n: 1)
+var b = a
+b.n = 99
+print(a.n)`}
+  options={[
+    "1",
+    "99",
+    "0",
+    "nil"
+  ]}
+  correctOptionIndex={0}
+  answer="1"
+  explanation="Το Box είναι struct (value type). Το `var b = a` δημιουργεί ΑΝΤΙΓΡΑΦΟ, όχι κοινό reference. Αλλάζοντας το b.n δεν επηρεάζεται το a. Αν το Box ήταν class (reference type), το αποτέλεσμα θα ήταν 99, γιατί a και b θα έδειχναν στο ίδιο αντικείμενο."
+/>
+
+<PredictOutput
+  title="Optionals & nil-coalescing"
+  code={`let name: String? = nil
+let shown = name ?? "άγνωστος"
+print(shown.count)`}
+  options={[
+    "0",
+    "7",
+    "nil",
+    "crash"
+  ]}
+  correctOptionIndex={1}
+  answer="7"
+  explanation="Το name είναι nil, οπότε το ?? δίνει το default 'άγνωστος' (7 χαρακτήρες). Το shown είναι πλέον σκέτο String (non-optional), άρα το .count δουλεύει κανονικά και δίνει 7. Δεν γίνεται crash γιατί δεν κάναμε ποτέ force-unwrap του nil."
+/>
+
+<Exercise
+  question="Πότε διαλέγεις class αντί για struct στη Swift;"
+  options={[
+    "Πάντα — τα classes είναι πιο γρήγορα.",
+    "Όταν χρειάζεσαι shared mutable state / identity (===), inheritance, ή interop με UIKit/Objective-C — αλλιώς προτιμάς struct για value semantics.",
+    "Όταν το type έχει optionals.",
+    "Όταν θέλεις να χρησιμοποιήσεις protocols."
+  ]}
+  correctOptionIndex={1}
+  explanation="Ο default στη Swift είναι struct (value type): αντιγράφεται, δεν μοιράζεται κατάσταση, είναι προβλέψιμο. Πας σε class μόνο όταν χρειάζεσαι shared reference (πολλά μέρη να βλέπουν την ίδια αλλαγή), object identity, κληρονομικότητα, ή γέφυρα με UIKit. Τα protocols δουλεύουν και με τα δύο, οπότε δεν είναι λόγος να διαλέξεις class."
+/>
+
+<Exercise
+  question="Γιατί το guard let προτιμάται συχνά από το if let;"
+  options={[
+    "Είναι πιο γρήγορο.",
+    "Κάνει early return για την κακή περίπτωση και αφήνει το «happy path» flat & non-optional από εκεί και κάτω, αντί να φωλιάζει τη λογική μέσα σε if.",
+    "Επιτρέπει nil τιμές.",
+    "Δουλεύει μόνο με structs."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το guard let ξετυλίγει το optional και, αν είναι nil, υποχρεώνει σε early exit (return/throw/continue). Το binding μένει διαθέσιμο ΕΞΩ από το guard, non-optional, οπότε το υπόλοιπο της function γράφεται flat χωρίς nesting. Το if let φωλιάζει τη λογική μέσα στο block — καλό για μικρά κομμάτια, λιγότερο για functions με πολλά preconditions."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «What are optionals in Swift, and how do value and reference types differ?»
+
+> An optional is Swift's way of encoding "a value or nothing" directly in the type system. A `String` can never be nil; only a `String?` can, and the compiler forces me to unwrap it before use. I reach for `if let` or `guard let` to safely bind it, `??` for a default, and optional chaining `?.` to short-circuit. Force-unwrapping with `!` crashes on nil, so I treat it as a code smell. The other defining idea is value vs reference types: a `struct` is a value type — it's copied on assignment, so two variables never share state — while a `class` is a reference type, shared by reference with identity and inheritance. Swift's default is `struct`, and even `String`, `Array`, and SwiftUI views are structs. I only reach for a `class` when I genuinely need shared mutable state, identity, inheritance, or UIKit interop. Value semantics make the code predictable, which matters a lot for SwiftUI's state model.
+
+<Flashcards
+  title="Swift foundations — interview drills"
+  cards={[
+    {
+      question: "let vs var — και ποιο είναι ο κανόνας;",
+      answer: "let = σταθερά (δεν ξανα-ανατίθεται), var = μεταβλητή. Ξεκίνα πάντα με let· ο compiler σε προειδοποιεί για var που δεν άλλαξε ποτέ."
+    },
+    {
+      question: "Πώς ξετυλίγεις ένα optional με ασφάλεια;",
+      answer: "if let / guard let (binding), ?? (default), ?. (optional chaining). ΑΠΟΦΥΓΕ το force-unwrap ! — κάνει crash σε nil."
+    },
+    {
+      question: "struct vs class — η βασική διαφορά;",
+      answer: "struct = value type, αντιγράφεται στην ανάθεση (καμία κοινή κατάσταση). class = reference type, μοιράζεται με reference, έχει identity (===) & inheritance. Default = struct."
+    },
+    {
+      question: "Τι είναι τα associated values σε enum;",
+      answer: "Κάθε case κουβαλά δικά του δεδομένα, π.χ. .success([Product]) / .error(String). Σαν sealed class. Το switch γίνεται exhaustive — καλύπτεις όλα τα cases χωρίς default."
+    },
+    {
+      question: "Τι σημαίνει «protocol-oriented»;",
+      answer: "Αντί για βαθιά inheritance, συνθέτεις συμπεριφορά μέσω protocols (contracts) + protocol extensions με default implementations. Structs/classes/enums μπορούν να conform."
+    },
+    {
+      question: "Γιατί το guard let είναι idiomatic;",
+      answer: "Early return για την κακή περίπτωση· το unwrapped binding μένει διαθέσιμο μετά, non-optional, κρατώντας το happy path flat χωρίς nesting."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Μοντελοποίησε ένα domain μόνο με Swift"
+  scenario="Πάρε μια οθόνη (π.χ. λίστα προϊόντων που φορτώνει από API) και μοντελοποίησε το domain + το UI state της σε καθαρή Swift — χωρίς SwiftUI ακόμα."
+  outcomes={[
+    "Να εκφράζεις δεδομένα με structs (value types) και immutable-style updates.",
+    "Να μοντελοποιείς καταστάσεις με enum + associated values + exhaustive switch.",
+    "Να χειρίζεσαι optionals με guard let / ?? αντί για force-unwrap."
+  ]}
+  steps={[
+    "Γράψε ένα struct Product(id, title, price) με ένα computed displayPrice.",
+    "Φτιάξε enum UiState με loading / success([Product]) / error(String).",
+    "Γράψε func render(_ state:) -> String με switch χωρίς default.",
+    "Πρόσθεσε ένα optional πεδίο (π.χ. discount: Double?) και χειρίσου το με ??.",
+    "Γράψε μια method που επιστρέφει νέο αντίγραφο (var copy = self) αντί να μεταλλάσσει."
+  ]}
+  checkpoints={[
+    "Το Product είναι struct, όλα τα «δεδομένα» πεδία let όπου γίνεται.",
+    "Το switch πάνω στο enum δεν έχει default — είναι exhaustive.",
+    "Κανένα force-unwrap ! — τα optionals με guard let / ??.",
+    "Το update γίνεται με νέο αντίγραφο, όχι με μετάλλαξη κοινού state."
+  ]}
+  mistakes={[
+    "Να διαλέγεις class εκεί που ένα struct αρκεί.",
+    "Να χρησιμοποιείς ! για να σωπάσεις τον compiler.",
+    "Να ξεχνάς ότι το switch πρέπει να είναι exhaustive.",
+    "Να μπερδεύεις value με reference semantics (γιατί άλλαξε/δεν άλλαξε το a)."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μοντελοποιείς δεδομένα με structs & enums, χειρίζεσαι optionals χωρίς force-unwrap, και εξηγείς με σιγουριά γιατί struct αντιγράφεται ενώ class μοιράζεται."
+/>

@@ -1,0 +1,263 @@
+# Architecture & MVVM
+
+Μέχρι τώρα έχεις views, state, navigation και ένα data layer. Το ερώτημα αρχιτεκτονικής είναι: **πού μπαίνει η λογική;** Αν στριμώξεις networking, business rules και formatting μέσα στα views, καταλήγεις σε «massive views» που δεν δοκιμάζονται και δεν επαναχρησιμοποιούνται. Η κυρίαρχη απάντηση στο SwiftUI είναι το **MVVM** (Model–View–ViewModel), υλοποιημένο καθαρά με το `@Observable` macro.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να χωρίζεις μια feature σε **layers** (UI / domain / data),
+- να γράφεις ένα `@Observable` **ViewModel** και να ξέρεις τι μπαίνει μέσα του,
+- να εφαρμόζεις **unidirectional data flow** (view → intent → state → view),
+- να κάνεις **dependency injection** για testability,
+- να καταλαβαίνεις τον **App/Scene lifecycle**,
+- να αναγνωρίζεις τα anti-patterns (massive views, λογική στο body).
+
+## Layers — διαχωρισμός ευθυνών
+
+Μια υγιής feature χωρίζεται σε τρία στρώματα:
+
+| Layer | Ευθύνη | Παράδειγμα |
+|---|---|---|
+| **UI (View)** | Πώς φαίνονται τα δεδομένα, χειρισμός input | SwiftUI views, modifiers |
+| **Domain (ViewModel)** | Κατάσταση οθόνης, business rules, ενέργειες | `@Observable` ViewModel |
+| **Data (Repository)** | Από πού έρχονται τα δεδομένα | Repository, API, SwiftData |
+
+Ο κανόνας: **οι εξαρτήσεις δείχνουν προς τα μέσα.** Το View ξέρει το ViewModel· το ViewModel ξέρει το Repository (μέσω protocol)· το Repository δεν ξέρει τίποτα για UI. Έτσι κάθε layer δοκιμάζεται και αλλάζει ανεξάρτητα.
+
+## Το ViewModel — `@Observable`
+
+Το ViewModel κρατά την **κατάσταση της οθόνης** και τις **ενέργειες** που τη μεταβάλλουν. Στο σύγχρονο SwiftUI είναι μια `@Observable` class, συνήθως `@MainActor`:
+
+```swift
+@MainActor
+@Observable
+final class ProductListViewModel {
+    // κατάσταση που «βλέπει» το view
+    private(set) var products: [Product] = []
+    private(set) var isLoading = false
+    private(set) var errorMessage: String?
+
+    // εξάρτηση μέσω protocol (DI)
+    private let repository: ProductRepository
+
+    init(repository: ProductRepository) {
+        self.repository = repository
+    }
+
+    // intent / action
+    func load() async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            products = try await repository.products()
+            errorMessage = nil
+        } catch {
+            errorMessage = "Αποτυχία φόρτωσης"
+        }
+    }
+}
+```
+
+Το view γίνεται **λεπτό** — μόνο παρουσίαση:
+
+```swift
+struct ProductListView: View {
+    @State private var vm: ProductListViewModel
+
+    init(repository: ProductRepository) {
+        _vm = State(initialValue: ProductListViewModel(repository: repository))
+    }
+
+    var body: some View {
+        List(vm.products) { Text($0.title) }
+            .overlay { if vm.isLoading { ProgressView() } }
+            .task { await vm.load() }   // ξεκινά όταν εμφανίζεται, ακυρώνεται όταν φεύγει
+    }
+}
+```
+
+> Τα `private(set)` properties σημαίνουν: το view **διαβάζει** την κατάσταση, αλλά **μόνο** το ViewModel τη γράφει. Έτσι όλες οι αλλαγές περνούν από ελεγχόμενες actions — δεν μπορεί ένα view να αλλάξει «κρυφά» το state.
+
+## Unidirectional data flow
+
+Η ροή είναι μονόδρομη και προβλέψιμη:
+
+1. **View** εμφανίζει state (`vm.products`).
+2. Ο χρήστης κάνει μια ενέργεια → το view καλεί ένα **intent** (`vm.load()`, `vm.delete(id)`).
+3. Το **ViewModel** εκτελεί τη λογική, μιλά στο repository, και ενημερώνει το **state**.
+4. Η αλλαγή state → το SwiftUI ξανα-renderάρει το **View**.
+
+Ποτέ δεν πηγαίνει το view να μεταλλάξει state κατευθείαν ή να καλέσει το repository. Αυτό είναι το ίδιο μοτίβο με MVVM+UDF στο Android (Compose) και με Redux-style flows στο web.
+
+## Dependency injection
+
+Πρόσεξε ότι το ViewModel παίρνει το `repository` στον `init` ως **protocol**, δεν το φτιάχνει το ίδιο. Αυτό είναι **dependency injection**, και είναι το κλειδί για **testability**:
+
+```swift
+// Production
+ProductListView(repository: DefaultProductRepository(...))
+
+// Test / Preview
+struct MockRepo: ProductRepository {
+    func products() async throws -> [Product] { [Product(id: "1", title: "Test", price: 1)] }
+}
+let vm = ProductListViewModel(repository: MockRepo())
+```
+
+Επειδή η εξάρτηση είναι protocol, στα unit tests περνάς mock που επιστρέφει σταθερά δεδομένα (ή πετάει error για να τεστάρεις το error state) — **χωρίς δίκτυο**. Το ίδιο κάνει τα SwiftUI Previews γρήγορα και ντετερμινιστικά.
+
+## App & Scene lifecycle
+
+Η είσοδος της app είναι ένα struct με `@main` που conform-άρει στο `App`:
+
+```swift
+@main
+struct ShopApp: App {
+    var body: some Scene {
+        WindowGroup {
+            RootView()
+        }
+        .modelContainer(for: ProductEntity.self)   // SwiftData store
+    }
+}
+```
+
+- **`App`** = ολόκληρη η εφαρμογή· το `body` επιστρέφει **Scenes**.
+- **`Scene`** (π.χ. `WindowGroup`) = ένα «παράθυρο» UI. Σε iPhone συνήθως ένα· σε iPad/Mac πολλά.
+- Στη ρίζα στήνεις global πράγματα: `.modelContainer`, `.environment(...)` για shared session/theme.
+- Την κατάσταση foreground/background/inactive τη διαβάζεις με `@Environment(\.scenePhase)` (π.χ. «αποθήκευσε όταν πάει background»).
+
+> Σε αντίθεση με το UIKit `AppDelegate`, το SwiftUI lifecycle είναι declarative. Για ειδικές ανάγκες (push notifications setup) υπάρχει `@UIApplicationDelegateAdaptor`, αλλά τα βασικά τα καλύπτει το `App`/`Scene`/`scenePhase`.
+
+## Anti-patterns
+
+- **Massive view:** networking, formatting, business logic στο `body`. → Βγάλ' τα σε ViewModel.
+- **Λογική στο computed `body`:** το `body` πρέπει να είναι **καθαρή** παρουσίαση· βαριοί υπολογισμοί εκεί τρέχουν σε κάθε re-render.
+- **View που φτιάχνει τις εξαρτήσεις του:** `URLSession`/repository μέσα στο view → αδύνατο να τεσταριστεί. Κάνε inject.
+- **Διπλή κατάσταση:** ίδια πληροφορία σε view και ViewModel που ξεσυγχρονίζεται. Ένας ιδιοκτήτης.
+- **ViewModel που ξέρει από SwiftUI:** το ViewModel δεν πρέπει να importάρει views ή να χειρίζεται navigation UI· κρατά state & logic, καθαρό και testable.
+
+<PredictOutput
+  title="private(set) στο ViewModel"
+  code={`@Observable final class VM {
+    private(set) var count = 0
+    func increment() { count += 1 }
+}
+// Σε ένα view: vm.count += 1
+// Τι συμβαίνει;`}
+  options={[
+    "Δουλεύει κανονικά",
+    "Compile error — το count είναι read-only απ' έξω· μόνο το VM το γράφει",
+    "Runtime crash",
+    "Αυξάνει αλλά δεν κάνει re-render"
+  ]}
+  correctOptionIndex={1}
+  answer="Compile error"
+  explanation="Το private(set) κάνει το setter private: το count διαβάζεται ελεύθερα απ' έξω (το view το δείχνει) αλλά γράφεται ΜΟΝΟ μέσα στο VM. Το vm.count += 1 από το view δεν compile-άρει. Αυτό επιβάλλει unidirectional data flow: κάθε αλλαγή state περνά από ελεγχόμενη action (π.χ. vm.increment()), όχι από απευθείας μετάλλαξη στο view."
+/>
+
+<PredictOutput
+  title="Πού τρέχει το .task;"
+  code={`List(vm.products) { ... }
+    .task { await vm.load() }
+// Ο χρήστης ανοίγει την οθόνη και μετά φεύγει πριν τελειώσει το load.
+// Τι γίνεται με το async work;`}
+  options={[
+    "Συνεχίζει να τρέχει στο κενό",
+    "Ακυρώνεται αυτόματα όταν το view φεύγει από το δέντρο",
+    "Crash",
+    "Ξεκινά ξανά από την αρχή"
+  ]}
+  correctOptionIndex={1}
+  answer="Ακυρώνεται αυτόματα"
+  explanation="Το .task modifier δένει το async work με τον χρόνο ζωής του view: ξεκινά όταν το view εμφανίζεται και ΑΚΥΡΩΝΕΤΑΙ αυτόματα όταν το view φεύγει. Έτσι δεν σπαταλάς network calls ούτε ενημερώνεις state οθόνης που δεν υπάρχει πια. Είναι το σωστό σημείο για να ξεκινήσεις το initial load ενός ViewModel."
+/>
+
+<Exercise
+  question="Γιατί το ViewModel παίρνει το repository ως protocol στον init αντί να το φτιάχνει μόνο του;"
+  options={[
+    "Για να τρέχει πιο γρήγορα.",
+    "Dependency injection: επιτρέπει να περάσεις mock repository στα tests/previews (σταθερά δεδομένα ή σκόπιμο error) χωρίς δίκτυο — testability & decoupling.",
+    "Είναι υποχρεωτικό από το @Observable.",
+    "Για να αποθηκεύει δεδομένα τοπικά."
+  ]}
+  correctOptionIndex={1}
+  explanation="Αν το ViewModel έφτιαχνε μόνο του το concrete repository (με URLSession), θα ήταν αδύνατο να το τεστάρεις χωρίς πραγματικό δίκτυο. Παίρνοντάς το ως protocol στον init (dependency injection), στο production περνάς την πραγματική υλοποίηση και στα tests/previews ένα mock που επιστρέφει ελεγχόμενα δεδομένα ή πετάει error. Αυτό αποσυνδέει το ViewModel από τη συγκεκριμένη πηγή και το κάνει ντετερμινιστικά testable."
+/>
+
+<Exercise
+  question="Ποιο είναι το «massive view» anti-pattern και πώς το διορθώνεις;"
+  options={[
+    "Πολύ μεγάλα fonts — μίκρυνέ τα.",
+    "Networking, business logic & formatting στριμωγμένα μέσα στο view/body· το διορθώνεις βγάζοντάς τα σε ένα @Observable ViewModel και κρατώντας το view λεπτό (μόνο παρουσίαση).",
+    "Πολλά views σε ένα αρχείο.",
+    "Χρήση πολλών modifiers."
+  ]}
+  correctOptionIndex={1}
+  explanation="Massive view = ένα view που κάνει τα πάντα: κατεβάζει δεδομένα, εφαρμόζει business rules, μορφοποιεί, χειρίζεται λάθη — όλα μέσα στο body. Γίνεται αδύνατο να τεσταριστεί και να επαναχρησιμοποιηθεί, και η λογική τρέχει σε κάθε re-render. Η λύση MVVM: μετακίνησε state & logic σε ένα @Observable ViewModel, άφησε το view να δείχνει μόνο vm.state και να καλεί vm.intent(). Το view ξαναγίνεται λεπτό & δηλωτικό."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you structure a SwiftUI feature, and why MVVM?»
+
+> I split a feature into layers: the view handles presentation and input, an `@Observable` view model owns the screen's state and business logic, and a repository (behind a protocol) owns where data comes from. Dependencies point inward — the view knows the view model, the view model knows the repository, and the repository knows nothing about UI. The view model is a `@MainActor @Observable` class exposing `private(set)` state that only it can mutate, plus intents like `load()`; the view just reads state and calls intents, which gives unidirectional data flow. I inject the repository as a protocol into the view model's init, so in tests and previews I pass a mock that returns fixed data or throws — no network, fully deterministic. The app entry is a `@main App` returning `Scene`s, where I set up the model container and shared environment, and I read foreground/background transitions via `scenePhase`. The anti-pattern I avoid is the massive view — logic in `body` that can't be tested and reruns on every render; MVVM keeps the view thin.
+
+<Flashcards
+  title="iOS architecture — interview drills"
+  cards={[
+    {
+      question: "Τα τρία layers μιας feature;",
+      answer: "UI (View: παρουσίαση/input), Domain (ViewModel: state + business logic), Data (Repository: πηγή δεδομένων). Οι εξαρτήσεις δείχνουν προς τα μέσα."
+    },
+    {
+      question: "Τι είναι ένα @Observable ViewModel;",
+      answer: "@MainActor @Observable class που κρατά την κατάσταση οθόνης (private(set)) και τις actions/intents που τη μεταβάλλουν. Κρατά το view λεπτό (μόνο παρουσίαση)."
+    },
+    {
+      question: "Γιατί private(set) στο state;",
+      answer: "Το view διαβάζει, μόνο το ViewModel γράφει. Επιβάλλει unidirectional data flow — κάθε αλλαγή περνά από ελεγχόμενη action, όχι απευθείας μετάλλαξη."
+    },
+    {
+      question: "Unidirectional data flow στο MVVM;",
+      answer: "View δείχνει state → user action καλεί intent → ViewModel εκτελεί logic & ενημερώνει state → SwiftUI ξανα-renderάρει. Μονόδρομο & προβλέψιμο."
+    },
+    {
+      question: "Γιατί dependency injection του repository;",
+      answer: "Το ViewModel παίρνει repository ως protocol στον init· στα tests/previews περνάς mock (fixed data ή error) χωρίς δίκτυο. Testability + decoupling."
+    },
+    {
+      question: "App vs Scene;",
+      answer: "@main App = όλη η εφαρμογή, body επιστρέφει Scenes. Scene (WindowGroup) = ένα «παράθυρο» UI. scenePhase = foreground/background/inactive."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Ξαναδόμησε μια οθόνη σε καθαρά layers"
+  scenario="Πάρε μια οθόνη που έχει τα πάντα στο view (fetch + formatting + error handling) και σπάσ' την σε MVVM με injected repository."
+  outcomes={[
+    "Να γράφεις @Observable ViewModel με private(set) state και intents.",
+    "Να επιβάλλεις unidirectional data flow (view → intent → state).",
+    "Να κάνεις dependency injection ώστε η οθόνη να τεστάρεται με mock."
+  ]}
+  steps={[
+    "Όρισε protocol ProductRepository και μια mock υλοποίηση για previews/tests.",
+    "Φτιάξε @MainActor @Observable ProductListViewModel(repository:) με products/isLoading/errorMessage (private(set)) και async load().",
+    "Κάνε το view λεπτό: διαβάζει vm.state, καλεί .task { await vm.load() }.",
+    "Πέρασε το repository από έξω (init) — production vs mock.",
+    "Στήσε το @main App με WindowGroup + .modelContainer και δοκίμασε scenePhase για autosave."
+  ]}
+  checkpoints={[
+    "Το view δεν κάνει networking ούτε business logic — μόνο παρουσίαση & intents.",
+    "Το state είναι private(set): το γράφει μόνο το ViewModel.",
+    "Το repository είναι injected protocol (mock στα previews/tests).",
+    "Οι εξαρτήσεις δείχνουν προς τα μέσα (View→ViewModel→Repository)."
+  ]}
+  mistakes={[
+    "Massive view: λογική & networking μέσα στο body.",
+    "Το ViewModel να φτιάχνει μόνο του το concrete repository (ατέστητο).",
+    "Διπλή κατάσταση σε view & ViewModel που ξεσυγχρονίζεται.",
+    "Βαριούς υπολογισμούς στο body (τρέχουν σε κάθε re-render)."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μια feature χωρίζεται σε καθαρά layers, το view είναι λεπτό, το state ρέει μονόδρομα, και μπορείς να τεστάρεις την οθόνη με ένα mock repository χωρίς δίκτυο."
+/>

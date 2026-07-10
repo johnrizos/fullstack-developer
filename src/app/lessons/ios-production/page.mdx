@@ -1,0 +1,198 @@
+# Xcode, Signing & App Store
+
+Έγραψες την app — τώρα πρέπει να **φτάσει σε συσκευές**. Το iOS deployment έχει ένα κομμάτι που μπερδεύει κάθε αρχάριο: το **code signing** και τα **provisioning profiles**. Η Apple απαιτεί κάθε app να είναι κρυπτογραφικά υπογεγραμμένη ώστε να ξέρει ποιος την έφτιαξε και σε ποιες συσκευές επιτρέπεται να τρέξει. Σε αυτό το μάθημα βλέπουμε τη διαδρομή από το Xcode μέχρι το App Store & το TestFlight.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να καταλαβαίνεις το Xcode project, schemes και build configurations (Debug/Release),
+- να εξηγείς τι είναι **bundle ID**, **certificate** και **provisioning profile**,
+- να ξέρεις γιατί υπάρχει το **code signing** και τι λύνει,
+- να δημιουργείς ένα **archive** και να το ανεβάζεις στο **App Store Connect**,
+- να διανέμεις beta μέσω **TestFlight**,
+- να κατανοείς το **App Store review** και το versioning.
+
+## Xcode: project, schemes, configurations
+
+Το **Xcode** είναι το IDE της Apple — build, run, debug, profiling, signing, όλα εκεί.
+
+- **Scheme:** τι χτίζεται και πώς τρέχει (ποιο target, ποια configuration). Εναλλάσσεσαι scheme για να τρέξεις σε simulator vs device.
+- **Build configuration:** τυπικά **Debug** και **Release**.
+  - *Debug* — γρήγορο build, χωρίς optimizations, με debug symbols, για ανάπτυξη.
+  - *Release* — optimized (`-O`), για διανομή. Ό,τι στέλνεις στο App Store είναι Release.
+- **Target:** ένα προϊόν που παράγεται (η app, ένα widget extension, τα tests).
+
+> Ξεχωριστές ρυθμίσεις ανά configuration (π.χ. διαφορετικό API base URL για dev vs prod) μπαίνουν με build settings / xcconfig / compilation conditions (`#if DEBUG`). Ό,τι φτάνει στους χρήστες πρέπει να χτίζεται σε **Release**.
+
+## Bundle ID — η ταυτότητα της app
+
+Το **bundle identifier** (π.χ. `com.giannis.shopapp`) είναι το μοναδικό, σταθερό όνομα της app σε όλο το οικοσύστημα της Apple. Χρησιμοποιείται σε signing, στο App Store Connect, στα push notifications, στα capabilities. **Δεν αλλάζει** μετά το πρώτο release — μια app με άλλο bundle ID είναι άλλη app.
+
+## Code signing — γιατί υπάρχει
+
+Η Apple απαιτεί κάθε binary που τρέχει σε πραγματική συσκευή να είναι **υπογεγραμμένο**. Δύο κομμάτια:
+
+- **Signing certificate:** αποδεικνύει **ποιος** υπογράφει (εσύ / η ομάδα σου, μέσω του Apple Developer account). Development certificate για τοπικό testing, Distribution certificate για App Store.
+- **Provisioning profile:** συνδέει τρία πράγματα — το **App ID** (bundle ID), το **certificate**, και (για development) τις επιτρεπόμενες **συσκευές** + τα **capabilities** (push, iCloud κ.λπ.). Λέει ουσιαστικά «αυτή η υπογεγραμμένη app επιτρέπεται να τρέξει εδώ».
+
+> **Γιατί όλο αυτό;** Ασφάλεια & εμπιστοσύνη: ο χρήστης ξέρει ότι η app προέρχεται από ταυτοποιημένο developer και δεν έχει πειραχτεί μετά την υπογραφή. Στη πράξη, το **Xcode automatically managed signing** χειρίζεται certificates & profiles για σένα — απλώς διαλέγεις το Team σου. Το χειροκίνητο signing χρειάζεται σε πιο σύνθετα CI/enterprise setups.
+
+Το **Apple Developer Program** (πληρωμένο, ετήσιο) είναι προϋπόθεση για signing που τρέχει σε συσκευές τρίτων και για δημοσίευση.
+
+## Archive — το πακέτο διανομής
+
+Όταν είσαι έτοιμος να διανείμεις, φτιάχνεις ένα **archive** (Product → Archive στο Xcode): ένα Release build υπογεγραμμένο για distribution. Το iOS πακετάρει την app ως **`.ipa`**. Από το Organizer window κάνεις **Distribute** → upload στο **App Store Connect**.
+
+Στο upload εφαρμόζονται και optimizations όπως **app thinning** (η κάθε συσκευή κατεβάζει μόνο τα assets/architecture που χρειάζεται) και **bitcode/symbol** handling για crash symbolication.
+
+## App Store Connect
+
+Το **App Store Connect** (appstoreconnect.apple.com) είναι το web portal διαχείρισης:
+
+- Δημιουργείς τη **record** της app (όνομα, bundle ID, κατηγορία).
+- Ανεβάζεις **builds** (από το Xcode archive).
+- Συμπληρώνεις **metadata**: screenshots, περιγραφή, keywords, privacy nutrition labels, age rating.
+- Ρυθμίζεις **τιμή** & διαθεσιμότητα ανά χώρα.
+- Υποβάλλεις για **review** και ελέγχεις analytics/crashes.
+
+## TestFlight — beta distribution
+
+Πριν το public release, το **TestFlight** μοιράζει beta builds:
+
+- **Internal testers** (μέλη της ομάδας, έως 100) — άμεση διάθεση, χωρίς review.
+- **External testers** (έως 10.000, με link/email) — απαιτούν σύντομο beta review.
+- Κάθε build λήγει μετά από **90 μέρες**.
+
+> Ροή που θα χρησιμοποιείς: archive → upload → μοίρασε internal TestFlight build στην ομάδα → μάζεψε feedback/crashes → επανάληψη → external beta → τελικό App Store submission. Έτσι πιάνεις προβλήματα σε πραγματικές συσκευές πριν φτάσουν στους χρήστες.
+
+## App Store review & versioning
+
+- Κάθε submission περνά **ανθρώπινο review** (App Review Guidelines): crashes, ελλιπής λειτουργικότητα, privacy παραβάσεις, παραπλανητικά metadata είναι συχνοί λόγοι rejection.
+- **Versioning** — δύο αριθμοί (όπως στο Android):
+  - **Version (marketing, π.χ. `1.2.0`)** — αυτό που βλέπει ο χρήστης (`CFBundleShortVersionString`).
+  - **Build number (π.χ. `42`)** — εσωτερικός· πρέπει να **αυξάνει** σε κάθε upload για το ίδιο version (`CFBundleVersion`).
+- Μετά την έγκριση διαλέγεις **manual** ή **automatic release**, και μπορείς να κάνεις **phased release** (σταδιακή διάθεση σε ποσοστό χρηστών σε 7 μέρες).
+
+<PredictOutput
+  title="Version vs build number"
+  code={`// Ανέβασες build 1.2.0 (42) στο App Store Connect.
+// Βρήκες bug, φτιάχνεις νέο upload ΠΡΙΝ βγει το 1.2.0.
+// Κρατάς Version 1.2.0. Τι ΠΡΕΠΕΙ να αλλάξεις;`}
+  options={[
+    "Τίποτα — μπορείς να ξανα-ανεβάσεις το ίδιο",
+    "Το build number (π.χ. 42 → 43) — πρέπει να αυξάνει σε κάθε upload",
+    "Το bundle ID",
+    "Το certificate"
+  ]}
+  correctOptionIndex={1}
+  answer="Το build number (42 → 43)"
+  explanation="Η marketing Version (1.2.0) είναι αυτό που βλέπει ο χρήστης και μπορεί να μείνει ίδια όσο δουλεύεις πάνω σε αυτή. Αλλά το App Store Connect ΑΠΟΡΡΙΠΤΕΙ upload με build number που έχει ξαναχρησιμοποιηθεί για το ίδιο version — το build number (CFBundleVersion) πρέπει να είναι μοναδικό & αύξον σε κάθε upload. Το bundle ID και το certificate δεν αλλάζουν."
+/>
+
+<PredictOutput
+  title="Debug vs Release για distribution"
+  code={`// Κάνεις Product → Archive αλλά το scheme είναι σε Debug configuration.
+// Τι πρόβλημα υπάρχει για App Store distribution;`}
+  options={[
+    "Κανένα — Debug και Release είναι ίδια",
+    "Το archive πρέπει να είναι Release (optimized, distribution signing)· το Debug δεν είναι κατάλληλο/αποδεκτό για store",
+    "Θα ανέβει πιο γρήγορα",
+    "Το bundle ID αλλάζει"
+  ]}
+  correctOptionIndex={1}
+  answer="Πρέπει να είναι Release"
+  explanation="Το Debug build είναι χωρίς optimizations, με development signing και debug symbols — για ανάπτυξη, όχι για χρήστες. Το archive για distribution πρέπει να χτίζεται σε Release: optimized κώδικας και distribution signing. Το Xcode Archive action χρησιμοποιεί τη Release configuration του scheme by default· αν την αλλάξεις σε Debug, το build δεν είναι κατάλληλο για το App Store."
+/>
+
+<Exercise
+  question="Τι ρόλο παίζει το provisioning profile;"
+  options={[
+    "Αποθηκεύει τα δεδομένα χρήστη.",
+    "Συνδέει το App ID (bundle ID) + το signing certificate + (για dev) επιτρεπόμενες συσκευές & capabilities — δηλαδή «αυτή η υπογεγραμμένη app επιτρέπεται να τρέξει εδώ».",
+    "Επιταχύνει το build.",
+    "Μεταφράζει την app σε άλλες γλώσσες."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το provisioning profile είναι ο «συνδετικός κρίκος» του signing: δένει ποια app (App ID/bundle ID), υπογεγραμμένη με ποιο certificate (ποιος developer), επιτρέπεται να τρέξει και πού (development: σε συγκεκριμένες registered συσκευές· distribution: μέσω App Store/TestFlight), μαζί με τα ενεργοποιημένα capabilities (push, iCloud). Χωρίς έγκυρο profile, η συσκευή αρνείται να τρέξει το binary. Δεν έχει σχέση με δεδομένα, ταχύτητα ή μεταφράσεις."
+/>
+
+<Exercise
+  question="Πώς διανέμεις μια beta σε δοκιμαστές πριν το public release;"
+  options={[
+    "Στέλνεις το .ipa με email απευθείας.",
+    "Μέσω TestFlight: ανεβάζεις build στο App Store Connect και το μοιράζεις σε internal (χωρίς review) ή external testers (με σύντομο beta review).",
+    "Μόνο μέσω πλήρους App Store release.",
+    "Απενεργοποιώντας το code signing."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το TestFlight είναι ο επίσημος μηχανισμός beta της Apple. Ανεβάζεις το archive στο App Store Connect και το διαθέτεις σε internal testers (μέλη ομάδας, άμεσα, χωρίς review) ή external testers (έως 10.000 μέσω link, με ένα σύντομο beta review). Τα builds λήγουν στις 90 μέρες. Δεν μπορείς να τρέξεις signed iOS app απλώς στέλνοντας το .ipa με email, και δεν χρειάζεται πλήρες public release για να δοκιμάσουν οι testers."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «Walk me through shipping an iOS app to the App Store.»
+
+> I build in Xcode, and everything that reaches users is the Release configuration — optimized, with distribution signing. The part people underestimate is code signing: Apple requires every binary on a real device to be signed. A signing certificate proves who I am via my Apple Developer account, and a provisioning profile ties the App ID — the bundle identifier — to that certificate and, for development, to allowed devices and capabilities, so the device knows the app is legitimate and untampered. In practice I let Xcode manage signing. To ship, I create an archive, which is a signed Release build, and upload it to App Store Connect, where I manage the app record, builds, and metadata. Before the public release I distribute betas through TestFlight — internal testers get it immediately, external testers after a short beta review — to catch issues on real devices. Then I submit for App Review. Versioning has two numbers: the marketing version users see, and a build number that must increase on every upload. After approval I can do a manual or phased release.
+
+<Flashcards
+  title="iOS production — interview drills"
+  cards={[
+    {
+      question: "Debug vs Release configuration;",
+      answer: "Debug = γρήγορο, χωρίς optimizations, dev signing/symbols, για ανάπτυξη. Release = optimized, distribution signing, για χρήστες. Το archive/App Store είναι πάντα Release."
+    },
+    {
+      question: "Τι είναι το bundle ID;",
+      answer: "Η μοναδική, σταθερή ταυτότητα της app (com.company.app) σε όλο το οικοσύστημα Apple (signing, ASC, push). Δεν αλλάζει μετά το πρώτο release."
+    },
+    {
+      question: "Certificate vs provisioning profile;",
+      answer: "Certificate = ΠΟΙΟΣ υπογράφει (developer identity). Provisioning profile = δένει App ID + certificate + (dev) συσκευές & capabilities: «αυτή η signed app τρέχει εδώ»."
+    },
+    {
+      question: "Γιατί υπάρχει το code signing;",
+      answer: "Ασφάλεια/εμπιστοσύνη: κάθε binary σε συσκευή είναι υπογεγραμμένο, ώστε ο χρήστης να ξέρει ότι προέρχεται από ταυτοποιημένο developer και δεν πειράχτηκε. Το Xcode το κάνει auto-managed."
+    },
+    {
+      question: "Τι είναι το archive & το App Store Connect;",
+      answer: "Archive = signed Release build (.ipa) για distribution (Product → Archive). App Store Connect = web portal για builds, metadata, τιμή, review, analytics."
+    },
+    {
+      question: "TestFlight internal vs external;",
+      answer: "Internal (έως 100, μέλη ομάδας, χωρίς review, άμεσα) vs external (έως 10.000, link/email, σύντομο beta review). Builds λήγουν σε 90 μέρες."
+    },
+    {
+      question: "Version vs build number;",
+      answer: "Version (1.2.0, CFBundleShortVersionString) = marketing, ο χρήστης το βλέπει. Build number (42, CFBundleVersion) = εσωτερικός, πρέπει να αυξάνει σε κάθε upload."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Πάρε την app από το Xcode στο TestFlight"
+  scenario="Έχεις μια έτοιμη app. Σχεδίασε (και κατέγραψε) τη διαδρομή release: signing, archive, upload, beta, submission — και εξήγησε κάθε βήμα σαν να το κάνεις σε πραγματική ομάδα."
+  outcomes={[
+    "Να στήνεις σωστά bundle ID, Team & Release configuration.",
+    "Να δημιουργείς signed archive και να το ανεβάζεις στο App Store Connect.",
+    "Να διανέμεις beta μέσω TestFlight και να χειρίζεσαι versioning."
+  ]}
+  steps={[
+    "Όρισε ένα σταθερό bundle ID (com.yourname.app) και επίλεξε Team με automatically managed signing.",
+    "Βεβαιώσου ότι το scheme χτίζει σε Release· έλεγξε ότι το prod build χρησιμοποιεί το σωστό API URL (#if DEBUG).",
+    "Product → Archive· από το Organizer κάνε Distribute → upload στο App Store Connect.",
+    "Στο App Store Connect φτιάξε το app record + metadata· διάθεσε το build σε internal TestFlight testers.",
+    "Αύξησε το build number για κάθε νέο upload· μετά το beta feedback, υπόβαλε για App Review με version/release strategy (manual ή phased)."
+  ]}
+  checkpoints={[
+    "Το distribution build είναι Release, υπογεγραμμένο για distribution.",
+    "Το bundle ID είναι σταθερό & μοναδικό.",
+    "Κάθε upload έχει μοναδικό, αύξοντα build number.",
+    "Οι testers παίρνουν το build μέσω TestFlight, όχι με άμεσο .ipa."
+  ]}
+  mistakes={[
+    "Να κάνεις archive σε Debug configuration.",
+    "Να ξαναχρησιμοποιείς build number (το ASC το απορρίπτει).",
+    "Να μπερδεύεις marketing version με build number.",
+    "Να ξεχνάς privacy metadata/screenshots — συχνός λόγος rejection στο review."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μπορείς να εξηγήσεις & να εκτελέσεις τη διαδρομή signing → archive → App Store Connect → TestFlight → review, και να διαχειριστείς σωστά version/build numbers."
+/>

@@ -1,0 +1,291 @@
+# SwiftUI Views & Layout
+
+Το **SwiftUI** είναι το declarative UI framework της Apple (από το 2019). Αντί να δημιουργείς και να μεταλλάσσεις UI αντικείμενα με το χέρι (το imperative μοντέλο του παλιού UIKit), **περιγράφεις** πώς πρέπει να δείχνει το UI για μια δεδομένη κατάσταση, και το framework το χτίζει και το ενημερώνει για σένα. Αν έρχεσαι από React ή Jetpack Compose, το μοντέλο θα σου φανεί οικείο: **UI = f(state)**.
+
+Αυτό το μάθημα είναι για το **UI layer** — δομή, layout, modifiers. Το state (πώς αλλάζει το UI όταν αλλάζουν τα δεδομένα) είναι το επόμενο μάθημα.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να γράφεις ένα `View` με `body` και να καταλαβαίνεις τι σημαίνει `some View`,
+- να στοιβάζεις UI με `VStack`/`HStack`/`ZStack`,
+- να εφαρμόζεις **modifiers** και να ξέρεις γιατί η **σειρά μετράει**,
+- να χρησιμοποιείς `Text`/`Image`/`Button` και βασικά controls,
+- να φτιάχνεις λίστες με `List` και `ForEach`,
+- να καταλαβαίνεις το declarative μοντέλο σε αντίθεση με το imperative UIKit.
+
+## Ένα View — δομή
+
+Κάθε κομμάτι UI στο SwiftUI είναι ένα **`struct`** που conform-άρει στο `View` protocol και έχει μια `body` property:
+
+```swift
+import SwiftUI
+
+struct GreetingView: View {
+    let name: String
+
+    var body: some View {
+        Text("Γεια, \(name)!")
+            .font(.title)
+            .foregroundStyle(.blue)
+    }
+}
+```
+
+- Το view είναι **struct** (value type) — φθηνό, χωρίς identity. Το SwiftUI τα δημιουργεί/πετάει συνέχεια.
+- Το `body` επιστρέφει `some View` — ένα **opaque type**: «κάποιος συγκεκριμένος τύπος View που δεν χρειάζεται να ονομάσω». Ο compiler ξέρει τον ακριβή τύπο· εσύ απλώς λες «είναι κάποιο View».
+- Το UI **περιγράφεται declaratively**: δεν λες «φτιάξε ένα label, βάλε το κείμενο, χρωμάτισέ το» — λες «εδώ υπάρχει ένα μπλε Text».
+
+> **Declarative vs imperative:** Στο παλιό UIKit έγραφες `let label = UILabel(); label.text = "..."; view.addSubview(label)` και μετά ενημέρωνες το `label.text` με το χέρι όταν άλλαζε κάτι. Στο SwiftUI περιγράφεις το τελικό αποτέλεσμα ως συνάρτηση της κατάστασης· όταν η κατάσταση αλλάξει, το framework ξαναϋπολογίζει το `body` και κάνει μόνο του τις ελάχιστες αλλαγές.
+
+## Stacks — το layout πρωτεύον εργαλείο
+
+Το SwiftUI χτίζει layout στοιβάζοντας views:
+
+```swift
+VStack(alignment: .leading, spacing: 8) {   // κάθετα
+    Text("Καφές").font(.headline)
+    Text("€3.50").foregroundStyle(.secondary)
+}
+
+HStack(spacing: 12) {   // οριζόντια
+    Image(systemName: "cart")
+    Text("Καλάθι")
+}
+
+ZStack {   // το ένα πάνω στο άλλο (βάθος)
+    Color.blue
+    Text("Overlay").foregroundStyle(.white)
+}
+```
+
+- **`VStack`** — παιδιά το ένα κάτω από το άλλο.
+- **`HStack`** — το ένα δίπλα στο άλλο.
+- **`ZStack`** — το ένα πάνω στο άλλο (για overlays/badges).
+
+Χρήσιμα layout βοηθήματα: `Spacer()` (σπρώχνει τα υπόλοιπα, «τρώει» τον ελεύθερο χώρο), `padding()`, και `alignment`/`spacing` args.
+
+## Modifiers — και γιατί η σειρά μετράει
+
+Ένας **modifier** επιστρέφει ένα **νέο, τυλιγμένο view** με μια αλλαγή. Τους αλυσιδώνεις:
+
+```swift
+Text("Sale")
+    .padding(8)
+    .background(.red)
+    .foregroundStyle(.white)
+    .clipShape(.capsule)
+```
+
+Επειδή κάθε modifier τυλίγει το προηγούμενο αποτέλεσμα, η **σειρά αλλάζει το αποτέλεσμα**:
+
+```swift
+// A: padding ΜΕΤΑ background → το κόκκινο περιλαμβάνει το padding (μεγάλο κόκκινο)
+Text("Hi").padding().background(.red)
+
+// B: background ΜΕΤΑ padding → βάφεται μόνο το κείμενο, μετά μπαίνει διάφανο padding γύρω
+Text("Hi").background(.red).padding()
+```
+
+> Αυτό είναι το **#1 first-day gotcha** στο SwiftUI (ίδιο με τα Modifier chains στο Compose). Σκέψου κάθε modifier ως «τύλιξε το τρέχον view σε ένα καινούριο». `.frame()` πριν ή μετά το `.background()` δίνει τελείως διαφορετικό αποτέλεσμα.
+
+## Text, Image & controls
+
+```swift
+Text("Τίτλος")
+    .font(.largeTitle)
+    .bold()
+
+Image(systemName: "star.fill")   // SF Symbols — built-in εικονίδια
+    .foregroundStyle(.yellow)
+
+Button("Αγορά") {
+    // action — τι γίνεται στο tap
+    print("tapped")
+}
+.buttonStyle(.borderedProminent)
+
+TextField("Email", text: $email)   // το $ = binding (επόμενο μάθημα)
+    .textFieldStyle(.roundedBorder)
+```
+
+Τα **SF Symbols** (`Image(systemName:)`) είναι χιλιάδες έτοιμα, scalable εικονίδια που ταιριάζουν με το system font — τα χρησιμοποιείς παντού χωρίς assets.
+
+## Λίστες — `List` & `ForEach`
+
+Για scrollable λίστες δεδομένων:
+
+```swift
+struct Product: Identifiable {
+    let id: String
+    let title: String
+}
+
+struct ProductList: View {
+    let products: [Product]
+
+    var body: some View {
+        List(products) { product in
+            Text(product.title)
+        }
+    }
+}
+```
+
+- Το `List` δίνει scrolling, separators και native εμφάνιση **δωρεάν**, και είναι **virtualized** (renderάρει μόνο τα ορατά cells — σαν FlatList στο RN).
+- Χρειάζεται **σταθερή ταυτότητα** ανά στοιχείο. Είτε το type conform-άρει `Identifiable` (property `id`), είτε δίνεις `id:` ρητά. Χωρίς σταθερό id, το SwiftUI δεν ξέρει ποιο cell άλλαξε — ίδια ιδέα με τα React keys.
+
+Για custom layout αντί για native rows χρησιμοποιείς `ScrollView { LazyVStack { ForEach(...) } }`.
+
+## Reusable, συνθέσιμα views
+
+Επειδή τα views είναι απλά structs, τα **συνθέτεις** σε μικρότερα κομμάτια — ακριβώς όπως components στο React:
+
+```swift
+struct PriceTag: View {
+    let price: Double
+    var body: some View {
+        Text("€\(price, specifier: "%.2f")")
+            .font(.caption).bold()
+            .padding(6)
+            .background(.green.opacity(0.2))
+            .clipShape(.capsule)
+    }
+}
+
+struct ProductRow: View {
+    let product: Product
+    var body: some View {
+        HStack {
+            Text(product.title)
+            Spacer()
+            PriceTag(price: product.price)   // reuse
+        }
+    }
+}
+```
+
+> Κράτα τα views **μικρά**. Ένα τεράστιο `body` είναι δύσκολο να διαβαστεί και βλάπτει την επίδοση (το SwiftUI ξαναϋπολογίζει μεγαλύτερα κομμάτια). Σπάσε σε υπο-views με ξεκάθαρα ονόματα.
+
+<PredictOutput
+  title="Η σειρά των modifiers"
+  code={`// Δύο εκδοχές του ίδιου Text:
+// A: Text("Hi").padding().background(.red)
+// B: Text("Hi").background(.red).padding()
+// Ποια δείχνει ΜΕΓΑΛΥΤΕΡΗ κόκκινη περιοχή;`}
+  options={[
+    "Η A (padding πριν background)",
+    "Η B (background πριν padding)",
+    "Ίδιες — η σειρά δεν μετράει",
+    "Καμία — σφάλμα compile"
+  ]}
+  correctOptionIndex={0}
+  answer="Η A"
+  explanation="Κάθε modifier τυλίγει το προηγούμενο view. Στην A, το padding μπαίνει ΠΡΩΤΑ (μεγαλώνει την περιοχή) και μετά το background βάφει ΟΛΗ αυτή τη μεγαλύτερη περιοχή → μεγάλο κόκκινο. Στην B, το background βάφει πρώτα μόνο το κείμενο και μετά προστίθεται διάφανο padding γύρω → μικρή κόκκινη περιοχή. Η σειρά των modifiers αλλάζει το αποτέλεσμα."
+/>
+
+<PredictOutput
+  title="Τι είναι το some View;"
+  code={`var body: some View {
+    Text("Hi")
+}
+// Τι σημαίνει το 'some View';`}
+  options={[
+    "Ένας πίνακας από views",
+    "Ένα opaque type: «κάποιος συγκεκριμένος τύπος View» — ο compiler ξέρει τον ακριβή τύπο, εσύ δεν τον ονομάζεις",
+    "Ένα optional view (μπορεί να είναι nil)",
+    "Ένα view που αλλάζει τύπο στο runtime"
+  ]}
+  correctOptionIndex={1}
+  answer="Opaque return type"
+  explanation="Το `some View` είναι opaque return type: δηλώνεις ότι επιστρέφεις ΕΝΑΝ συγκεκριμένο, σταθερό τύπο που conform-άρει στο View, χωρίς να τον γράψεις (θα ήταν τεράστιος γενικός τύπος όπως VStack<TupleView<...>>). Δεν είναι optional, δεν είναι πίνακας, και ΔΕΝ αλλάζει στο runtime — ο compiler γνωρίζει τον ακριβή τύπο σε compile time."
+/>
+
+<Exercise
+  question="Ποια είναι η βασική διαφορά declarative (SwiftUI) vs imperative (παλιό UIKit);"
+  options={[
+    "Το SwiftUI είναι πιο αργό.",
+    "Στο declarative περιγράφεις πώς δείχνει το UI για μια δεδομένη κατάσταση και το framework το ενημερώνει· στο imperative δημιουργείς & μεταλλάσσεις UI αντικείμενα με το χέρι.",
+    "Το UIKit δεν υποστηρίζει λίστες.",
+    "Το SwiftUI δεν χρησιμοποιεί structs."
+  ]}
+  correctOptionIndex={1}
+  explanation="Imperative (UIKit): φτιάχνεις UILabel/UIButton, τα προσθέτεις, και ΕΣΥ ενημερώνεις κάθε property με το χέρι όταν αλλάζει κάτι. Declarative (SwiftUI): γράφεις το body ως συνάρτηση της κατάστασης (UI = f(state))· όταν η κατάσταση αλλάξει, το framework ξαναϋπολογίζει το body και εφαρμόζει τις ελάχιστες αλλαγές. Λιγότερος κώδικας συγχρονισμού, λιγότερα bugs «ξέχασα να ενημερώσω το X»."
+/>
+
+<Exercise
+  question="Γιατί το List/ForEach θέλει σταθερή ταυτότητα (Identifiable/id);"
+  options={[
+    "Για να ταξινομεί αυτόματα τα στοιχεία.",
+    "Για να ξέρει το SwiftUI ποιο στοιχείο άλλαξε/προστέθηκε/αφαιρέθηκε και να κάνει σωστά & αποδοτικά updates — όπως τα keys στο React.",
+    "Είναι απλώς για accessibility.",
+    "Για να αποθηκεύει τα δεδομένα στο disk."
+  ]}
+  correctOptionIndex={1}
+  explanation="Όταν αλλάζει η λίστα, το SwiftUI χρειάζεται σταθερή ταυτότητα ανά στοιχείο για να αντιστοιχίσει παλιά με νέα rows — ποιο μετακινήθηκε, ποιο μπήκε, ποιο έφυγε — και να ανανεώσει μόνο τα απαραίτητα cells. Χωρίς σταθερό id (μέσω Identifiable ή id:), μπορεί να μπερδέψει τα cells ή να τα ξαναφτιάξει όλα. Είναι ακριβώς η λογική των React keys."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «What makes SwiftUI declarative, and why does modifier order matter?»
+
+> In SwiftUI I describe what the UI should look like for a given state rather than imperatively creating and mutating view objects like in UIKit. A view is a lightweight `struct` conforming to `View`, with a `body` that returns `some View` — an opaque type the compiler knows precisely but I don't have to spell out. I lay things out by stacking: `VStack`, `HStack`, `ZStack`. Styling happens through modifiers, and the key gotcha is that each modifier wraps the previous view and returns a new one, so order changes the result — padding before background paints a larger area than background before padding. When state changes, the framework re-evaluates `body` and applies the minimal updates, so I never manually sync the UI. For lists I use `List`/`ForEach` with stable identity via `Identifiable`, the same idea as React keys, which lets SwiftUI diff rows efficiently. And I keep views small and composed, both for readability and performance.
+
+<Flashcards
+  title="SwiftUI views — interview drills"
+  cards={[
+    {
+      question: "Τι είναι ένα SwiftUI View;",
+      answer: "Ένα struct (value type) που conform-άρει στο View protocol και έχει body: some View. Φθηνό, χωρίς identity — το framework τα δημιουργεί/πετάει συνέχεια."
+    },
+    {
+      question: "Τι σημαίνει some View;",
+      answer: "Opaque return type: «κάποιος συγκεκριμένος τύπος View». Ο compiler ξέρει τον ακριβή (τεράστιο) τύπο· εσύ δεν τον γράφεις. Δεν είναι optional ούτε πίνακας."
+    },
+    {
+      question: "VStack vs HStack vs ZStack;",
+      answer: "VStack = κάθετα (κάτω-κάτω), HStack = οριζόντια (δίπλα-δίπλα), ZStack = βάθος (το ένα πάνω στο άλλο, για overlays)."
+    },
+    {
+      question: "Γιατί μετράει η σειρά των modifiers;",
+      answer: "Κάθε modifier τυλίγει το προηγούμενο view και επιστρέφει νέο. .padding().background() ≠ .background().padding() — αλλάζει ποια περιοχή επηρεάζεται."
+    },
+    {
+      question: "Declarative vs imperative UI;",
+      answer: "Declarative (SwiftUI): περιγράφεις UI = f(state), το framework ενημερώνει. Imperative (UIKit): δημιουργείς & μεταλλάσσεις αντικείμενα με το χέρι."
+    },
+    {
+      question: "Γιατί List/ForEach θέλει Identifiable;",
+      answer: "Για σταθερή ταυτότητα ανά στοιχείο, ώστε το SwiftUI να diff-άρει σωστά τα rows (όπως React keys). List = virtualized + native look δωρεάν."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Χτίσε ένα product screen μόνο με SwiftUI"
+  scenario="Φτιάξε την οθόνη μιας λίστας προϊόντων declaratively — δομή, layout και styling — χωρίς καθόλου state ακόμα (στατικά δεδομένα)."
+  outcomes={[
+    "Να συνθέτεις UI με stacks και reusable υπο-views.",
+    "Να εφαρμόζεις modifiers με σωστή σειρά.",
+    "Να renderάρεις λίστα με σταθερή ταυτότητα (Identifiable)."
+  ]}
+  steps={[
+    "Φτιάξε struct Product: Identifiable με id, title, price.",
+    "Γράψε ένα reusable PriceTag view (Text + padding + background + capsule) — πρόσεξε τη σειρά των modifiers.",
+    "Γράψε ProductRow: HStack με title, Spacer() και PriceTag.",
+    "Γράψε ProductListView: List(products) { ProductRow(product:) }.",
+    "Πρόσθεσε ένα header VStack με τίτλο (.largeTitle.bold()) πάνω από τη λίστα."
+  ]}
+  checkpoints={[
+    "Κάθε view είναι μικρό & συνθέσιμο (όχι ένα τεράστιο body).",
+    "Το Product conform-άρει Identifiable (σταθερό id για το List).",
+    "Οι modifiers είναι σε σειρά που δίνει το επιθυμητό αποτέλεσμα (δοκίμασε να την αλλάξεις και δες τη διαφορά).",
+    "Χρησιμοποιείς Spacer()/alignment αντί για hardcoded offsets."
+  ]}
+  mistakes={[
+    "Ένα γιγάντιο body αντί για μικρά υπο-views.",
+    "Λάθος σειρά modifiers (π.χ. background πριν από padding ενώ ήθελες το αντίθετο).",
+    "List/ForEach χωρίς σταθερό id.",
+    "Να σκέφτεσαι imperatively («φτιάξε label, βάλε κείμενο») αντί declaratively."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν χτίζεις μια οθόνη ως σύνθεση μικρών views, ελέγχεις το layout με stacks/modifiers, και εξηγείς γιατί η σειρά των modifiers και η ταυτότητα στο List έχουν σημασία."
+/>
