@@ -3,6 +3,14 @@
 //
 // Το NEXT_PUBLIC_SHEET_SYNC_URL γίνεται inline στο bundle κατά το build, οπότε η
 // αναφορά πρέπει να είναι ΣΤΑΤΙΚΗ (όχι μέσω μεταβλητής) για να αντικατασταθεί σωστά.
+import {
+  type ProgressMap,
+  completedIdsToMap,
+  isProgressMap,
+  mapToCompletedIds,
+  MIGRATION_AT,
+} from "./progressMap";
+
 const SYNC_URL = process.env.NEXT_PUBLIC_SHEET_SYNC_URL;
 
 const EMAIL_KEY = "syncEmail";
@@ -20,8 +28,16 @@ function withTimeout(ms: number): { signal: AbortSignal; clear: () => void } {
 export type SheetSyncPayload = {
   email: string;
   completed: string[];
+  state: ProgressMap;
   count: number;
   updatedAt: string;
+};
+
+export type PushResult = {
+  /** True αν το request στάλθηκε επιτυχώς (2xx). */
+  ok: boolean;
+  /** Το server-merged state, αν το (νέο) Apps Script το επέστρεψε — αλλιώς null. */
+  merged: ProgressMap | null;
 };
 
 /** True μόνο αν έχει οριστεί το Apps Script URL στο .env(.local). */
@@ -46,17 +62,21 @@ export function clearSyncEmail(): void {
 }
 
 /**
- * Στέλνει την τρέχουσα λίστα ολοκληρωμένων μαθημάτων στο Google Sheet.
+ * Στέλνει το per-lesson state στο Google Sheet. Το (νέο) Apps Script κάνει
+ * server-side per-lesson merge, οπότε το push ΔΕΝ μπορεί να σβήσει δεδομένα άλλης
+ * συσκευής — και επιστρέφει το merged state για άμεση υιοθέτηση.
  * Χρησιμοποιεί "simple request" (text/plain) ώστε ο browser να ΜΗΝ κάνει CORS
  * preflight προς το Apps Script — αλλιώς η κλήση θα μπλοκαριζόταν.
- * Επιστρέφει true αν το request στάλθηκε επιτυχώς.
+ * Στέλνει και `completed[]` για backward-compat με παλιό sheet.
  */
-export async function syncProgressToSheet(email: string, completed: string[]): Promise<boolean> {
-  if (!SYNC_URL || !email) return false;
+export async function pushProgressToSheet(email: string, state: ProgressMap): Promise<PushResult> {
+  if (!SYNC_URL || !email) return { ok: false, merged: null };
 
+  const completed = mapToCompletedIds(state);
   const payload: SheetSyncPayload = {
     email: email.trim(),
     completed,
+    state,
     count: completed.length,
     updatedAt: new Date().toISOString(),
   };
@@ -71,25 +91,37 @@ export async function syncProgressToSheet(email: string, completed: string[]): P
       keepalive: true,
       signal: t.signal,
     });
-    return res.ok;
+    if (!res.ok) return { ok: false, merged: null };
+    let merged: ProgressMap | null = null;
+    try {
+      const data = await res.json();
+      if (data && data.ok !== false && isProgressMap(data.state)) merged = data.state;
+    } catch {
+      // response μη αναγνώσιμο (π.χ. CORS) — το write πιθανώς πέτυχε· το merged έρχεται στο επόμενο pull.
+    }
+    return { ok: true, merged };
   } catch {
-    // π.χ. offline ή CORS στο response — το write μπορεί να πέτυχε ούτως ή άλλως.
-    return false;
+    // offline ή σφάλμα — το write δεν στάλθηκε.
+    return { ok: false, merged: null };
   } finally {
     t.clear();
   }
 }
 
 /**
- * Κατεβάζει τη λίστα ολοκληρωμένων μαθημάτων ενός email από το Google Sheet.
+ * Κατεβάζει το per-lesson state ενός email από το Google Sheet.
  * GET με query param → "simple request" (χωρίς CORS preflight) και το response
- * είναι αναγνώσιμο. Χρησιμοποιείται στο login για cross-browser restore + merge.
+ * είναι αναγνώσιμο. Χρησιμοποιείται στο startup/login για cross-device merge.
  *
  * Επιστρέφει:
- *   - string[]  → η αποθηκευμένη λίστα (μπορεί να είναι κενή αν δεν υπάρχει γραμμή)
- *   - null      → απέτυχε το fetch (offline/σφάλμα) — ΜΗΝ το θεωρήσεις "κενή πρόοδος"
+ *   - ProgressMap → το αποθηκευμένο state (κενό {} αν δεν υπάρχει γραμμή). Αν το
+ *                   deployment είναι παλιό-two-way (δίνει μόνο completed[]), το
+ *                   μετατρέπει σε map (done@MIGRATION_AT) για συμβατότητα.
+ *   - null        → ΑΓΝΩΣΤΟ: fetch failure (offline/σφάλμα) Ή απρόσμενο σχήμα (π.χ.
+ *                   πολύ παλιό deployment χωρίς state/completed). ΠΟΤΕ μην το θεωρήσεις
+ *                   "μηδέν πρόοδος".
  */
-export async function fetchProgressFromSheet(email: string): Promise<string[] | null> {
+export async function fetchProgressFromSheet(email: string): Promise<ProgressMap | null> {
   if (!SYNC_URL || !email) return null;
 
   const t = withTimeout(REQUEST_TIMEOUT_MS);
@@ -99,9 +131,14 @@ export async function fetchProgressFromSheet(email: string): Promise<string[] | 
     if (!res.ok) return null;
     const data = await res.json();
     if (!data || data.ok === false) return null;
-    return Array.isArray(data.completed)
-      ? data.completed.filter((id: unknown): id is string => typeof id === "string")
-      : [];
+    if (isProgressMap(data.state)) return data.state;
+    // Backward-compat: παλιό two-way deployment → μόνο completed[]. Χτίσε map.
+    if (Array.isArray(data.completed)) {
+      const ids = data.completed.filter((id: unknown): id is string => typeof id === "string");
+      return completedIdsToMap(ids, MIGRATION_AT);
+    }
+    // Απρόσμενο σχήμα (π.χ. health-only doGet) → άγνωστο, ΟΧΙ κενό.
+    return null;
   } catch {
     return null;
   } finally {

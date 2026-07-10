@@ -47,29 +47,37 @@ NEXT_PUBLIC_SHEET_SYNC_URL=https://script.google.com/macros/s/AKfy.../exec
 
 1. Άνοιξε τις **Ρυθμίσεις** (γρανάζι πάνω δεξιά) → ενότητα **Google Sheet sync**.
 2. Βάλε το email σου και πάτα **Σύνδεση & αποθήκευση**.
-3. **Στη σύνδεση** η εφαρμογή κατεβάζει την αποθηκευμένη πρόοδο αυτού του email από
-   το sheet και την **ενώνει (merge)** με την τοπική — έτσι σε νέο browser/συσκευή
-   εμφανίζονται τα μαθήματα που είχες ολοκληρώσει αλλού.
-4. Από εκεί και πέρα, κάθε φορά που ολοκληρώνεις/αναιρείς μάθημα, η λίστα στέλνεται
-   αυτόματα (debounced) στο sheet. Υπάρχει και κουμπί **Sync τώρα**.
+3. **Στη σύνδεση** (και σε κάθε άνοιγμα της εφαρμογής) η εφαρμογή κατεβάζει την
+   αποθηκευμένη πρόοδο αυτού του email και την **συγχωνεύει (per-lesson merge)** με την
+   τοπική — έτσι σε νέο browser/συσκευή εμφανίζονται τα μαθήματα που είχες ολοκληρώσει αλλού.
+4. Από εκεί και πέρα, κάθε φορά που ολοκληρώνεις/αναιρείς μάθημα, στέλνεται αυτόματα
+   (debounced) στο sheet. Υπάρχει και κουμπί **Sync τώρα**.
 
-Στο sheet θα δεις μία γραμμή ανά email: `Email | Completed Count | Completed Lessons | Updated At`.
+Στο sheet θα δεις μία γραμμή ανά email:
+`Email | Completed Count | Completed Lessons | Updated At | State JSON`.
+Η στήλη **State JSON** είναι η αυθεντική πηγή (per-lesson `{ done, at }`)· οι υπόλοιπες
+είναι για ανθρώπινη ανάγνωση.
 
 > ⚠️ **Αν έχεις ήδη deploy-άρει παλιότερη έκδοση**, πρέπει να κάνεις **Manage deployments →
-> Edit → New version** ώστε να ενεργοποιηθεί το νέο read endpoint (`doGet?email=`).
-> Χωρίς αυτό, το cross-browser restore δεν θα δουλεύει (το παλιό `doGet` έκανε μόνο health check).
+> Edit → New version** ώστε να ενεργοποιηθεί το νέο **server-side merge** (`doPost`) και το
+> `doGet?email=` που επιστρέφει `state`. Χωρίς αυτό, ο client πέφτει σε ασφαλές fallback
+> (δεν σβήνει δεδομένα) αλλά η αφαίρεση μαθήματος **δεν** θα συγχρονίζεται σωστά μεταξύ συσκευών.
 
 ## Πώς δουλεύει (τεχνικά)
 
-- **Write:** ο client στέλνει `POST` με `Content-Type: text/plain` — έτσι ο browser **δεν**
-  κάνει CORS preflight, που το Apps Script δεν υποστηρίζει. Το `doPost` κάνει **upsert** ανά email.
-- **Read (restore):** ο client κάνει `GET ?email=...` (simple request, αναγνώσιμο response).
-  Το `doGet` επιστρέφει `{ ok, email, completed: [...], count }` για αυτό το email.
-- Στο login ο client κάνει pull + **union merge** πριν από οποιοδήποτε push, ώστε να μη
-  χάνεται πρόοδος από καμία πλευρά. Ένας φρέσκος browser (κενή λίστα) **δεν** κάνει ποτέ
-  push count 0, οπότε δεν σβήνει το backup.
-- Το email κρατιέται τοπικά (localStorage, κλειδί `syncEmail`). Το sheet είναι πλέον
-  αμφίδρομος χώρος συγχρονισμού, όχι μόνο backup.
+- Κάθε μάθημα κρατά κατάσταση **`{ done, at }`** (at = epoch ms). Η συγχώνευση είναι
+  **per-lesson last-write-wins**: για κάθε μάθημα κερδίζει η εγγραφή με το μεγαλύτερο `at`.
+  Έτσι συγχρονίζεται και η **αφαίρεση** (done:false με νεότερο timestamp), όχι μόνο η προσθήκη.
+- **Write:** ο client στέλνει `POST` με `Content-Type: text/plain` (κανένα CORS preflight,
+  που το Apps Script δεν υποστηρίζει). Το `doPost` **δεν** κάνει τυφλό overwrite: κατεβάζει
+  την υπάρχουσα κατάσταση της γραμμής, τη **merge-άρει per-lesson** με την εισερχόμενη, και
+  αποθηκεύει το αποτέλεσμα — άρα ούτε συσκευή με λιγότερα σβήνει το backup, ούτε ταυτόχρονες
+  αλλαγές χάνονται. Επιστρέφει το merged `state` για άμεση υιοθέτηση από τον client.
+- **Read:** `GET ?email=...` → `{ ok, email, state, completed: [...], count }`.
+- Ο client κάνει pull + per-lesson merge στο startup/connect/sync και ξαναστέλνει το
+  αποτέλεσμα· ο server merge είναι η δεύτερη (αυθεντική) γραμμή άμυνας για concurrency.
+- Το email κρατιέται τοπικά (localStorage, κλειδί `syncEmail`). Ο τοπικός map ζει στο
+  κλειδί `lessonProgressMap` (+ παράγωγη λίστα `completedLessons` για συμβατότητα).
 
 ## Προαιρετικά: shared secret
 
