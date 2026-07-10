@@ -1,0 +1,280 @@
+# REST APIs
+
+Το κύριο πράγμα που χτίζεις με Spring Boot είναι **REST APIs** — HTTP endpoints που σερβίρουν JSON στο frontend/mobile. Το Spring MVC κάνει την αντιστοίχιση HTTP → Java methods απλή με annotations, και προσθέτει **validation**, **exception handling** και σωστά **status codes**. Ξέρεις ήδη REST concepts από τα προηγούμενα tracks· εδώ τα βλέπεις στο Spring idiom.
+
+Το ζητούμενο ποιότητας: ένα **καθαρό contract** — σωστά verbs & status codes, DTOs αντί να εκθέτεις entities, validation στην είσοδο, και **ενιαίο** error format.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να ορίζεις endpoints με `@RestController` & request mappings,
+- να διαβάζεις input με `@PathVariable`, `@RequestParam`, `@RequestBody`,
+- να χρησιμοποιείς **DTOs** αντί να εκθέτεις entities,
+- να κάνεις **validation** (`@Valid`, Bean Validation),
+- να επιστρέφεις σωστά **status codes** (`ResponseEntity`),
+- να στήνεις **centralized exception handling** (`@RestControllerAdvice`).
+
+## `@RestController` & mappings
+
+Ένα `@RestController` είναι bean που χειρίζεται HTTP requests και επιστρέφει **δεδομένα** (JSON), όχι HTML views:
+
+```java
+@RestController
+@RequestMapping("/api/products")
+public class ProductController {
+    private final ProductService service;
+    public ProductController(ProductService service) { this.service = service; }
+
+    @GetMapping                              // GET /api/products
+    public List<ProductDto> list() {
+        return service.findAll();
+    }
+
+    @GetMapping("/{id}")                      // GET /api/products/42
+    public ProductDto getOne(@PathVariable Long id) {
+        return service.findById(id);
+    }
+
+    @PostMapping                             // POST /api/products
+    @ResponseStatus(HttpStatus.CREATED)      // 201
+    public ProductDto create(@Valid @RequestBody CreateProductRequest req) {
+        return service.create(req);
+    }
+}
+```
+
+- `@GetMapping`/`@PostMapping`/`@PutMapping`/`@DeleteMapping` → HTTP verbs.
+- `@RequestMapping("/api/products")` στην κλάση = κοινό prefix.
+- Το return value σειριοποιείται **αυτόματα σε JSON** (μέσω Jackson).
+
+## Διαβάζοντας input
+
+| Annotation | Από πού | Παράδειγμα |
+|---|---|---|
+| `@PathVariable` | URL path | `/products/{id}` → `getOne(id)` |
+| `@RequestParam` | query string | `/products?category=x` |
+| `@RequestBody` | JSON body | POST/PUT payload |
+
+```java
+@GetMapping
+public List<ProductDto> search(
+    @RequestParam(required = false) String category,
+    @RequestParam(defaultValue = "0") int page
+) { ... }
+```
+
+Το `@RequestBody` κάνει **deserialize** το JSON σε Java object αυτόματα.
+
+## DTOs — μην εκθέτεις entities
+
+Κρίσιμο pattern: **μην** επιστρέφεις/δέχεσαι JPA **entities** απευθείας στο API. Χρησιμοποίησε **DTOs** (Data Transfer Objects) — συνήθως **records**:
+
+```java
+public record ProductDto(Long id, String title, double price) {}
+public record CreateProductRequest(
+    @NotBlank String title,
+    @Positive double price
+) {}
+```
+
+> Γιατί DTOs:
+> - **Ασφάλεια:** τα entities μπορεί να έχουν πεδία που δεν πρέπει να εκτεθούν (password hash, internal flags).
+> - **Απόζευξη:** το API contract δεν αλλάζει κάθε φορά που αλλάζει το DB schema.
+> - **Lazy loading traps:** σειριοποιώντας entity με lazy σχέσεις μπορεί να πυροδοτήσεις N+1 ή `LazyInitializationException`.
+> - **Validation:** ο request DTO κρατά τα validation rules της εισόδου, ξεχωριστά από το persistence model.
+
+Το mapping entity↔DTO γίνεται στο service layer.
+
+## Validation
+
+Με **Bean Validation** (annotations στο DTO) + `@Valid`, το Spring ελέγχει την είσοδο **πριν** φτάσει στη logic:
+
+```java
+public record CreateProductRequest(
+    @NotBlank(message = "Ο τίτλος είναι υποχρεωτικός") String title,
+    @Positive double price,
+    @Size(max = 500) String description
+) {}
+
+@PostMapping
+public ProductDto create(@Valid @RequestBody CreateProductRequest req) { ... }
+```
+
+Αν το input αποτύχει, το Spring πετάει `MethodArgumentNotValidException` → by default **400 Bad Request**. Συχνά constraints: `@NotNull`, `@NotBlank`, `@Size`, `@Min`/`@Max`, `@Email`, `@Positive`.
+
+## Status codes & `ResponseEntity`
+
+Το REST contract θέλει **σωστά HTTP status codes**:
+
+| Code | Πότε |
+|---|---|
+| `200 OK` | επιτυχές GET/PUT |
+| `201 Created` | επιτυχές POST (νέο resource) |
+| `204 No Content` | επιτυχές DELETE |
+| `400 Bad Request` | invalid input |
+| `404 Not Found` | δεν υπάρχει το resource |
+| `409 Conflict` | π.χ. duplicate |
+
+Για ρητό έλεγχο status/headers, χρησιμοποιείς **`ResponseEntity`**:
+
+```java
+@GetMapping("/{id}")
+public ResponseEntity<ProductDto> getOne(@PathVariable Long id) {
+    return service.findByIdOptional(id)
+        .map(ResponseEntity::ok)                       // 200 + body
+        .orElse(ResponseEntity.notFound().build());    // 404
+}
+```
+
+## Centralized exception handling
+
+Αντί για `try/catch` σε κάθε controller, ορίζεις **έναν** global handler με `@RestControllerAdvice` — ένα ενιαίο error format για όλο το API:
+
+```java
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    @ExceptionHandler(ProductNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ErrorResponse handleNotFound(ProductNotFoundException ex) {
+        return new ErrorResponse("PRODUCT_NOT_FOUND", ex.getMessage());
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ErrorResponse handleValidation(MethodArgumentNotValidException ex) {
+        // μάζεψε τα field errors σε ένα καθαρό μήνυμα
+        return new ErrorResponse("VALIDATION_ERROR", /* ... */);
+    }
+}
+
+public record ErrorResponse(String code, String message) {}
+```
+
+> Όφελος: το business logic πετάει καθαρά **domain exceptions** (`ProductNotFoundException`), και ένα σημείο τα μεταφράζει σε σωστό HTTP status + συνεπές JSON error. Οι controllers μένουν λεπτοί, το frontend παίρνει **προβλέψιμο** error shape. Αυτό είναι το «καθαρό contract» που ελέγχεται στη συνέντευξη.
+
+<PredictOutput
+  title="Validation failure"
+  code={`public record CreateProductRequest(@NotBlank String title, @Positive double price) {}
+
+@PostMapping
+public ProductDto create(@Valid @RequestBody CreateProductRequest req) { ... }
+
+// Έρχεται POST με body { "title": "", "price": -5 }
+// Τι επιστρέφει το API;`}
+  options={[
+    "200 OK — δημιουργεί το προϊόν",
+    "400 Bad Request — το @Valid ελέγχει τα constraints (@NotBlank, @Positive) και απορρίπτει ΠΡΙΝ φτάσει στη logic",
+    "500 Internal Server Error",
+    "201 Created με κενό title"
+  ]}
+  correctOptionIndex={1}
+  answer="400 Bad Request — validation fail"
+  explanation="Το @Valid ενεργοποιεί Bean Validation στο DTO. title='' παραβιάζει @NotBlank, price=-5 παραβιάζει @Positive. Το Spring πετάει MethodArgumentNotValidException πριν τρέξει ο κώδικας του controller → 400 by default. Το create() δεν εκτελείται καν. Έτσι κρατάς invalid δεδομένα έξω από τη logic/DB."
+/>
+
+<PredictOutput
+  title="Γιατί DTO αντί entity;"
+  code={`// Επιστρέφεις απευθείας το JPA @Entity User (με password, roles, lazy orders)
+@GetMapping("/{id}")
+public User getUser(@PathVariable Long id) { return userRepo.findById(id).get(); }
+// Ποιο είναι το βασικό πρόβλημα;`}
+  options={[
+    "Κανένα — είναι πιο σύντομο",
+    "Εκθέτεις εσωτερικά/ευαίσθητα πεδία (password) & δένεις το API στο DB schema· επιπλέον lazy σχέσεις μπορεί να σκάσουν (N+1/LazyInitializationException). Χρησιμοποίησε DTO/record.",
+    "Δεν σειριοποιείται σε JSON",
+    "Το entity δεν έχει getters"
+  ]}
+  correctOptionIndex={1}
+  answer="Εκθέτεις ευαίσθητα πεδία & δένεις API↔schema"
+  explanation="Επιστρέφοντας το entity, σειριοποιείς ΟΛΑ τα πεδία — και το password hash/internal flags. Επίσης το API contract αλλάζει κάθε φορά που αλλάζει το DB schema, και οι lazy σχέσεις μπορεί να πυροδοτήσουν queries ή LazyInitializationException. Ένα DTO (record) εκθέτει μόνο ό,τι πρέπει, με σταθερό contract."
+/>
+
+<Exercise
+  question="Τι κερδίζεις με centralized exception handling (@RestControllerAdvice);"
+  options={[
+    "Τίποτα — καλύτερα try/catch σε κάθε controller.",
+    "Ένα σημείο μεταφράζει domain exceptions σε σωστά HTTP status + ενιαίο JSON error format· οι controllers μένουν λεπτοί και το frontend παίρνει προβλέψιμο error shape.",
+    "Κάνει τα endpoints πιο γρήγορα.",
+    "Αντικαθιστά τη validation."
+  ]}
+  correctOptionIndex={1}
+  explanation="@RestControllerAdvice + @ExceptionHandler = global error handling. Το business logic πετάει καθαρά domain exceptions· ένα κεντρικό σημείο τα χαρτογραφεί σε status codes (404/400/409) και συνεπές JSON. Πλεονεκτήματα: DRY (όχι try/catch παντού), λεπτοί controllers, προβλέψιμο contract για τους clients."
+/>
+
+<Exercise
+  question="Ποιο status code για επιτυχές POST που δημιουργεί resource;"
+  options={[
+    "200 OK",
+    "201 Created — δηλώνει ότι δημιουργήθηκε νέο resource (ιδανικά με Location header)· 204 για DELETE, 200 για απλό GET/PUT.",
+    "404 Not Found",
+    "500 Internal Server Error"
+  ]}
+  correctOptionIndex={1}
+  explanation="Σωστά status codes = μέρος του REST contract. 201 Created για επιτυχή δημιουργία (POST), 200 OK για GET/PUT, 204 No Content για DELETE, 400 για invalid input, 404 για ανύπαρκτο, 409 για conflict. Στο Spring: @ResponseStatus(HttpStatus.CREATED) ή ResponseEntity για ρητό έλεγχο."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you build a REST API in Spring Boot?»
+
+> I expose endpoints with a `@RestController` and map HTTP verbs with `@GetMapping`, `@PostMapping`, and so on, with a shared path prefix via `@RequestMapping`. Input comes in through `@PathVariable` for the URL, `@RequestParam` for the query string, and `@RequestBody` for the JSON payload, which Spring deserializes automatically, and return values are serialized back to JSON by Jackson. I never expose JPA entities directly — I map to DTOs, usually records, because entities can carry sensitive or internal fields, couple the API contract to the database schema, and drag in lazy-loading traps. Input is validated declaratively with Bean Validation annotations plus `@Valid`, so bad requests get a 400 before hitting my logic. I return correct status codes — 201 for a created resource, 204 for delete, 404 when missing — using `@ResponseStatus` or `ResponseEntity` for explicit control. And rather than try/catch in every controller, I centralize error handling in a `@RestControllerAdvice`: my services throw clean domain exceptions, and one place translates them into the right HTTP status and a consistent JSON error shape, so controllers stay thin and clients get a predictable contract.
+
+<Flashcards
+  title="Spring REST — interview drills"
+  cards={[
+    {
+      question: "Τι κάνει το @RestController;",
+      answer: "Bean που χειρίζεται HTTP requests & επιστρέφει δεδομένα (JSON, όχι HTML). Mappings: @GetMapping/@PostMapping/@PutMapping/@DeleteMapping. Return value → JSON μέσω Jackson."
+    },
+    {
+      question: "@PathVariable vs @RequestParam vs @RequestBody;",
+      answer: "@PathVariable: από το URL path (/{id}). @RequestParam: από query string (?category=x). @RequestBody: deserialize JSON body σε object (POST/PUT)."
+    },
+    {
+      question: "Γιατί DTOs αντί για entities;",
+      answer: "Ασφάλεια (κρύβεις password/internal), απόζευξη API↔schema, αποφυγή lazy-loading traps (N+1/LazyInitializationException), ξεχωριστά validation rules. DTO συνήθως record· mapping στο service."
+    },
+    {
+      question: "Πώς γίνεται validation;",
+      answer: "Bean Validation annotations στο DTO (@NotBlank/@Positive/@Size...) + @Valid στο @RequestBody. Fail → MethodArgumentNotValidException → 400, πριν τρέξει η logic."
+    },
+    {
+      question: "Βασικά REST status codes;",
+      answer: "200 OK, 201 Created (POST), 204 No Content (DELETE), 400 Bad Request (invalid), 404 Not Found, 409 Conflict. @ResponseStatus ή ResponseEntity για ρητό έλεγχο."
+    },
+    {
+      question: "Τι κάνει το @RestControllerAdvice;",
+      answer: "Global exception handling: @ExceptionHandler μεταφράζει domain exceptions σε HTTP status + ενιαίο JSON error. DRY, λεπτοί controllers, προβλέψιμο contract."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Χτίσε ένα καθαρό REST endpoint"
+  scenario="Φτιάξε CRUD API για Products με DTOs, validation και ενιαίο error handling."
+  outcomes={[
+    "Να ορίζεις controllers/mappings & να διαβάζεις input.",
+    "Να χρησιμοποιείς DTOs (records) & validation.",
+    "Να επιστρέφεις σωστά status codes & κεντρικά errors."
+  ]}
+  steps={[
+    "Φτιάξε @RestController /api/products με list/getOne/create.",
+    "Όρισε ProductDto & CreateProductRequest (records) με validation annotations.",
+    "Χρησιμοποίησε @Valid @RequestBody στο create και @ResponseStatus(CREATED).",
+    "Επίστρεψε 404 για ανύπαρκτο (ResponseEntity ή domain exception).",
+    "Στήσε @RestControllerAdvice που χαρτογραφεί NotFound→404 & validation→400 με ErrorResponse record."
+  ]}
+  checkpoints={[
+    "Δεν εκθέτεις entities — μόνο DTOs/records στο API.",
+    "Το input validate-άρεται με @Valid πριν φτάσει στη logic.",
+    "Τα status codes ταιριάζουν στη σημασιολογία (201/204/404/400).",
+    "Τα errors έχουν ενιαίο format μέσω @RestControllerAdvice."
+  ]}
+  mistakes={[
+    "Να επιστρέφεις JPA entities κατευθείαν (leak πεδίων, coupling, lazy traps).",
+    "Να αγνοείς validation → invalid δεδομένα φτάνουν στη DB.",
+    "Να επιστρέφεις 200 για τα πάντα (λάθος contract).",
+    "try/catch σε κάθε controller αντί κεντρικού handler."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν χτίζεις REST endpoints με DTOs, validation, σωστά status codes και centralized error handling — ένα καθαρό, προβλέψιμο API contract."
+/>

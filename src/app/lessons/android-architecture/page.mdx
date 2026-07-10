@@ -1,0 +1,250 @@
+# Architecture & DI
+
+Έχεις τώρα όλα τα κομμάτια: Kotlin, coroutines, Compose, state, navigation, data. Αυτό το μάθημα τα βάζει σε **τάξη**. Πώς οργανώνεις έναν πραγματικό codebase ώστε να μη γίνει «God Activity» των 2000 γραμμών; Η απάντηση της Google είναι μια **layered MVVM architecture** με **unidirectional data flow** και **dependency injection** (Hilt). Επίσης θα καταλάβεις το **Android lifecycle** — γιατί υπάρχουν Activities/ViewModels και πώς επιβιώνει το state.
+
+Δεν είναι academic θέμα: η αρχιτεκτονική είναι το πιο συχνό αντικείμενο σε Android interviews μετά το Compose.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς τα **layers** (UI / domain / data) και τι ανήκει πού,
+- να περιγράφεις **MVVM** και **unidirectional data flow** end-to-end,
+- να καταλαβαίνεις το **Android lifecycle** (Activity, ViewModel) και γιατί το ViewModel επιβιώνει,
+- να εξηγείς **dependency injection** και γιατί χρησιμοποιείς **Hilt**,
+- να αναγνωρίζεις anti-patterns (God Activity, logic στο UI, tight coupling).
+
+## Layers — ποιος ξέρει ποιον
+
+Η προτεινόμενη αρχιτεκτονική χωρίζει τον κώδικα σε **layers** με σαφή κατεύθυνση εξαρτήσεων:
+
+```
+┌─────────────────────────────────────────┐
+│  UI layer:  Composables + ViewModel      │  ← rendering, user events, UI state
+├─────────────────────────────────────────┤
+│  Domain layer (προαιρετικό): Use cases   │  ← business logic, reusable rules
+├─────────────────────────────────────────┤
+│  Data layer:  Repository + Retrofit/Room │  ← από πού & πώς έρχονται τα δεδομένα
+└─────────────────────────────────────────┘
+   Εξαρτήσεις δείχνουν ΠΡΟΣ ΤΑ ΚΑΤΩ μόνο
+```
+
+| Layer | Ευθύνη | Ξέρει για |
+|---|---|---|
+| **UI** | Δείξε state, στείλε events | ViewModel |
+| **Domain** (optional) | Business rules (use cases) | Repository interfaces |
+| **Data** | Πηγές δεδομένων, caching | Retrofit/Room |
+
+> Ο χρυσός κανόνας: οι εξαρτήσεις δείχνουν **προς τα κάτω** μόνο. Η UI ξέρει το ViewModel· το ViewModel ξέρει το repository· το repository ξέρει Retrofit/Room. **Ποτέ ανάποδα** — το data layer δεν γνωρίζει τίποτα για το UI. Έτσι αλλάζεις UI χωρίς να αγγίξεις data, και το κάθε layer testable μόνο του.
+
+## MVVM & unidirectional data flow
+
+**MVVM** = Model–View–ViewModel:
+
+- **Model** — τα δεδομένα & η business logic (data layer / domain).
+- **View** — τα composables. **Χαζά**: μόνο δείχνουν state και προωθούν events. Καμία logic.
+- **ViewModel** — κρατά το **UI state** (StateFlow), εκτελεί logic (καλεί repository), επιβιώνει configuration changes.
+
+Η ροή είναι **κυκλική και μονόδρομη** (UDF):
+
+```
+    ┌──── state (StateFlow) ────▶ View (composables)
+ViewModel                              │
+    ◀──── events (onClick…) ────────────┘
+       │
+       ▼ καλεί repository → ενημερώνει state
+```
+
+1. Ο χρήστης κάνει μια ενέργεια (tap) → η View καλεί ένα method του ViewModel (`vm.addToCart(id)`).
+2. Το ViewModel εκτελεί logic (repository call σε coroutine) και **ενημερώνει το state**.
+3. Το νέο state ρέει πίσω στη View → **recomposition**.
+
+> Το κρίσιμο: **η View δεν αλλάζει ποτέ state απευθείας** — ζητά από το ViewModel. Και το **ViewModel δεν γνωρίζει τη View** (δεν κρατά references σε composables/Context). Αυτός ο διαχωρισμός κάνει το ViewModel unit-testable χωρίς UI, και αποτρέπει τις «God Activities» όπου όλα ανακατεύονται.
+
+## Android lifecycle — γιατί υπάρχει το ViewModel
+
+Ένα **Activity** (η «οθόνη»-container του Android) έχει **lifecycle**: `onCreate` → `onStart` → `onResume` → … → `onDestroy`. Το Android **καταστρέφει & ξαναφτιάχνει** το Activity σε **configuration changes** (rotation, αλλαγή γλώσσας, dark mode). Αν κρατούσες state μέσα στο Activity, θα χανόταν κάθε φορά.
+
+Γι' αυτό υπάρχει το **`ViewModel`**: ζει σε **ξεχωριστό scope** που επιβιώνει τα configuration changes. Καθαρίζεται (`onCleared`) μόνο όταν η οθόνη φύγει **οριστικά** (ο χρήστης κάνει back τελείως έξω από αυτήν).
+
+```
+Rotation:   Activity κατεστραμμένο → νέο Activity   |   ViewModel: ΙΔΙΟ instance ✔
+Back έξω:   Activity destroyed                        |   ViewModel: onCleared() ✔
+```
+
+> Αυτό εξηγεί γιατί βάζεις state/logic στο ViewModel και όχι στο Activity/composable: **επιβίωση** (rotation), **σαφής κύκλος ζωής** (`viewModelScope` ακυρώνει coroutines στο `onCleared`), και **testability**. Στο σύγχρονο Compose app έχεις συνήθως **ένα** Activity και πολλά composable screens (single-Activity architecture)· τα Fragments είναι σπανιότερα πλέον.
+
+## Dependency injection — γιατί & Hilt
+
+Το ViewModel χρειάζεται ένα `ProductRepository`, που χρειάζεται `ProductApi` + `ProductDao`, που χρειάζονται Retrofit/Room instances. Αν κάθε κλάση **φτιάχνει μόνη της** τα dependencies της (`ProductRepository(Retrofit.Builder()...)`), έχεις **tight coupling**: αδύνατο testing (δεν μπορείς να βάλεις fake), διπλά instances, χάος.
+
+**Dependency injection (DI)** = οι κλάσεις **δέχονται** τα dependencies τους (συνήθως στον constructor) αντί να τα φτιάχνουν. Κάποιος «από έξω» τα παρέχει:
+
+```kotlin
+// Χωρίς DI — tight coupling (κακό)
+class ProductRepository {
+    private val api = Retrofit.Builder()...create(...)   // φτιάχνει μόνο του
+}
+
+// Με DI — τα dependencies δίνονται (καλό, testable)
+class ProductRepository(
+    private val api: ProductApi,
+    private val dao: ProductDao,
+)
+```
+
+Το **Hilt** είναι το επίσημο DI framework (πάνω από το Dagger) που αυτοματοποιεί το «ποιος παρέχει τι»:
+
+```kotlin
+@HiltAndroidApp
+class MyApp : Application()
+
+@Module
+@InstallIn(SingletonComponent::class)
+object DataModule {
+    @Provides @Singleton
+    fun provideApi(): ProductApi = Retrofit.Builder()...create(ProductApi::class.java)
+
+    @Provides @Singleton
+    fun provideRepo(api: ProductApi, dao: ProductDao) = ProductRepository(api, dao)
+}
+
+@HiltViewModel
+class ProductViewModel @Inject constructor(
+    private val repo: ProductRepository,   // το Hilt το παρέχει αυτόματα
+) : ViewModel()
+```
+
+Στο composable το παίρνεις με `hiltViewModel()`. Το Hilt φτιάχνει το γράφο εξαρτήσεων για σένα — σωστά scoped (Singleton, ανά ViewModel κ.λπ.).
+
+> Οφέλη DI: **testability** (βάζεις fake repository στα tests), **single instances** (ένα Retrofit/DB για όλο το app), **loose coupling** (αλλάζεις υλοποίηση χωρίς να πειράξεις τους καταναλωτές). Στη συνέντευξη: DI = «inversion of control» — δεν φτιάχνεις, σου δίνουν.
+
+## Anti-patterns που αναγνωρίζεις
+
+- **God Activity/Composable:** όλη η logic (network, DB, state) χωμένη σε μία οθόνη. Λύση: σπάσε σε ViewModel + repository + layers.
+- **Logic στο UI:** business rules μέσα σε composable. Λύση: μετακίνηση σε ViewModel/domain.
+- **ViewModel που ξέρει το View:** references σε Context/composables → leaks, δεν testable. Το ViewModel εκθέτει state, δεν αγγίζει UI.
+- **Δεδομένα κατευθείαν στο UI από API:** χωρίς repository → ασυνέπειες, μη testable, δεν κάνει offline (είδαμε στο data μάθημα).
+
+<PredictOutput
+  title="Πού ζει το state σε rotation;"
+  code={`Έχεις μετρητή σε μια οθόνη. Ο χρήστης τον ανεβάζει στο 5 και γυρίζει τη συσκευή.
+Περίπτωση Α: το count είναι σε var μέσα στο Activity.
+Περίπτωση Β: το count είναι σε StateFlow μέσα σε ViewModel.
+Τι δείχνει η οθόνη μετά το rotation;`}
+  options={[
+    "Α: 5, Β: 5",
+    "Α: 0 (χάθηκε — νέο Activity), Β: 5 (το ViewModel επιβίωσε)",
+    "Α: 5, Β: 0",
+    "Και τα δύο crash"
+  ]}
+  correctOptionIndex={1}
+  answer="Α χάνεται (0), Β επιβιώνει (5)"
+  explanation="Στο rotation το Android καταστρέφει & ξαναφτιάχνει το Activity — ό,τι state ήταν μέσα του χάνεται (μηδενίζεται). Το ViewModel όμως ζει σε scope που επιβιώνει configuration changes, οπότε το count παραμένει 5. Γι' αυτό app state πάει σε ViewModel, όχι στο Activity/composable body."
+/>
+
+<PredictOutput
+  title="DI & testing"
+  code={`class ProductRepository {
+    private val api = RealRetrofit.create()   // φτιάχνει μόνο του το api
+}
+// Θέλεις να γράψεις unit test για το repository ΧΩΡΙΣ πραγματικό δίκτυο.
+// Μπορείς;`}
+  options={[
+    "Ναι, εύκολα",
+    "Όχι εύκολα — το api είναι hardcoded μέσα, δεν μπορείς να βάλεις fake· χρειάζεσαι DI (constructor injection) για να περάσεις mock",
+    "Ναι, αλλά μόνο με rotation",
+    "Δεν χρειάζεται test"
+  ]}
+  correctOptionIndex={1}
+  answer="Όχι — hardcoded dependency, χρειάζεσαι DI"
+  explanation="Επειδή το repository φτιάχνει μόνο του το πραγματικό api, δεν μπορείς να το αντικαταστήσεις με fake στο test — κάθε test θα χτυπούσε πραγματικό δίκτυο. Με DI (class ProductRepository(private val api: ProductApi)) περνάς ένα fake ProductApi στο test. Αυτό είναι το κύριο όφελος του dependency injection: testability μέσω loose coupling."
+/>
+
+<Exercise
+  question="Στο MVVM/UDF, ποιος αλλάζει το state και πώς;"
+  options={[
+    "Η View αλλάζει το state απευθείας όταν γίνει tap.",
+    "Η View στέλνει event στο ViewModel· το ViewModel εκτελεί logic και ενημερώνει το UI state (StateFlow), που ρέει πίσω στη View → recomposition. Η View δεν μεταλλάσσει state.",
+    "Το repository αλλάζει τα composables.",
+    "Το Activity κρατά και αλλάζει όλο το state."
+  ]}
+  correctOptionIndex={1}
+  explanation="Unidirectional data flow: state ρέει κάτω (ViewModel→View), events πάνω (View→ViewModel). Η View είναι 'χαζή' — δείχνει state, προωθεί events. Το ViewModel είναι η μόνη πηγή αλλαγής state (καλεί repository, ενημερώνει StateFlow). Έτσι το ViewModel testable χωρίς UI και αποφεύγεις τις God Activities."
+/>
+
+<Exercise
+  question="Γιατί χρησιμοποιείς Hilt / dependency injection;"
+  options={[
+    "Για να τρέχει πιο γρήγορα το UI.",
+    "Για loose coupling & testability: οι κλάσεις δέχονται (δεν φτιάχνουν) τα dependencies τους· βάζεις fakes στα tests, μοιράζεσαι single instances (ένα Retrofit/DB), και αλλάζεις υλοποίηση χωρίς να πειράξεις τους καταναλωτές.",
+    "Επειδή αντικαθιστά τα coroutines.",
+    "Για να αποφύγεις το ViewModel."
+  ]}
+  correctOptionIndex={1}
+  explanation="DI = inversion of control: δεν φτιάχνεις τα dependencies, σου δίνονται (constructor injection). Οφέλη: testability (fake repository/api), single scoped instances, loose coupling. Το Hilt (πάνω από Dagger) αυτοματοποιεί το γράφο εξαρτήσεων στο Android (@HiltViewModel, @Inject, @Provides/@Module)."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you structure a modern Android app?»
+
+> I follow Google's layered MVVM with unidirectional data flow. There's a UI layer of composables plus a ViewModel, an optional domain layer of use cases, and a data layer of repositories over Retrofit and Room. Dependencies point only downward — the UI knows the ViewModel, the ViewModel knows the repository, the repository knows the data sources, never the reverse — so each layer is testable in isolation. The View is dumb: it renders state and forwards events. The ViewModel holds the UI state as a StateFlow, runs logic by calling the repository in `viewModelScope`, and is the only thing that mutates state; events flow up from the View, state flows back down, triggering recomposition. I keep state in the ViewModel rather than the Activity because Android destroys and recreates the Activity on configuration changes like rotation, while the ViewModel survives and is only cleared when the screen is gone for good. For wiring I use Hilt for dependency injection: classes receive their dependencies through the constructor instead of building them, which gives me testability — I can inject fakes — single shared instances, and loose coupling. The anti-pattern I actively avoid is the God Activity with networking, database, and state all tangled in one place.
+
+<Flashcards
+  title="Architecture & DI — interview drills"
+  cards={[
+    {
+      question: "Ποια είναι τα layers και πού δείχνουν οι εξαρτήσεις;",
+      answer: "UI (composables+ViewModel) → Domain (use cases, optional) → Data (repository+Retrofit/Room). Εξαρτήσεις μόνο προς τα κάτω· το data layer δεν ξέρει τίποτα για το UI."
+    },
+    {
+      question: "Ρόλοι στο MVVM;",
+      answer: "Model = δεδομένα/logic (data/domain). View = χαζά composables (δείχνουν state, στέλνουν events). ViewModel = UI state (StateFlow) + logic, επιβιώνει config changes."
+    },
+    {
+      question: "Unidirectional data flow;",
+      answer: "State ρέει κάτω (ViewModel→View), events πάνω (View→ViewModel). Η View δεν μεταλλάσσει state — ζητά από το ViewModel, που ενημερώνει το StateFlow → recomposition."
+    },
+    {
+      question: "Γιατί επιβιώνει το ViewModel & το Activity όχι;",
+      answer: "Το Android καταστρέφει/ξαναφτιάχνει το Activity σε config changes (rotation). Το ViewModel ζει σε scope που επιβιώνει· onCleared μόνο όταν φύγει οριστικά η οθόνη."
+    },
+    {
+      question: "Τι είναι dependency injection;",
+      answer: "Inversion of control: οι κλάσεις δέχονται (constructor) αντί να φτιάχνουν τα dependencies. Οφέλη: testability (fakes), single instances, loose coupling."
+    },
+    {
+      question: "Τι κάνει το Hilt;",
+      answer: "Επίσημο DI framework (πάνω από Dagger). @HiltAndroidApp, @Module/@Provides, @HiltViewModel + @Inject constructor, hiltViewModel() στο composable. Χτίζει το γράφο εξαρτήσεων scoped."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Οργάνωσε ένα feature σε layers"
+  scenario="Πάρε το feature 'λίστα προϊόντων' και οργάνωσέ το σε καθαρή MVVM αρχιτεκτονική με DI."
+  outcomes={[
+    "Να χωρίζεις UI/domain/data layers με σωστή κατεύθυνση εξαρτήσεων.",
+    "Να εφαρμόζεις MVVM + UDF end-to-end.",
+    "Να στήνεις DI (Hilt) για repository/ViewModel."
+  ]}
+  steps={[
+    "Data layer: ProductRepository(api, dao) — constructor injection.",
+    "UI layer: ProductViewModel @Inject constructor(repo) εκθέτει StateFlow UI state.",
+    "Composable: hiltViewModel(), collectAsStateWithLifecycle, στέλνει events (vm::refresh).",
+    "Στήσε Hilt: @HiltAndroidApp, @Module @Provides για api/dao/repo.",
+    "Εντόπισε & απόφυγε ένα anti-pattern (π.χ. network call μέσα σε composable)."
+  ]}
+  checkpoints={[
+    "Οι εξαρτήσεις δείχνουν μόνο προς τα κάτω (UI→data, όχι ανάποδα).",
+    "Η View δεν μεταλλάσσει state — μόνο το ViewModel.",
+    "State/logic ζει σε ViewModel (επιβιώνει rotation), όχι στο Activity/composable.",
+    "Τα dependencies δίνονται (DI), δεν φτιάχνονται μέσα στις κλάσεις."
+  ]}
+  mistakes={[
+    "God Activity/composable με network+DB+state μαζί.",
+    "ViewModel που κρατά Context/View references (leaks, μη testable).",
+    "Business logic μέσα σε composables.",
+    "Κλάσεις που φτιάχνουν μόνες τους τα dependencies (tight coupling, δεν mock-άρονται)."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν οργανώνεις κώδικα σε UI/domain/data layers με UDF, κρατάς state/logic σε testable ViewModel, και παρέχεις dependencies με Hilt αντί να τα φτιάχνεις."
+/>

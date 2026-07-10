@@ -1,0 +1,290 @@
+# Jetpack Compose UI
+
+Για χρόνια το Android UI γραφόταν σε **XML layouts** + imperative κώδικα: `findViewById`, `textView.setText(...)`, χειροκίνητο συγχρονισμό view με data. Το **Jetpack Compose** είναι το σύγχρονο, **declarative** UI toolkit της Google — γράφεις UI σε **Kotlin**, περιγράφεις **τι** να φαίνεται για δεδομένο state, και το framework ζωγραφίζει. Είναι το ίδιο mental model με τη React: **UI = f(state)**.
+
+Αν έρχεσαι από React ή React Native, το Compose θα σου φανεί βαθιά οικείο — composables αντί components, recomposition αντί re-render, `Modifier` αντί props/style. Αυτό το μάθημα είναι το UI· το state το πιάνουμε στο επόμενο.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς declarative vs imperative UI (Compose vs το παλιό XML/View system),
+- να γράφεις `@Composable` functions και να τις συνθέτεις,
+- να στήνεις layout με `Column`, `Row`, `Box`,
+- να χρησιμοποιείς `Modifier` chains για size/padding/click/background,
+- να χρησιμοποιείς Material 3 components (`Text`, `Button`, `Scaffold`),
+- να καταλαβαίνεις **recomposition** και γιατί τα composables πρέπει να είναι «καθαρά».
+
+## Declarative vs imperative
+
+```kotlin
+// ΠΑΛΙΟ (imperative, XML + κώδικας):
+// 1. Ορίζεις TextView στο XML
+// 2. val tv = findViewById<TextView>(R.id.title)
+// 3. tv.text = "Γεια"                        // χειροκίνητα set
+// 4. Όταν αλλάξει το data, ξανα-set-άρεις     // εσύ συγχρονίζεις
+
+// ΝΕΟ (declarative, Compose):
+@Composable
+fun Greeting(name: String) {
+    Text("Γεια $name")   // περιγράφεις το αποτέλεσμα· το framework το ζωγραφίζει
+}
+```
+
+Στο imperative μοντέλο **εσύ** κρατάς UI και data συγχρονισμένα — πηγή αμέτρητων bugs. Στο declarative, περιγράφεις το UI **ως συνάρτηση του state**· όταν το state αλλάξει, το Compose **ξαναϋπολογίζει** μόνο ό,τι χρειάζεται.
+
+> Το mental model είναι ίδιο με React: αντί να λες «βρες το element και άλλαξέ το», λες «για αυτό το state, η οθόνη μοιάζει έτσι». Το framework υπολογίζει τη διαφορά.
+
+## `@Composable` functions
+
+Ένα **composable** είναι μια συνάρτηση με annotation `@Composable` που **εκπέμπει UI**. Δεν επιστρέφει view· «περιγράφει» τι υπάρχει στην οθόνη:
+
+```kotlin
+@Composable
+fun ProductCard(product: Product) {
+    Column {
+        Text(product.title, style = MaterialTheme.typography.titleMedium)
+        Text("${product.price}€")
+    }
+}
+```
+
+Συμβάσεις:
+- Ονομάζονται με **PascalCase** σαν κλάσεις (`ProductCard`, όχι `productCard`).
+- **Δεν επιστρέφουν** τιμή — εκπέμπουν UI ως side-effect.
+- Συνθέτονται: ένα composable καλεί άλλα. Χτίζεις σύνθετο UI από μικρά κομμάτια, ακριβώς όπως React components.
+- Δέχονται δεδομένα ως **παραμέτρους** (σαν props).
+
+## Layout: `Column`, `Row`, `Box`
+
+Τα τρία θεμελιώδη layout composables:
+
+```kotlin
+Column {           // στοιχεία κάθετα (πάνω→κάτω)
+    Text("Πρώτο")
+    Text("Δεύτερο")
+}
+
+Row {              // στοιχεία οριζόντια (αριστερά→δεξιά)
+    Text("Αριστερά")
+    Text("Δεξιά")
+}
+
+Box {              // στοίβα — στοιχεία το ένα πάνω στο άλλο (z-order)
+    Image(...)
+    Text("Πάνω στην εικόνα")
+}
+```
+
+Στοίχιση με `horizontalAlignment`/`verticalArrangement` (και αντίστροφα για `Row`):
+
+```kotlin
+Column(
+    modifier = Modifier.fillMaxSize(),
+    verticalArrangement = Arrangement.Center,        // κατακόρυφα στο κέντρο
+    horizontalAlignment = Alignment.CenterHorizontally
+) {
+    Text("Στο κέντρο")
+}
+```
+
+> Σύγκριση με RN/Flexbox: `Column`/`Row` παίζουν τον ρόλο του `flexDirection`. `Arrangement` ≈ `justifyContent` (κύριος άξονας), `Alignment` ≈ `alignItems` (εγκάρσιος). Για μεγάλες/scrollable λίστες **δεν** χρησιμοποιείς `Column` — χρησιμοποιείς `LazyColumn` (virtualized, ανάλογο FlatList· το πιάνουμε στο data μάθημα).
+
+## `Modifier` — το εργαλείο για όλα
+
+Το **`Modifier`** ρυθμίζει μέγεθος, spacing, background, clicks, borders — σχεδόν κάθε οπτική/interaction ιδιότητα. Είναι **αλυσίδα** (chain) και η **σειρά μετράει**:
+
+```kotlin
+Text(
+    "Κουμπί",
+    modifier = Modifier
+        .padding(16.dp)              // εξωτερικό spacing
+        .background(Color.Blue)
+        .padding(8.dp)               // εσωτερικό spacing (μετά το background)
+        .clickable { onClick() }
+)
+```
+
+Συχνά modifiers:
+
+| Modifier | Τι κάνει |
+|---|---|
+| `.fillMaxSize()` / `.fillMaxWidth()` | Γέμισε τον διαθέσιμο χώρο |
+| `.size(48.dp)` / `.height(...)` | Σταθερές διαστάσεις |
+| `.padding(16.dp)` | Spacing |
+| `.background(color)` | Χρώμα φόντου |
+| `.clickable { }` | Το κάνει clickable |
+| `.weight(1f)` | Μοιράζει χώρο (σαν flex-grow) σε Row/Column |
+
+> **Η σειρά έχει σημασία.** `.padding().background()` βάζει padding *έξω* από το χρώμα· `.background().padding()` βάζει το χρώμα πρώτα και μετά padding *μέσα*. Το `.dp` (density-independent pixels) κλιμακώνεται ανά συσκευή· για κείμενο χρησιμοποιείς `.sp`.
+
+## Material 3
+
+Το Compose έρχεται με **Material Design 3** components έτοιμα:
+
+```kotlin
+@Composable
+fun ProfileScreen() {
+    Scaffold(
+        topBar = { TopAppBar(title = { Text("Προφίλ") }) }
+    ) { padding ->
+        Column(Modifier.padding(padding)) {
+            Text("Καλωσήρθες", style = MaterialTheme.typography.headlineSmall)
+            Button(onClick = { /* ... */ }) {
+                Text("Αποθήκευση")
+            }
+            OutlinedTextField(value = "", onValueChange = {}, label = { Text("Όνομα") })
+        }
+    }
+}
+```
+
+Το `Scaffold` δίνει τη βασική δομή οθόνης (top bar, bottom bar, FAB, content) και σου δίνει το `padding` που πρέπει να εφαρμόσεις ώστε το content να μην κρύβεται κάτω από τις μπάρες. Το `MaterialTheme` ορίζει χρώματα/typography/shapes καθολικά.
+
+## Recomposition — το core concept
+
+Όταν το **state** που διαβάζει ένα composable αλλάξει, το Compose **ξανακαλεί** (recomposes) αυτό το composable με τη νέα τιμή — και **μόνο** αυτό, όχι όλη την οθόνη. Αυτό είναι το declarative update loop.
+
+```kotlin
+@Composable
+fun Counter(count: Int) {
+    Text("Μετρητής: $count")   // όταν το count αλλάξει, μόνο αυτό το Text ξαναϋπολογίζεται
+}
+```
+
+Επειδή ένα composable μπορεί να τρέξει **πολλές φορές** (και με **οποιαδήποτε σειρά / παράλληλα**), πρέπει να είναι **καθαρό (idempotent)**:
+
+- **Μην** κάνεις side-effects κατευθείαν στο σώμα (network calls, γράψιμο σε μεταβλητές έξω, logging που μετράει). Γι' αυτά υπάρχουν side-effect APIs (`LaunchedEffect` — επόμενο μάθημα).
+- **Μην** βασίζεσαι στη σειρά ή στον αριθμό εκτελέσεων.
+- Τα δεδομένα μπαίνουν ως **παράμετροι**· το αποτέλεσμα εξαρτάται μόνο από αυτά.
+
+> Γιατί σε νοιάζει: αν βάλεις `var i = 0; i++` μέσα σε composable περιμένοντας να μετρήσει renders, θα σπάσει — το Compose μπορεί να το τρέξει όποτε θέλει. Το κατάλληλο state πάει σε `remember`/`mutableStateOf` (επόμενο μάθημα). Επίσης, το Compose κάνει **skip** recomposition αν οι παράμετροι δεν άλλαξαν (γι' αυτό βοηθά η immutability & τα stable types).
+
+<PredictOutput
+  title="Σειρά στο Modifier"
+  code={`Modifier
+  .background(Color.Red)
+  .padding(16.dp)
+
+// vs
+
+Modifier
+  .padding(16.dp)
+  .background(Color.Red)`}
+  options={[
+    "Ίδιο αποτέλεσμα — η σειρά δεν μετράει",
+    "Πρώτο: κόκκινο ΚΑΙ μετά padding μέσα (το κόκκινο γεμίζει τα άκρα). Δεύτερο: padding έξω, κόκκινο μόνο στο εσωτερικό",
+    "Το δεύτερο κάνει crash",
+    "Και τα δύο βγάζουν διαφανές background"
+  ]}
+  correctOptionIndex={1}
+  answer="Η σειρά αλλάζει το αποτέλεσμα"
+  explanation="Τα modifiers εφαρμόζονται με τη σειρά. .background().padding() → πρώτα χρωματίζεται όλη η περιοχή κόκκινη, μετά μπαίνει padding μέσα (το κόκκινο φτάνει ως τα άκρα). .padding().background() → πρώτα padding έξω, μετά χρωματίζεται μόνο η μικρότερη εσωτερική περιοχή. Ίδια modifiers, διαφορετική σειρά, διαφορετικό UI."
+/>
+
+<PredictOutput
+  title="Καθαρότητα του composable"
+  code={`@Composable
+fun BadCounter() {
+    var renders = 0
+    renders++                    // μεταβλητή στο σώμα
+    Text("Renders: $renders")
+}`}
+  options={[
+    "Δείχνει πάντα σωστό αριθμό renders",
+    "Αναξιόπιστο — το composable μπορεί να τρέξει πολλές φορές/με άλλη σειρά· το renders μηδενίζεται κάθε recomposition. Θέλει remember/mutableStateOf",
+    "Compile error",
+    "Αυξάνεται μόνο μία φορά και μένει σταθερό"
+  ]}
+  correctOptionIndex={1}
+  answer="Αναξιόπιστο — παραβιάζει την καθαρότητα"
+  explanation="Το var renders = 0 δηλώνεται ΞΑΝΑ σε κάθε recomposition, άρα μηδενίζεται· και ούτως ή άλλως ένα composable μπορεί να τρέξει όποτε/όσες φορές θέλει το framework. State που πρέπει να επιβιώσει από recomposition μπαίνει σε remember { mutableStateOf(...) }. Τα composables πρέπει να είναι idempotent, χωρίς side-effects στο σώμα."
+/>
+
+<Exercise
+  question="Τι σημαίνει ότι το Compose είναι declarative;"
+  options={[
+    "Γράφεις XML και το κάνεις inflate.",
+    "Περιγράφεις πώς φαίνεται το UI για δεδομένο state· όταν το state αλλάξει, το framework recomposes τα σχετικά κομμάτια — δεν βρίσκεις/μεταλλάσσεις views χειροκίνητα.",
+    "Τρέχει σε WebView.",
+    "Χρησιμοποιεί findViewById πιο γρήγορα."
+  ]}
+  correctOptionIndex={1}
+  explanation="Declarative = UI ως συνάρτηση του state (UI = f(state)), ίδιο με React. Δεν κάνεις findViewById/setText· περιγράφεις το αποτέλεσμα και το Compose υπολογίζει τι πρέπει να αλλάξει (recomposition). Το imperative XML/View μοντέλο σε ανάγκαζε να συγχρονίζεις χειροκίνητα data↔UI."
+/>
+
+<Exercise
+  question="Πότε χρησιμοποιείς LazyColumn αντί για Column;"
+  options={[
+    "Ποτέ — είναι το ίδιο.",
+    "Όταν έχεις μεγάλη/scrollable λίστα: το LazyColumn είναι virtualized (composes μόνο τα ορατά items), ενώ το Column συνθέτει τα πάντα και σπαταλά μνήμη/performance.",
+    "Μόνο για οριζόντιες λίστες.",
+    "Όταν θέλεις σταθερό ύψος."
+  ]}
+  correctOptionIndex={1}
+  explanation="Column συνθέτει ΟΛΑ τα children ταυτόχρονα — μια χαρά για λίγα σταθερά στοιχεία, καταστροφή για μεγάλες λίστες. LazyColumn (και LazyRow) κάνει virtualization: συνθέτει μόνο ό,τι φαίνεται, όπως το FlatList στο React Native. Το πιάνουμε αναλυτικά στο data μάθημα."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «What is Jetpack Compose and how does it differ from the old View system?»
+
+> Compose is Android's modern declarative UI toolkit — I build the UI in Kotlin instead of XML. In the old View system I inflated XML, grabbed views with `findViewById`, and imperatively mutated them, keeping the UI and the data in sync by hand, which is a huge source of bugs. Compose flips that: I write `@Composable` functions that describe what the UI looks like for a given state — UI equals a function of state, the same model as React. When state changes, the framework recomposes just the affected composables rather than the whole screen. I compose small functions together, lay them out with `Column`, `Row`, and `Box`, and configure everything — size, padding, background, clicks — with a `Modifier` chain, where order matters. Because a composable can be re-executed at any time, in any order, it has to be pure: no side effects in the body, data comes in as parameters. State that must survive recomposition goes into `remember`, and long lists use `LazyColumn` for virtualization rather than `Column`.
+
+<Flashcards
+  title="Compose UI — interview drills"
+  cards={[
+    {
+      question: "Declarative vs imperative UI;",
+      answer: "Imperative (old XML/View): findViewById + setText, εσύ συγχρονίζεις data↔UI. Declarative (Compose): UI = f(state)· περιγράφεις το αποτέλεσμα, το framework recomposes ό,τι άλλαξε."
+    },
+    {
+      question: "Τι είναι ένα @Composable;",
+      answer: "Συνάρτηση που εκπέμπει UI (δεν επιστρέφει view). PascalCase, δέχεται δεδομένα ως παραμέτρους (σαν props), συνθέτεται από άλλα composables."
+    },
+    {
+      question: "Column vs Row vs Box;",
+      answer: "Column = κάθετα, Row = οριζόντια, Box = στοίβα (z-order). Arrangement ≈ justifyContent, Alignment ≈ alignItems. Για μεγάλες λίστες → LazyColumn."
+    },
+    {
+      question: "Τι κάνει το Modifier και γιατί μετράει η σειρά;",
+      answer: "Ρυθμίζει size/padding/background/click/border ως αλυσίδα. Εφαρμόζεται με τη σειρά: .padding().background() ≠ .background().padding()."
+    },
+    {
+      question: "Τι είναι recomposition;",
+      answer: "Όταν αλλάζει state που διαβάζει ένα composable, το Compose το ξανακαλεί με τη νέα τιμή — μόνο τα σχετικά κομμάτια. Skip αν δεν άλλαξαν οι παράμετροι."
+    },
+    {
+      question: "Γιατί πρέπει τα composables να είναι καθαρά;",
+      answer: "Τρέχουν πολλές φορές, σε οποιαδήποτε σειρά, ίσως παράλληλα. Side-effects/μετρητές στο σώμα σπάνε. State → remember/mutableStateOf· side-effects → LaunchedEffect."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Χτίσε μια οθόνη μόνο με composables"
+  scenario="Σχεδίασε ένα product detail screen (τίτλος, τιμή, εικόνα, κουμπί 'Προσθήκη') εξ ολοκλήρου σε Compose — χωρίς XML."
+  outcomes={[
+    "Να συνθέτεις UI από μικρά @Composable functions.",
+    "Να στήνεις layout με Column/Row/Box + Modifier.",
+    "Να εξηγείς recomposition & καθαρότητα."
+  ]}
+  steps={[
+    "Γράψε ProductDetail(product) που δέχεται δεδομένα ως παράμετρο.",
+    "Στήσε τη διάταξη με Column (Scaffold + TopAppBar προαιρετικά).",
+    "Χρησιμοποίησε Modifier chain για padding/fillMaxWidth/clickable.",
+    "Βάλε ένα Material Button με onClick.",
+    "Εξήγησε τι θα ξανα-composed-άριζε αν άλλαζε η τιμή του product."
+  ]}
+  checkpoints={[
+    "Καμία αναφορά σε XML/findViewById.",
+    "Τα δεδομένα μπαίνουν ως παράμετροι, όχι global state.",
+    "Το Modifier chain έχει λογική σειρά (π.χ. padding πριν/μετά background σκόπιμα).",
+    "Καμία side-effect ή μετρητής μέσα στο σώμα του composable."
+  ]}
+  mistakes={[
+    "Να βάζεις network call ή var-μετρητή στο σώμα του composable.",
+    "Να χρησιμοποιείς Column για μεγάλη scrollable λίστα (θέλει LazyColumn).",
+    "Να αγνοείς το padding του Scaffold (content κάτω από την μπάρα).",
+    "Να ξεχνάς ότι η σειρά των modifiers αλλάζει το αποτέλεσμα."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν χτίζεις UI declarative με composables/Modifier, καταλαβαίνεις recomposition, και ξέρεις γιατί τα composables μένουν καθαρά (state → remember, side-effects → LaunchedEffect)."
+/>

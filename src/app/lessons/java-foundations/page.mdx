@@ -1,0 +1,246 @@
+# Java Foundations
+
+Η **Java** είναι από τις πιο διαδεδομένες γλώσσες στον κόσμο — κυριαρχεί σε **enterprise backend** (τράπεζες, μεγάλα συστήματα), τρέχει σε δισεκατομμύρια συσκευές, και το οικοσύστημά της (Spring) είναι το de-facto standard για σοβαρά backend APIs. Είναι **στατικά τυπωμένη**, **object-oriented**, και τρέχει στο **JVM** (Java Virtual Machine) — το ίδιο runtime με την Kotlin που μόλις είδες.
+
+Αν έρχεσαι από την Kotlin, πολλά concepts (JVM, collections, OOP) μεταφέρονται· η Java είναι πιο **verbose** και λιγότερο «magic», αλλά ακριβώς αυτή η ρητότητα είναι που τη θέλουν τα enterprise interviews. Αυτό το μάθημα είναι η γλώσσα & το runtime — τα OOP βάθη έρχονται στο επόμενο.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς τι είναι το **JVM** και πώς τρέχει η Java (source → bytecode → JVM),
+- να ξεχωρίζεις **compiled + platform-independent** («write once, run anywhere»),
+- να διακρίνεις **primitives vs objects** (και το autoboxing),
+- να καταλαβαίνεις **static typing** & τη δήλωση τύπων,
+- να γράφεις βασική δομή (`class`, `main`, control flow, methods),
+- να πιάνεις το OOP mental model («όλα ζουν σε κλάσεις»).
+
+## Πώς τρέχει η Java: source → bytecode → JVM
+
+Σε αντίθεση με τη JavaScript (interpreted) ή τη C (compiled σε native machine code), η Java έχει ένα **δύο-σταδίων** μοντέλο:
+
+```
+Foo.java  ──javac──▶  Foo.class (bytecode)  ──JVM──▶  τρέχει σε οποιοδήποτε OS
+(source)   compile     (portable)             runtime
+```
+
+1. Ο **compiler** (`javac`) μεταγλωττίζει το `.java` source σε **bytecode** (`.class`) — μια ενδιάμεση, φορητή αναπαράσταση.
+2. Το **JVM** διαβάζει το bytecode και το τρέχει (με **JIT** compilation σε native code για ταχύτητα).
+
+> Αυτό είναι το «**write once, run anywhere**»: το ίδιο `.class` bytecode τρέχει σε Windows, Linux, macOS — αρκεί να υπάρχει JVM. Το JVM είναι το abstraction πάνω από το OS. Γι' αυτό και η Kotlin (που κάνει compile στο ίδιο bytecode) συνυπάρχει με Java στο ίδιο project.
+
+Ορολογία που μπερδεύει σε interviews:
+
+| Όρος | Τι είναι |
+|---|---|
+| **JVM** | Το runtime που τρέχει bytecode |
+| **JRE** | JVM + βιβλιοθήκες (για να **τρέξεις** Java) |
+| **JDK** | JRE + εργαλεία ανάπτυξης (`javac`, debugger) — για να **γράψεις** Java |
+
+## Η δομή ενός Java program
+
+Στην Java, **τα πάντα ζουν μέσα σε κλάση** — δεν υπάρχουν top-level functions όπως στην JS/Python. Το entry point είναι η `main`:
+
+```java
+public class Hello {
+    public static void main(String[] args) {
+        System.out.println("Γεια σου Java");
+    }
+}
+```
+
+- `public class Hello` — κάθε αρχείο έχει (συνήθως) μία public κλάση με το ίδιο όνομα (`Hello.java`).
+- `public static void main(String[] args)` — η ακριβής υπογραφή που ψάχνει το JVM για να ξεκινήσει. `static` = ανήκει στην κλάση, όχι σε instance· `void` = δεν επιστρέφει τίποτα· `String[] args` = command-line arguments.
+- Κάθε statement τελειώνει με **`;`** και τα blocks μπαίνουν σε **`{ }`**.
+
+## Static typing & δήλωση τύπων
+
+Η Java είναι **statically typed**: κάθε μεταβλητή έχει τύπο γνωστό σε **compile time**, και ο compiler απορρίπτει λάθη τύπων πριν καν τρέξει ο κώδικας.
+
+```java
+int count = 5;
+String name = "Giannis";
+double price = 3.5;
+boolean active = true;
+
+// count = "text";   // compile error — δεν ταιριάζει ο τύπος
+
+// Από Java 10+: var για local type inference (ο τύπος συνάγεται, ΠΑΡΑΜΕΝΕΙ static)
+var total = count * price;   // ο compiler ξέρει ότι είναι double
+```
+
+> Το `var` **δεν** κάνει τη Java dynamic (όπως η JS) — απλώς γλιτώνει το να γράψεις τον τύπο όταν είναι προφανής. Ο τύπος είναι ακόμα σταθερός & compile-checked. Χρήση μόνο σε local variables, όχι σε fields/parameters.
+
+## Primitives vs objects
+
+Η Java έχει **δύο κατηγορίες** τιμών — μια ιδιαιτερότητα που δεν έχει η Kotlin (εκεί όλα φαίνονται objects):
+
+- **Primitives** (πεζά): `int`, `long`, `double`, `boolean`, `char`, `byte`, `short`, `float`. Κρατούν την τιμή **απευθείας**, είναι γρήγορα, **δεν** μπορούν να είναι `null`.
+- **Objects / reference types** (κεφαλαία): `String`, `Integer`, `List`, οι δικές σου κλάσεις. Κρατούν **reference** σε αντικείμενο στο heap, μπορούν να είναι `null`.
+
+```java
+int a = 5;              // primitive
+Integer b = 5;          // wrapper object (autoboxing: int → Integer αυτόματα)
+Integer c = null;       // OK — object μπορεί να είναι null
+// int d = null;        // compile error — primitive δεν παίρνει null
+```
+
+Κάθε primitive έχει το **wrapper class** του (`int`↔`Integer`, `double`↔`Double`). Η μετατροπή γίνεται αυτόματα (**autoboxing/unboxing**). Οι collections (`List<Integer>`) δουλεύουν μόνο με objects, γι' αυτό χρησιμοποιείς τα wrappers εκεί.
+
+> **Interview gotcha:** το `==` σε **objects** συγκρίνει **references** (ίδιο αντικείμενο;), όχι τιμές. Για ισότητα τιμής χρησιμοποιείς **`.equals()`**. Κλασικό bug: `String a = ...; if (a == b)` — μπορεί να είναι false ακόμα κι αν τα κείμενα είναι ίδια· θέλεις `a.equals(b)`. (Στα primitives, `==` συγκρίνει τιμές κανονικά.)
+
+## Το OOP mental model
+
+Η Java είναι θεμελιωδώς **object-oriented**: οργανώνεις τον κώδικα σε **κλάσεις** (blueprints) που παράγουν **objects** (instances) με **state** (fields) και **behavior** (methods).
+
+```java
+public class Product {
+    private String title;      // field (state) — private = encapsulation
+    private double price;
+
+    public Product(String title, double price) {   // constructor
+        this.title = title;
+        this.price = price;
+    }
+
+    public double discountedPrice(double pct) {     // method (behavior)
+        return price * (1 - pct);
+    }
+
+    public String getTitle() { return title; }      // getter
+}
+
+// Χρήση:
+Product p = new Product("Καφές", 3.5);   // new → φτιάχνει instance
+double d = p.discountedPrice(0.1);
+```
+
+- **`new`** δημιουργεί instance (σε αντίθεση με Kotlin που δεν έχει `new`).
+- **`private`** fields + **public** getters/methods = **encapsulation** (κρύβεις το εσωτερικό state).
+- **`this`** αναφέρεται στο τρέχον instance.
+
+Τα βάθη (interfaces, inheritance, polymorphism, records) στο επόμενο μάθημα.
+
+## `null` & το NullPointerException
+
+Σε αντίθεση με την Kotlin, η Java **δεν** έχει null safety στο type system: **οποιοδήποτε** object reference μπορεί να είναι `null`, και το `NullPointerException` (NPE) είναι το πιο κοινό runtime error. Στρατηγικές άμυνας: έλεγχοι `if (x != null)`, `Objects.requireNonNull(...)`, και το **`Optional<T>`** (θα το δεις στο Streams μάθημα) για να εκφράσεις ρητά «μπορεί να λείπει».
+
+<PredictOutput
+  title="== vs .equals() σε String"
+  code={`String a = new String("hi");
+String b = new String("hi");
+System.out.println(a == b);
+System.out.println(a.equals(b));`}
+  options={[
+    "true / true",
+    "false / true",
+    "true / false",
+    "false / false"
+  ]}
+  correctOptionIndex={1}
+  answer="false / true"
+  explanation="Το == σε objects συγκρίνει references — τα a και b είναι ΔΥΟ ξεχωριστά String objects (new δημιουργεί νέο instance), άρα a == b είναι false. Το .equals() συγκρίνει το περιεχόμενο (τιμή), άρα true. Κλασικό Java bug: χρησιμοποίησε ΠΑΝΤΑ .equals() για ισότητα τιμής σε objects· το == μόνο για primitives ή για 'ίδιο ακριβώς αντικείμενο'."
+/>
+
+<PredictOutput
+  title="Primitive vs wrapper & null"
+  code={`Integer x = null;
+int y = x;   // unboxing`}
+  options={[
+    "y γίνεται 0",
+    "y γίνεται null",
+    "NullPointerException στο unboxing",
+    "Compile error"
+  ]}
+  correctOptionIndex={2}
+  answer="NullPointerException"
+  explanation="Το x είναι Integer (object), που επιτρέπει null. Η ανάθεση σε int (primitive) απαιτεί unboxing: το JVM καλεί x.intValue(). Αφού το x είναι null → NullPointerException στο runtime. Γι' αυτό προσοχή όταν αναμιγνύεις wrappers (nullable) με primitives (non-null): ένα κρυφό null σκάει στο unboxing."
+/>
+
+<Exercise
+  question="Τι σημαίνει 'write once, run anywhere' και πώς το πετυχαίνει η Java;"
+  options={[
+    "Η Java μεταγλωττίζεται σε native code για κάθε OS ξεχωριστά.",
+    "Ο javac μεταγλωττίζει σε φορητό bytecode (.class)· το JVM κάθε πλατφόρμας τρέχει το ΙΔΙΟ bytecode — το JVM είναι το abstraction πάνω από το OS.",
+    "Η Java τρέχει μόνο σε browser σαν JavaScript.",
+    "Ο κώδικας ερμηνεύεται γραμμή-γραμμή χωρίς compilation."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το μοντέλο δύο σταδίων: javac → bytecode (.class), και το JVM τρέχει αυτό το bytecode σε οποιοδήποτε OS έχει JVM. Το bytecode είναι φορητό· η πλατφόρμα-specific δουλειά την κάνει το JVM (με JIT σε native για ταχύτητα). Γι' αυτό το ίδιο .class τρέχει σε Windows/Linux/macOS."
+/>
+
+<Exercise
+  question="Ποια η διαφορά primitive vs object type στην Java;"
+  options={[
+    "Καμία — είναι το ίδιο.",
+    "Primitives (int/double/boolean) κρατούν την τιμή απευθείας, είναι γρήγορα, δεν παίρνουν null. Objects (Integer/String/κλάσεις) κρατούν reference, μπορεί να είναι null· οι collections δουλεύουν με objects (wrappers).",
+    "Τα primitives είναι πιο αργά.",
+    "Μόνο τα objects έχουν τύπο."
+  ]}
+  correctOptionIndex={1}
+  explanation="Java = δύο κατηγορίες. Primitives (πεζά): άμεση τιμή, non-null, performance. Objects/reference types (κεφαλαία): reference στο heap, nullable. Κάθε primitive έχει wrapper (int↔Integer) με autoboxing. Οι generics/collections (List<Integer>) απαιτούν objects. Και θυμήσου: == σε objects = reference, .equals() = τιμή."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How does Java run, and what makes it platform-independent?»
+
+> Java uses a two-stage model. The `javac` compiler turns my source into bytecode — a portable `.class` file — and the JVM executes that bytecode, JIT-compiling hot paths to native code for speed. Because every platform ships a JVM that runs the same bytecode, it's write once, run anywhere: the JVM is the abstraction over the operating system. That's also why Kotlin and Java interoperate — both compile to the same bytecode. Java is statically typed, so types are checked at compile time and mistakes are caught before running; `var` gives me local type inference without making it dynamic. One thing specific to Java is the split between primitives like `int` and `boolean`, which hold values directly and can't be null, and reference types like `Integer` and `String`, which hold references and can be null, with autoboxing converting between them. That leads to two classic gotchas I watch for: `==` on objects compares references, so I use `.equals()` for value equality, and unboxing a null wrapper into a primitive throws a NullPointerException. Unlike Kotlin, Java has no null safety in the type system, so I guard nulls explicitly or use `Optional`.
+
+<Flashcards
+  title="Java foundations — interview drills"
+  cards={[
+    {
+      question: "source → bytecode → JVM: τι κάνει το καθένα;",
+      answer: "javac: .java → bytecode (.class, φορητό). JVM: τρέχει το bytecode σε οποιοδήποτε OS (με JIT σε native). Το JVM είναι το abstraction πάνω από το OS → write once, run anywhere."
+    },
+    {
+      question: "JDK vs JRE vs JVM;",
+      answer: "JVM = τρέχει bytecode. JRE = JVM + libraries (για να ΤΡΕΞΕΙΣ). JDK = JRE + tools (javac, debugger — για να ΓΡΑΨΕΙΣ)."
+    },
+    {
+      question: "primitive vs object type;",
+      answer: "Primitives (int/double/boolean): άμεση τιμή, non-null, γρήγορα. Objects (Integer/String/κλάσεις): reference, nullable. Autoboxing int↔Integer. Collections θέλουν objects."
+    },
+    {
+      question: "== vs .equals();",
+      answer: "== σε objects = ίδιο reference (ίδιο αντικείμενο). .equals() = ισότητα τιμής. Πάντα .equals() για String/objects· == μόνο για primitives. Κλασικό bug."
+    },
+    {
+      question: "Είναι η Java null-safe όπως η Kotlin;",
+      answer: "Όχι. Κάθε object reference μπορεί να είναι null· NPE = το πιο κοινό runtime error. Άμυνα: null checks, Objects.requireNonNull, Optional<T>."
+    },
+    {
+      question: "Γιατί όλα ζουν σε κλάσεις;",
+      answer: "Η Java είναι θεμελιωδώς OOP: δεν υπάρχουν top-level functions. Entry point = public static void main(String[] args) μέσα σε κλάση. new δημιουργεί instances."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Το πρώτο σου Java program & mental model"
+  scenario="Στήσε νοερά ένα μικρό Java program και βεβαιώσου ότι κατανοείς runtime, τύπους και OOP δομή."
+  outcomes={[
+    "Να εξηγείς τη ροή javac → bytecode → JVM.",
+    "Να διακρίνεις primitives/objects και == vs .equals().",
+    "Να γράφεις βασική κλάση με fields/constructor/method."
+  ]}
+  steps={[
+    "Γράψε κλάση Hello με public static void main που τυπώνει κάτι.",
+    "Δήλωσε μεταβλητές int/double/String/boolean και ένα var.",
+    "Φτιάξε κλάση Product με private fields, constructor, getter, method.",
+    "Δείξε τη διαφορά == vs .equals() σε δύο String objects.",
+    "Εξήγησε τι θα γίνει αν κάνεις unboxing ενός null Integer."
+  ]}
+  checkpoints={[
+    "Η main έχει τη σωστή υπογραφή (public static void main(String[] args)).",
+    "Τα fields είναι private (encapsulation) με public getters.",
+    "Χρησιμοποιείς .equals() για ισότητα τιμής, όχι ==.",
+    "Ξέρεις γιατί primitives δεν παίρνουν null και objects ναι."
+  ]}
+  mistakes={[
+    "Να συγκρίνεις String με == αντί .equals().",
+    "Να αναμιγνύεις null wrappers με primitives (NPE στο unboxing).",
+    "Να νομίζεις ότι το var κάνει τη Java dynamic.",
+    "Να ψάχνεις top-level functions εκτός κλάσης."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν εξηγείς πώς τρέχει η Java (bytecode/JVM), ξεχωρίζεις primitives/objects & == vs equals, και γράφεις καθαρή κλάση με encapsulation."
+/>

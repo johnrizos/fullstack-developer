@@ -1,0 +1,319 @@
+# Coroutines & Flow
+
+Ένα mobile app κάνει συνέχεια **async** δουλειά: network calls, database queries, disk I/O. Αν τα τρέξεις στο **main thread** (το UI thread), η οθόνη παγώνει και το Android σου πετάει `ANR` (Application Not Responding). Στην Java αυτό λυνόταν με callbacks/`AsyncTask`/threads — μπερδεμένο και error-prone. Το Kotlin δίνει **coroutines**: γράφεις async κώδικα που **διαβάζεται σαν σύγχρονος**, χωρίς callback hell.
+
+Αν ξέρεις `async/await` από JavaScript, το concept θα σου φανεί οικείο — αλλά οι coroutines έχουν κάτι που το JS δεν έχει: **structured concurrency** και πραγματικό cancellation.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς τι είναι μια coroutine και γιατί δεν μπλοκάρει thread,
+- να γράφεις `suspend` functions και να ξέρεις πού καλούνται,
+- να καταλαβαίνεις **structured concurrency** (`CoroutineScope`, parent/child),
+- να διαλέγεις `launch` vs `async`, και σωστό `Dispatcher`,
+- να χειρίζεσαι **cancellation** και exceptions,
+- να καταλαβαίνεις `Flow` και `StateFlow` για streams δεδομένων.
+
+## Τι είναι μια coroutine
+
+Μια **coroutine** είναι ένας υπολογισμός που μπορεί να **παγώσει (suspend)** και να **συνεχίσει** αργότερα, **χωρίς να μπλοκάρει** το thread πάνω στο οποίο τρέχει. Χιλιάδες coroutines μπορούν να μοιράζονται λίγα threads.
+
+> Το mental model: μια κανονική συνάρτηση που κάνει `Thread.sleep(1000)` **κρατάει** το thread δεσμευμένο 1s. Μια coroutine που κάνει `delay(1000)` **αφήνει** το thread ελεύθερο για άλλη δουλειά και επιστρέφει σε αυτό όταν είναι έτοιμη. Suspension ≠ blocking.
+
+## `suspend` functions
+
+Το `suspend` keyword σημαίνει «αυτή η συνάρτηση μπορεί να παγώσει»:
+
+```kotlin
+suspend fun fetchUser(id: String): User {
+    val response = api.getUser(id)   // suspend call — «περιμένει» χωρίς να μπλοκάρει
+    return response.body()
+}
+```
+
+Ένα **suspend function καλείται μόνο** (α) από άλλη suspend function, ή (β) μέσα από ένα coroutine builder (`launch`/`async`). Δεν μπορείς να το καλέσεις από κανονικό `main()` κατευθείαν — χρειάζεσαι scope.
+
+```kotlin
+// ΛΑΘΟΣ: suspend fun έξω από coroutine
+fun onClick() {
+    fetchUser("1")   // compile error
+}
+
+// ΣΩΣΤΟ: μέσα σε scope
+fun onClick() {
+    viewModelScope.launch {
+        val user = fetchUser("1")   // OK — είμαστε σε coroutine
+        updateUi(user)
+    }
+}
+```
+
+## Structured concurrency — το μεγάλο concept
+
+Κάθε coroutine ζει μέσα σε ένα **`CoroutineScope`**. Ο scope έχει **lifecycle**: όταν πεθαίνει, **ακυρώνει (cancels) όλες** τις coroutines που ξεκίνησε. Αυτό είναι **structured concurrency** — καμία coroutine δεν «διαφεύγει» και τρέχει για πάντα.
+
+```kotlin
+class MyViewModel : ViewModel() {
+    fun load() {
+        viewModelScope.launch {        // δεμένο στο lifecycle του ViewModel
+            val user = fetchUser("1")
+            // ...
+        }
+    }
+    // Όταν το ViewModel καθαριστεί, το viewModelScope ακυρώνεται
+    // → η launch coroutine σταματά αυτόματα. Χωρίς leaks.
+}
+```
+
+Στο Android παίρνεις έτοιμα scopes:
+
+| Scope | Lifecycle | Χρήση |
+|---|---|---|
+| `viewModelScope` | Ζει όσο το ViewModel | Business logic, data loading |
+| `lifecycleScope` | Ζει όσο το Activity/Fragment | UI-scoped δουλειά |
+| `rememberCoroutineScope()` | Ζει όσο το composable | Event handlers στο Compose |
+
+> Γιατί σε νοιάζει: αν ξεκινήσεις network call σε μια οθόνη και ο χρήστης φύγει, το `viewModelScope` ακυρώνει το call — δεν σπαταλάς πόρους ούτε κάνεis crash προσπαθώντας να ενημερώσεις οθόνη που δεν υπάρχει. Αυτό είναι το βασικό πλεονέκτημα έναντι των γυμνών threads.
+
+## `launch` vs `async`
+
+Δύο coroutine builders:
+
+```kotlin
+// launch: "fire and forget" — επιστρέφει Job, όχι αποτέλεσμα
+viewModelScope.launch {
+    saveToDb(user)
+}
+
+// async: επιστρέφει Deferred<T> — παίρνεις αποτέλεσμα με .await()
+viewModelScope.launch {
+    val a = async { fetchUser("1") }      // ξεκινά ΤΩΡΑ
+    val b = async { fetchOrders("1") }    // ξεκινά ΤΩΡΑ (παράλληλα!)
+    val user = a.await()                  // περίμενε το αποτέλεσμα
+    val orders = b.await()
+    // Τα δύο calls έτρεξαν ΠΑΡΑΛΛΗΛΑ — συνολικός χρόνος ≈ max, όχι sum
+}
+```
+
+| | `launch` | `async` |
+|---|---|---|
+| Επιστρέφει | `Job` | `Deferred<T>` |
+| Αποτέλεσμα | κανένα | `.await()` |
+| Χρήση | side-effect (save, log) | παράλληλα results που τα χρειάζεσαι |
+
+Κοινό λάθος: `async { }.await()` **αμέσως** στη σειρά — αυτό είναι sequential, χάνεις τον λόγο ύπαρξης του `async`. Το `async` κερδίζει όταν ξεκινάς **πολλά** και κάνεις `await` μετά.
+
+## Dispatchers — σε ποιο thread τρέχει
+
+Ο `Dispatcher` καθορίζει το thread pool:
+
+```kotlin
+withContext(Dispatchers.IO) {        // network / disk / db
+    val data = api.fetch()
+}
+withContext(Dispatchers.Default) {   // βαρύς CPU υπολογισμός
+    heavySort(list)
+}
+// Dispatchers.Main → UI thread (updates στο UI)
+```
+
+- **`Main`** — το UI thread. Ενημερώσεις UI εδώ.
+- **`IO`** — για blocking I/O (network, files, database). Μεγάλο pool.
+- **`Default`** — για CPU-intensive δουλειά (sorting, parsing).
+
+> Idiomatic κανόνας (**main-safety**): οι suspend functions πρέπει να είναι ασφαλείς να καλεστούν από το Main thread. Η βιβλιοθήκη (π.χ. Retrofit, Room) συχνά κάνει ήδη το switch για σένα. Όταν γράφεις δικό σου blocking κώδικα, τύλιξέ τον σε `withContext(Dispatchers.IO)`. Το `viewModelScope.launch` ξεκινά by default στο `Main`.
+
+## Cancellation & exceptions
+
+Το cancellation είναι **cooperative**: μια coroutine ελέγχει αν ακυρώθηκε στα suspension points. Οι suspend functions της βιβλιοθήκης (`delay`, network calls) το κάνουν αυτόματα και πετάνε `CancellationException`.
+
+```kotlin
+val job = viewModelScope.launch {
+    val data = fetchData()   // αν ακυρωθεί εδώ, σταματά
+    show(data)
+}
+job.cancel()   // ζητά ακύρωση
+```
+
+Για exception handling, τύλιξε με `try/catch` μέσα στην coroutine — αλλά **μην πιάνεις** το `CancellationException` (θα έσπαγες το cancellation):
+
+```kotlin
+viewModelScope.launch {
+    try {
+        val user = fetchUser("1")
+        _state.value = UiState.Success(user)
+    } catch (e: Exception) {
+        _state.value = UiState.Error(e.message ?: "Σφάλμα")
+    }
+}
+```
+
+## `Flow` — async stream τιμών
+
+Μια `suspend` function επιστρέφει **μία** τιμή. Το **`Flow<T>`** εκπέμπει **πολλές** τιμές διαχρονικά — σαν async sequence (ανάλογο RxJS Observable ή async iterator):
+
+```kotlin
+fun searchProducts(q: String): Flow<List<Product>> = flow {
+    emit(emptyList())                 // πρώτη τιμή
+    val results = api.search(q)
+    emit(results)                     // δεύτερη τιμή
+}
+
+// Κατανάλωση — collect (suspend)
+viewModelScope.launch {
+    searchProducts("καφές").collect { list ->
+        _state.value = list
+    }
+}
+```
+
+Τα Flows είναι **cold**: δεν τρέχουν μέχρι κάποιος να κάνει `collect`. Έχουν operators σαν τα collections: `.map`, `.filter`, `.debounce`, `.combine`.
+
+## `StateFlow` — το state holder για UI
+
+Το **`StateFlow`** είναι ειδικό Flow που κρατά πάντα την **τρέχουσα τιμή** (state) και εκπέμπει σε νέους collectors. Είναι ο τυπικός τρόπος να εκθέτεις UI state από ένα ViewModel:
+
+```kotlin
+class ProductViewModel : ViewModel() {
+    private val _state = MutableStateFlow<UiState>(UiState.Loading)
+    val state: StateFlow<UiState> = _state.asStateFlow()   // read-only έξω
+
+    fun load() {
+        viewModelScope.launch {
+            try {
+                val items = repo.getProducts()
+                _state.value = UiState.Success(items)
+            } catch (e: Exception) {
+                _state.value = UiState.Error(e.message ?: "Σφάλμα")
+            }
+        }
+    }
+}
+```
+
+Το `_state` είναι mutable & private· εκθέτεις μόνο το read-only `state`. Το Compose το διαβάζει με `collectAsStateWithLifecycle()` (θα το δεις στο state μάθημα) και **re-composes** αυτόματα σε κάθε νέα τιμή. `StateFlow` = single source of truth για την οθόνη.
+
+<PredictOutput
+  title="launch: sequential ή parallel;"
+  code={`suspend fun a(): Int { delay(1000); return 1 }
+suspend fun b(): Int { delay(1000); return 2 }
+
+// Μέσα σε coroutine:
+val x = a()
+val y = b()
+// Πόσο περίπου διαρκεί συνολικά;`}
+  options={[
+    "~1s — τρέχουν παράλληλα",
+    "~2s — τρέχουν σειριακά (το ένα μετά το άλλο)",
+    "0s — δεν τρέχουν χωρίς collect",
+    "Crash — suspend εκτός scope"
+  ]}
+  correctOptionIndex={1}
+  answer="~2s — σειριακά"
+  explanation="Το να καλέσεις απευθείας a() μετά b() είναι σειριακό: το a() πρέπει να ολοκληρωθεί (~1s) πριν αρχίσει το b() (~1s) → ~2s. Για παραλληλισμό τυλίγεις σε async: val da = async{a()}; val db = async{b()}; da.await()+db.await() → ~1s γιατί ξεκινούν μαζί."
+/>
+
+<PredictOutput
+  title="Structured concurrency & cancellation"
+  code={`Ξεκινάς viewModelScope.launch { fetchData() } σε μια οθόνη.
+Ο χρήστης πατά back και το ViewModel καθαρίζεται
+πριν το fetchData() ολοκληρωθεί. Τι γίνεται;`}
+  options={[
+    "Το fetchData συνεχίζει και κρασάρει ενημερώνοντας νεκρό UI",
+    "Το viewModelScope ακυρώνεται → η coroutine σταματά αυτόματα, χωρίς leak",
+    "Μένει να τρέχει για πάντα στο background",
+    "Το app κάνει ANR"
+  ]}
+  correctOptionIndex={1}
+  answer="Ακυρώνεται αυτόματα με το scope"
+  explanation="Αυτό είναι το νόημα του structured concurrency: η coroutine είναι child του viewModelScope. Όταν το ViewModel καθαρίζεται (onCleared), το scope ακυρώνεται και ακυρώνει όλα τα children. Το fetchData σταματά στο επόμενο suspension point (cooperative cancellation) — χωρίς leaks, χωρίς update σε ανύπαρκτη οθόνη."
+/>
+
+<Exercise
+  question="Ποια είναι η διαφορά launch vs async;"
+  options={[
+    "Το launch τρέχει στο Main, το async στο IO.",
+    "Το launch είναι fire-and-forget (επιστρέφει Job, χωρίς αποτέλεσμα)· το async επιστρέφει Deferred<T> με .await() για να πάρεις τιμή — χρήσιμο για παράλληλα results.",
+    "Δεν υπάρχει διαφορά.",
+    "Το async ακυρώνεται, το launch όχι."
+  ]}
+  correctOptionIndex={1}
+  explanation="launch: ξεκινά coroutine για side-effect, επιστρέφει Job (μπορείς να το cancel/join αλλά όχι να πάρεις τιμή). async: επιστρέφει Deferred<T>, παίρνεις το αποτέλεσμα με await(). Το idiomatic use του async είναι να ξεκινήσεις πολλά calls ταυτόχρονα και μετά να κάνεις await σε όλα — παραλληλισμός."
+/>
+
+<Exercise
+  question="Γιατί βάζεις network/disk δουλειά σε Dispatchers.IO;"
+  options={[
+    "Για να τρέξει πιο γρήγορα ο αλγόριθμος.",
+    "Επειδή blocking I/O στο Main thread παγώνει το UI (ANR)· το IO dispatcher έχει pool για blocking κλήσεις ώστε το Main να μένει ελεύθερο για UI.",
+    "Επειδή το Main δεν υποστηρίζει coroutines.",
+    "Για να αποφύγεις το structured concurrency."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το Main thread πρέπει να μένει ελεύθερο για rendering/input. Blocking I/O (network, files, DB) εκεί προκαλεί jank ή ANR. Ο Dispatchers.IO προσφέρει ένα μεγάλο thread pool για ακριβώς τέτοιες blocking κλήσεις. Ενημερώσεις UI, αντίθετα, γίνονται στο Main."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do coroutines handle async work, and what is structured concurrency?»
+
+> A coroutine is a computation that can suspend and resume without blocking its thread, so thousands of them can share a small pool. I mark functions that can suspend with `suspend`, and I call them either from another suspend function or from a coroutine builder like `launch` or `async`. `launch` is fire-and-forget and returns a `Job`; `async` returns a `Deferred` whose `await()` gives me a result, which lets me run several calls in parallel and await them. The key idea is structured concurrency: every coroutine runs inside a `CoroutineScope` with a lifecycle. On Android I use `viewModelScope`, so when the ViewModel is cleared, the scope cancels every child coroutine automatically — no leaks and no crashes updating a screen that's gone. Cancellation is cooperative, checked at suspension points, so I never catch `CancellationException`. I pick dispatchers deliberately: `IO` for network and disk, `Default` for CPU-heavy work, `Main` for UI updates. For streams of values over time I expose a `StateFlow` from the ViewModel as the single source of truth, and the UI collects it and recomposes.
+
+<Flashcards
+  title="Coroutines & Flow — interview drills"
+  cards={[
+    {
+      question: "Suspension vs blocking;",
+      answer: "Blocking κρατά δεσμευμένο το thread (Thread.sleep). Suspension (delay) αφήνει το thread ελεύθερο για άλλη δουλειά και επιστρέφει όταν είναι έτοιμη. Γι' αυτό χιλιάδες coroutines χωράνε σε λίγα threads."
+    },
+    {
+      question: "Πού καλείται μια suspend function;",
+      answer: "Μόνο από άλλη suspend function ή από coroutine builder (launch/async) μέσα σε CoroutineScope. Όχι κατευθείαν από κανονική συνάρτηση."
+    },
+    {
+      question: "Τι είναι structured concurrency;",
+      answer: "Κάθε coroutine ζει σε scope με lifecycle· όταν ο scope ακυρώνεται, ακυρώνει όλα τα children. Καμία coroutine δεν διαφεύγει. Στο Android: viewModelScope/lifecycleScope."
+    },
+    {
+      question: "launch vs async;",
+      answer: "launch → Job, fire-and-forget (side-effects). async → Deferred<T>, .await() για αποτέλεσμα· ξεκίνα πολλά async και await για παραλληλισμό."
+    },
+    {
+      question: "Dispatchers: Main / IO / Default;",
+      answer: "Main = UI thread (updates UI). IO = blocking network/disk/DB. Default = CPU-heavy (sorting/parsing). Χρησιμοποίησε withContext για να αλλάξεις."
+    },
+    {
+      question: "Flow vs StateFlow;",
+      answer: "Flow = cold async stream πολλών τιμών (τρέχει στο collect). StateFlow = hot, κρατά πάντα την τρέχουσα τιμή· ο τυπικός holder του UI state από ViewModel (single source of truth)."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Async data flow με coroutines"
+  scenario="Φαντάσου ένα ViewModel που φορτώνει προφίλ + παραγγελίες ενός χρήστη και εκθέτει το αποτέλεσμα ως StateFlow στο UI."
+  outcomes={[
+    "Να τρέχεις ανεξάρτητα calls παράλληλα με async/await.",
+    "Να εκθέτεις UI state ως StateFlow με Loading/Success/Error.",
+    "Να χειρίζεσαι cancellation & exceptions σωστά."
+  ]}
+  steps={[
+    "Όρισε suspend fun fetchProfile() και suspend fun fetchOrders().",
+    "Μέσα σε viewModelScope.launch, τρέξε τα δύο με async και κάνε await — παράλληλα.",
+    "Τύλιξε τη λογική σε try/catch και ενημέρωσε _state (MutableStateFlow) σε Success/Error.",
+    "Βάλε το blocking κομμάτι σε withContext(Dispatchers.IO) αν χρειάζεται.",
+    "Εξήγησε τι γίνεται αν το ViewModel καθαριστεί στη μέση."
+  ]}
+  checkpoints={[
+    "Τα δύο calls τρέχουν παράλληλα (async), όχι σειριακά.",
+    "Το state εκτίθεται ως read-only StateFlow (private _state mutable).",
+    "Το CancellationException ΔΕΝ πιάνεται στο catch.",
+    "Οι blocking κλήσεις είναι main-safe (IO dispatcher ή library-handled)."
+  ]}
+  mistakes={[
+    "async{}.await() αμέσως στη σειρά → sequential, χωρίς παραλληλισμό.",
+    "Blocking I/O στο Main thread → ANR.",
+    "Να πιάνεις CancellationException και να σπας το cancellation.",
+    "GlobalScope αντί για viewModelScope → leaks χωρίς lifecycle."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν γράφεις async κώδικα που διαβάζεται σύγχρονα, ξέρεις πότε async vs launch, διαλέγεις σωστό dispatcher, και εκθέτεις state ως StateFlow μέσα σε structured scope."
+/>

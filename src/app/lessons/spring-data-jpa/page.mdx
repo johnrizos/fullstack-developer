@@ -1,0 +1,273 @@
+# Data & JPA
+
+Ένα backend χωρίς βάση δεδομένων δεν κάνει τίποτα. Στον κόσμο της Java, το πρότυπο είναι το **JPA** (Jakarta Persistence API) με υλοποίηση το **Hibernate** — ένα ORM που αντιστοιχίζει Java αντικείμενα σε πίνακες, ώστε να δουλεύεις με objects αντί για χειρόγραφο SQL. Το **Spring Data JPA** προσθέτει από πάνω **repositories** που σου δίνουν CRUD και queries σχεδόν δωρεάν.
+
+Το ίδιο μοτίβο ORM που είδες σε Prisma/Eloquent/SQLAlchemy — αλλά με τις δικές του παγίδες, ειδικά το περίφημο **N+1 problem** και τα **transactions**, που είναι σχεδόν σίγουρη interview ερώτηση.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς τι είναι ένα **ORM** και τι λύνει το JPA/Hibernate,
+- να ορίζεις **entities** (`@Entity`) & **relationships** (`@OneToMany` κ.λπ.),
+- να χρησιμοποιείς **Spring Data repositories** (derived queries, `@Query`),
+- να αναγνωρίζεις & λύνεις το **N+1 problem** (eager/lazy, JOIN FETCH),
+- να καταλαβαίνεις **transactions** (`@Transactional`) & ACID,
+- να ξέρεις πότε πέφτεις σε native SQL.
+
+## ORM & JPA/Hibernate
+
+Ένα **ORM** (Object-Relational Mapping) αντιστοιχίζει **κλάσεις ↔ πίνακες**, **αντικείμενα ↔ γραμμές**, **πεδία ↔ στήλες**. Γράφεις Java· το ORM παράγει το SQL.
+
+- **JPA** = η **προδιαγραφή** (interfaces/annotations, `@Entity`, `EntityManager`).
+- **Hibernate** = η δημοφιλέστερη **υλοποίηση** της προδιαγραφής.
+- **Spring Data JPA** = layer πάνω από το JPA που αυτοματοποιεί τα repositories.
+
+> Όφελος: λιγότερο boilerplate SQL, type safety, φορητότητα ανάμεσα σε DBs. Κόστος & κίνδυνος: το ORM «κρύβει» το SQL, οπότε εύκολα γράφεις κώδικα που παράγει **αργά/πολλά** queries χωρίς να το καταλάβεις (το N+1). Ο καλός Java dev ξέρει **τι SQL** παράγει το ORM.
+
+## Entities
+
+Ένα **entity** είναι μια κλάση που αντιστοιχεί σε πίνακα:
+
+```java
+@Entity
+@Table(name = "products")
+public class Product {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false)
+    private String title;
+
+    private double price;
+
+    // JPA απαιτεί no-args constructor· getters/setters ή record-style access
+    protected Product() {}
+    public Product(String title, double price) { this.title = title; this.price = price; }
+    // getters...
+}
+```
+
+- `@Id` + `@GeneratedValue` = primary key (auto-increment).
+- `@Column` = ρυθμίσεις στήλης (nullable, length, unique).
+- Το Hibernate χρειάζεται **no-args constructor** — γι' αυτό τα entities δεν είναι records (τα records είναι immutable· τα entities συχνά mutable/proxied).
+
+## Relationships
+
+Οι σχέσεις πινάκων εκφράζονται με annotations:
+
+```java
+@Entity
+public class Order {
+    @Id @GeneratedValue private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)   // πολλές παραγγελίες → ένας χρήστης
+    @JoinColumn(name = "user_id")
+    private User user;
+
+    @OneToMany(mappedBy = "order", fetch = FetchType.LAZY)  // μία παραγγελία → πολλά items
+    private List<OrderItem> items = new ArrayList<>();
+}
+```
+
+| Annotation | Σχέση |
+|---|---|
+| `@OneToMany` | ένα → πολλά (order → items) |
+| `@ManyToOne` | πολλά → ένα (order → user) |
+| `@OneToOne` | ένα → ένα |
+| `@ManyToMany` | πολλά → πολλά (+ join table) |
+
+Το **`fetch`** ελέγχει πότε φορτώνονται τα σχετικά δεδομένα: **`LAZY`** (όταν τα ζητήσεις) vs **`EAGER`** (αμέσως). Αυτό μας φέρνει στο σημαντικότερο θέμα.
+
+## Το N+1 problem
+
+Το πιο κλασικό ORM performance bug — **σίγουρη interview ερώτηση**. Φαντάσου ότι φορτώνεις 100 orders και για κάθε ένα διαβάζεις το `user`:
+
+```java
+List<Order> orders = orderRepository.findAll();   // 1 query: SELECT * FROM orders
+for (Order o : orders) {
+    System.out.println(o.getUser().getName());     // +1 query ΑΝΑ order (lazy!)
+}
+// Σύνολο: 1 + 100 = 101 queries!  → το «N+1»
+```
+
+Με **lazy loading**, κάθε `o.getUser()` πυροδοτεί **ξεχωριστό** SELECT. 1 query για τη λίστα + N queries για τα σχετικά = **N+1**. Σε production με χιλιάδες records, καταστροφή.
+
+**Λύση — φόρτωσε τα σχετικά μαζί, με ένα JOIN:**
+
+```java
+@Query("SELECT o FROM Order o JOIN FETCH o.user")
+List<Order> findAllWithUser();   // 1 query με JOIN — τέλος το N+1
+```
+
+> Ο κανόνας: κράτα τα relationships **`LAZY`** by default (μη φορτώνεις ό,τι δεν χρειάζεσαι), και όταν **ξέρεις** ότι θα διαβάσεις τα σχετικά, φόρτωσέ τα ρητά με **`JOIN FETCH`** ή **entity graph**. Το `EAGER` παντού φαίνεται εύκολη λύση αλλά φορτώνει πάντα τα πάντα → άλλα performance προβλήματα. Το να **αναγνωρίζεις** το N+1 (κοιτώντας τα SQL logs) είναι δεξιότητα που ελέγχεται.
+
+## Spring Data Repositories
+
+Το Spring Data σου δίνει CRUD **χωρίς να γράψεις υλοποίηση** — ορίζεις ένα interface:
+
+```java
+public interface ProductRepository extends JpaRepository<Product, Long> {
+    // Δωρεάν: save, findById, findAll, delete, count...
+
+    // Derived query — το Spring παράγει το SQL από το ΟΝΟΜΑ της μεθόδου
+    List<Product> findByPriceLessThan(double price);
+    Optional<Product> findByTitle(String title);
+    List<Product> findByCategoryOrderByPriceAsc(String category);
+
+    // Custom JPQL όταν το derived δεν φτάνει
+    @Query("SELECT p FROM Product p WHERE p.price BETWEEN :min AND :max")
+    List<Product> findInPriceRange(double min, double max);
+}
+```
+
+- `JpaRepository<Product, Long>` = entity type + id type· κληρονομείς όλα τα βασικά CRUD.
+- **Derived queries:** το Spring διαβάζει το όνομα (`findByPriceLessThan`) και παράγει το query αυτόματα.
+- `@Query` για custom JPQL (object-oriented query language) ή native SQL (`nativeQuery = true`).
+
+Το χρησιμοποιείς μέσω DI: `@Service` δέχεται το repository στον constructor.
+
+## Transactions & `@Transactional`
+
+Ένα **transaction** ομαδοποιεί λειτουργίες DB ώστε να είναι **atomic**: ή όλες πετυχαίνουν, ή καμία (rollback). Είναι το «A» του **ACID** (Atomicity, Consistency, Isolation, Durability).
+
+```java
+@Service
+public class TransferService {
+    @Transactional
+    public void transfer(Long from, Long to, double amount) {
+        accountRepo.withdraw(from, amount);   // βήμα 1
+        accountRepo.deposit(to, amount);      // βήμα 2
+        // Αν πεταχτεί exception ΟΠΟΥΔΗΠΟΤΕ εδώ → rollback και των δύο
+    }
+}
+```
+
+> Το `@Transactional` κάνει το method μία atomic μονάδα: αν το βήμα 2 αποτύχει, το Spring κάνει **rollback** και το βήμα 1. Χωρίς αυτό, θα αφαιρούσες χρήματα χωρίς να τα προσθέσεις — inconsistent state. Το Spring το υλοποιεί με **proxy** γύρω από το method (γι' αυτό το `@Transactional` δουλεύει σε public methods που καλούνται «απ' έξω», όχι σε internal self-calls — κλασικό gotcha).
+
+<PredictOutput
+  title="Πόσα queries; (N+1)"
+  code={`// Order.user είναι @ManyToOne(fetch = LAZY)
+List<Order> orders = orderRepo.findAll();   // 50 orders
+for (Order o : orders) {
+    log(o.getUser().getName());
+}
+// Πόσα SQL queries συνολικά;`}
+  options={[
+    "1 — ένα SELECT για όλα",
+    "51 — 1 για τη λίστα + 1 ανά order για το lazy user (N+1)",
+    "2 — ένα για orders, ένα για users",
+    "50 — ένα ανά order"
+  ]}
+  correctOptionIndex={1}
+  answer="51 queries — το N+1 problem"
+  explanation="findAll() = 1 query για τα 50 orders. Κάθε o.getUser() είναι lazy, άρα πυροδοτεί ξεχωριστό SELECT για τον χρήστη = 50 queries. Σύνολο 1+50 = 51 (το 'N+1'). Λύση: @Query με JOIN FETCH o.user → ένα query. Το να το εντοπίζεις στα SQL logs είναι κρίσιμη δεξιότητα."
+/>
+
+<PredictOutput
+  title="@Transactional & rollback"
+  code={`@Transactional
+public void transfer(...) {
+    withdraw(from, 100);   // πετυχαίνει
+    deposit(to, 100);      // πετάει exception!
+}
+// Ποια είναι η τελική κατάσταση της βάσης;`}
+  options={[
+    "Το from έχασε 100, το to δεν πήρε τίποτα (inconsistent)",
+    "Rollback και των δύο — η βάση μένει όπως πριν, σαν να μην έγινε τίποτα (atomicity)",
+    "Μόνο το deposit γίνεται",
+    "Και τα δύο γίνονται commit"
+  ]}
+  correctOptionIndex={1}
+  answer="Rollback — atomic, τίποτα δεν αλλάζει"
+  explanation="Το @Transactional κάνει το method atomic: αν πεταχτεί (unchecked) exception, το Spring κάνει rollback ΟΛΗΣ της transaction. Το withdraw αναιρείται μαζί με το αποτυχημένο deposit — η βάση μένει συνεπής (κανείς δεν έχασε χρήματα). Χωρίς @Transactional θα είχες inconsistent state. Αυτό είναι το Atomicity του ACID."
+/>
+
+<Exercise
+  question="Τι είναι το N+1 problem και πώς το λύνεις;"
+  options={[
+    "Πρόβλημα δικτύου· λύνεται με retries.",
+    "Φορτώνεις N records με 1 query και μετά 1 επιπλέον query ανά record για lazy σχέση (N+1 σύνολο). Λύση: φόρτωσε τα σχετικά μαζί με JOIN FETCH / entity graph αντί για lazy loop.",
+    "Πρόβλημα generics.",
+    "Λύνεται κάνοντας τα πάντα EAGER."
+  ]}
+  correctOptionIndex={1}
+  explanation="N+1: 1 query για τη λίστα + N queries γιατί κάθε lazy σχέση φορτώνεται ξεχωριστά μέσα σε loop. Λύση: JOIN FETCH (ή @EntityGraph) ώστε ένα query να φέρει και τα σχετικά. Το EAGER παντού ΔΕΝ είναι η σωστή λύση — φορτώνει πάντα τα πάντα· κράτα LAZY + ρητό fetch όπου χρειάζεσαι."
+/>
+
+<Exercise
+  question="Τι εγγυάται το @Transactional;"
+  options={[
+    "Ότι το query τρέχει γρηγορότερα.",
+    "Atomicity: οι λειτουργίες DB μέσα στο method είναι μία μονάδα — ή όλες commit ή, σε exception, όλες rollback· κρατά τη βάση συνεπή (το A του ACID).",
+    "Ότι δεν χρειάζεσαι repository.",
+    "Ότι τα δεδομένα γίνονται cache."
+  ]}
+  correctOptionIndex={1}
+  explanation="@Transactional ορίζει transaction boundary γύρω από το method (μέσω proxy). Όλες οι DB λειτουργίες commit μαζί· αν πεταχτεί exception, γίνεται rollback όλων → η βάση δεν μένει σε μισοτελειωμένη/inconsistent κατάσταση. Gotcha: δουλεύει σε εξωτερικές κλήσεις public methods, όχι σε internal self-invocation (λόγω proxy)."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How does data access work in Spring, and what's the N+1 problem?»
+
+> I use Spring Data JPA over Hibernate. JPA is the specification, Hibernate the implementation, and it's an ORM that maps my entity classes to tables so I work with objects instead of hand-written SQL. I annotate classes with `@Entity`, mark the key with `@Id` and `@GeneratedValue`, and express relationships with `@OneToMany`, `@ManyToOne`, and so on. Spring Data then gives me repositories: I extend `JpaRepository` and get CRUD for free, plus derived queries where it generates SQL from the method name, and `@Query` for custom JPQL. The big trap is the N+1 problem: if I load N orders and then access a lazy relationship like `order.getUser()` in a loop, each access fires its own SELECT, so I get one query plus N — 101 queries for 100 orders. I keep relationships lazy by default and, when I know I'll need the related data, fetch it explicitly with `JOIN FETCH` or an entity graph, so it's a single query; I don't just make everything eager. And I wrap multi-step writes in `@Transactional` so they're atomic — if any step throws, Spring rolls the whole thing back, which is the Atomicity in ACID. One gotcha there is that it's proxy-based, so it applies to external calls into a public method, not internal self-invocation.
+
+<Flashcards
+  title="Data & JPA — interview drills"
+  cards={[
+    {
+      question: "JPA vs Hibernate vs Spring Data JPA;",
+      answer: "JPA = προδιαγραφή (annotations/EntityManager). Hibernate = η δημοφιλής υλοποίηση. Spring Data JPA = layer από πάνω που αυτοματοποιεί repositories (CRUD + derived queries)."
+    },
+    {
+      question: "Τι είναι ένα entity;",
+      answer: "Κλάση αντιστοιχισμένη σε πίνακα: @Entity, @Id + @GeneratedValue για PK, @Column, @OneToMany/@ManyToOne για σχέσεις. Χρειάζεται no-args constructor (γι' αυτό όχι record)."
+    },
+    {
+      question: "Τι είναι το N+1 problem;",
+      answer: "1 query για N records + 1 query ανά record για lazy σχέση = N+1 συνολικά. Καταστροφικό σε scale. Λύση: JOIN FETCH / @EntityGraph, όχι lazy loop· ούτε EAGER παντού."
+    },
+    {
+      question: "LAZY vs EAGER fetch;",
+      answer: "LAZY: φορτώνει τη σχέση όταν τη ζητήσεις (default, αποφεύγει περιττά δεδομένα αλλά κίνδυνος N+1). EAGER: φορτώνει αμέσως. Κανόνας: LAZY + ρητό JOIN FETCH όπου χρειάζεσαι τα σχετικά."
+    },
+    {
+      question: "Πώς λειτουργεί ένα Spring Data repository;",
+      answer: "interface extends JpaRepository<Entity, Id> → δωρεάν CRUD. Derived queries από όνομα μεθόδου (findByPriceLessThan). @Query για custom JPQL/native. Το inject-άρεις με DI."
+    },
+    {
+      question: "Τι κάνει το @Transactional & το gotcha;",
+      answer: "Atomicity: όλες οι DB λειτουργίες commit μαζί ή rollback σε exception (το A του ACID). Proxy-based: δουλεύει σε εξωτερικές κλήσεις public method, ΟΧΙ σε internal self-invocation."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Στήσε ένα data layer με JPA"
+  scenario="Μοντελοποίησε Orders/Users/Items με JPA, γράψε repositories, και λύσε ένα N+1 σενάριο."
+  outcomes={[
+    "Να ορίζεις entities & relationships σωστά.",
+    "Να γράφεις Spring Data repositories (derived + @Query).",
+    "Να εντοπίζεις & λύνεις N+1, να χρησιμοποιείς @Transactional."
+  ]}
+  steps={[
+    "Όρισε @Entity Order με @ManyToOne User (LAZY) και @OneToMany items.",
+    "Φτιάξε OrderRepository extends JpaRepository με ένα derived query.",
+    "Γράψε κώδικα που διαβάζει order.getUser() σε loop — μέτρησε τα queries (N+1).",
+    "Ξαναγράψ' το με @Query JOIN FETCH o.user (1 query).",
+    "Τύλιξε μια multi-step εγγραφή σε @Transactional και εξήγησε το rollback."
+  ]}
+  checkpoints={[
+    "Τα relationships είναι LAZY by default, με ρητό fetch όπου χρειάζεται.",
+    "Εντοπίζεις το N+1 στα SQL logs και το λύνεις με JOIN FETCH.",
+    "Οι multi-step εγγραφές είναι @Transactional (atomic).",
+    "Καταλαβαίνεις τι SQL παράγει το ORM σου."
+  ]}
+  mistakes={[
+    "Να αγνοείς το N+1 (lazy σχέσεις μέσα σε loop).",
+    "Να κάνεις τα πάντα EAGER 'για να λυθεί' το N+1.",
+    "Να ξεχνάς @Transactional σε multi-step εγγραφές → inconsistent state.",
+    "Να βασίζεσαι σε self-invocation για @Transactional (proxy gotcha)."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν ορίζεις entities/relationships, χρησιμοποιείς Spring Data repositories, εντοπίζεις & λύνεις N+1 με JOIN FETCH, και εξασφαλίζεις atomicity με @Transactional."
+/>

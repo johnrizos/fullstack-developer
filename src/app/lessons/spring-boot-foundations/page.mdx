@@ -1,0 +1,233 @@
+# Spring Boot Foundations
+
+Η Java από μόνη της είναι η γλώσσα· το **Spring** είναι ο λόγος που η Java κυριαρχεί στο enterprise backend. Το **Spring Framework** παρέχει dependency injection, web MVC, data access, security — και το **Spring Boot** το κάνει όλο εύκολο: **auto-configuration**, **starters**, embedded server, ώστε να τρέχεις production app με ελάχιστο setup. Αν έχεις δει NestJS (που εμπνεύστηκε από το Spring), το mental model θα σου φανεί οικείο.
+
+Το πιο σημαντικό concept που πρέπει να «κουμπώσει»: το **IoC container** και το **dependency injection**. Όλα τα υπόλοιπα του Spring χτίζονται πάνω σε αυτό.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς **Inversion of Control (IoC)** και **dependency injection**,
+- να καταλαβαίνεις τι είναι ένα **bean** και το **application context**,
+- να χρησιμοποιείς `@Component`/`@Service`/`@Repository` & constructor injection,
+- να εξηγείς τι κάνει το **Spring Boot auto-configuration** και τα **starters**,
+- να ρυθμίζεις με `application.properties`/`application.yml`,
+- να διακρίνεις Spring Framework vs Spring Boot.
+
+## Inversion of Control & Dependency Injection
+
+Το κεντρικό concept. Κανονικά, μια κλάση **φτιάχνει** τα dependencies της:
+
+```java
+// Χωρίς DI — η κλάση ελέγχει τη δημιουργία (tight coupling)
+public class OrderService {
+    private final PaymentProcessor processor = new StripeProcessor();  // hardcoded
+}
+```
+
+Με **Inversion of Control**, αντιστρέφεις αυτόν τον έλεγχο: δεν φτιάχνει η κλάση τα dependencies — της τα **δίνει** ένα εξωτερικό σύστημα (το Spring **container**). Το πώς γίνεται λέγεται **dependency injection**:
+
+```java
+// Με DI — τα dependencies δίνονται (loose coupling)
+@Service
+public class OrderService {
+    private final PaymentProcessor processor;
+
+    public OrderService(PaymentProcessor processor) {   // constructor injection
+        this.processor = processor;                     // το Spring το παρέχει
+    }
+}
+```
+
+> **Το «γιατί»:** loose coupling → μπορείς να βάλεις **fake** processor στα tests, να αλλάξεις υλοποίηση χωρίς να πειράξεις το `OrderService`, και το Spring διαχειρίζεται **ένα** shared instance. Είναι το ίδιο DI concept που είδες σε NestJS και στο Hilt (Android) — εδώ το κάνει το Spring container. **Constructor injection** (τα dependencies στον constructor) είναι το προτεινόμενο, γιατί κάνει τα dependencies ρητά & τα fields `final`.
+
+## Beans & το Application Context
+
+Ένα **bean** είναι απλώς ένα αντικείμενο που **διαχειρίζεται το Spring** — το δημιουργεί, το κρατά, και το «injectάρει» όπου χρειάζεται. Το **Application Context** (ο IoC container) είναι το registry όλων των beans.
+
+Δηλώνεις μια κλάση ως bean με stereotype annotations:
+
+| Annotation | Σημασιολογία |
+|---|---|
+| `@Component` | γενικό bean |
+| `@Service` | business logic layer |
+| `@Repository` | data access layer (+ exception translation) |
+| `@Controller` / `@RestController` | web layer |
+
+```java
+@Service
+public class ProductService {
+    private final ProductRepository repo;
+    public ProductService(ProductRepository repo) { this.repo = repo; }
+    // ...
+}
+```
+
+Στο startup, το Spring **σαρώνει** (component scan) το package σου, βρίσκει όλες τις annotated κλάσεις, τις φτιάχνει ως beans, και **συνδέει** τα dependencies τους αυτόματα (autowiring). Δεν γράφεις `new ProductService(...)` πουθενά — το κάνει το container.
+
+> Ένα `@Bean` που δηλώνεται σε `@Configuration` κλάση είναι ο εναλλακτικός τρόπος (για third-party κλάσεις που δεν μπορείς να annotate-άρεις). By default τα beans είναι **singletons** — ένα instance ανά container.
+
+## Spring Boot: auto-configuration & starters
+
+Το σκέτο Spring απαιτούσε **τόνους** XML/Java configuration. Το **Spring Boot** το λύνει με δύο ιδέες:
+
+**1. Starters** — ένα dependency που φέρνει ό,τι χρειάζεσαι για μια δυνατότητα:
+
+```
+spring-boot-starter-web         → web MVC + embedded Tomcat + JSON
+spring-boot-starter-data-jpa    → JPA + Hibernate + connection pool
+spring-boot-starter-security    → authentication/authorization
+spring-boot-starter-test        → JUnit + Mockito + Spring test
+```
+
+Αντί να διαλέγεις χειροκίνητα 15 συμβατές βιβλιοθήκες, βάζεις **έναν** starter.
+
+**2. Auto-configuration** — το Boot κοιτάζει τι βρίσκεται στο classpath και **ρυθμίζει λογικά defaults** αυτόματα. Βρίσκει το JPA starter → στήνει DataSource/EntityManager. Βρίσκει το web starter → σηκώνει embedded Tomcat στη θύρα 8080.
+
+```java
+@SpringBootApplication   // = @Configuration + @EnableAutoConfiguration + @ComponentScan
+public class ShopApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(ShopApplication.class, args);   // σηκώνει τα πάντα
+    }
+}
+```
+
+> **«Convention over configuration»:** το Boot υποθέτει λογικά defaults ώστε να μη ρυθμίζεις τα πάντα· τα override-άρεις μόνο όπου χρειάζεται. Ο **embedded server** (Tomcat μέσα στο app) σημαίνει ότι τρέχεις ένα απλό `java -jar app.jar` — δεν στήνεις ξεχωριστό application server. Αυτό το «απλώς τρέχει» είναι ο λόγος επικράτησης του Boot.
+
+## Configuration: `application.properties`
+
+Ρυθμίσεις (DB URL, ports, keys) πάνε **έξω** από τον κώδικα, σε `application.properties` ή `application.yml`:
+
+```properties
+server.port=8080
+spring.datasource.url=jdbc:postgresql://localhost:5432/shop
+spring.jpa.hibernate.ddl-auto=validate
+app.feature.new-checkout=true
+```
+
+Τις διαβάζεις με `@Value("${app.feature.new-checkout}")` ή, καλύτερα, με type-safe `@ConfigurationProperties` classes. Διαφορετικά **profiles** (`application-dev.properties`, `application-prod.properties`) δίνουν διαφορετικές ρυθμίσεις ανά περιβάλλον — θα το δεις στο production μάθημα.
+
+<PredictOutput
+  title="Ποιος φτιάχνει το ProductService;"
+  code={`@Service
+public class ProductService {
+    private final ProductRepository repo;
+    public ProductService(ProductRepository repo) { this.repo = repo; }
+}
+// Πουθενά στον κώδικα δεν γράφεις new ProductService(...).
+// Πώς υπάρχει instance στο runtime;`}
+  options={[
+    "Δεν υπάρχει — πρέπει να το κάνεις new χειροκίνητα",
+    "Το Spring container το εντοπίζει (@Service, component scan), το φτιάχνει ως bean και injectάρει το ProductRepository αυτόματα (autowiring)",
+    "Δημιουργείται νέο instance σε κάθε κλήση method",
+    "Compile error χωρίς new"
+  ]}
+  correctOptionIndex={1}
+  answer="Το φτιάχνει & injectάρει το Spring container"
+  explanation="Το @Service το κάνει bean. Στο startup, το component scan το βρίσκει, το δημιουργεί (singleton by default), και βλέπει ότι ο constructor χρειάζεται ProductRepository — βρίσκει το αντίστοιχο bean και το injectάρει (constructor injection/autowiring). Αυτό είναι το Inversion of Control: το container ελέγχει τη δημιουργία & σύνδεση, όχι εσύ."
+/>
+
+<PredictOutput
+  title="Τι κάνει το starter;"
+  code={`Βάζεις μόνο το dependency spring-boot-starter-web.
+Χωρίς άλλη ρύθμιση, τρέχεις την εφαρμογή. Τι συμβαίνει;`}
+  options={[
+    "Τίποτα — χρειάζεσαι χειροκίνητη ρύθμιση Tomcat/JSON",
+    "Το starter φέρνει web MVC + embedded Tomcat + JSON, και το auto-configuration σηκώνει server στη θύρα 8080 με λογικά defaults",
+    "Κατεβάζει μόνο πηγαίο κώδικα",
+    "Σφάλμα — λείπει application server"
+  ]}
+  correctOptionIndex={1}
+  answer="Starter + auto-config → έτοιμος web server"
+  explanation="Το spring-boot-starter-web είναι ένα 'meta-dependency' που φέρνει όλες τις συμβατές βιβλιοθήκες (Spring MVC, Jackson για JSON, embedded Tomcat). Το auto-configuration βλέπει αυτά στο classpath και ρυθμίζει DispatcherServlet + server στο 8080 αυτόματα. Convention over configuration: τρέχει χωρίς boilerplate setup."
+/>
+
+<Exercise
+  question="Τι είναι το Inversion of Control / dependency injection;"
+  options={[
+    "Ένα σχεδιαστικό μοτίβο για βάσεις δεδομένων.",
+    "Αντί μια κλάση να φτιάχνει τα dependencies της, της τα παρέχει εξωτερικό σύστημα (το Spring container) — loose coupling, testability (fakes), single shared instances. Το DI είναι ο μηχανισμός· το constructor injection το προτεινόμενο.",
+    "Η μετατροπή Java σε bytecode.",
+    "Ένας τρόπος να αποφύγεις τα interfaces."
+  ]}
+  correctOptionIndex={1}
+  explanation="IoC = αντιστρέφεις τον έλεγχο δημιουργίας: το container (Application Context) φτιάχνει & συνδέει τα αντικείμενα (beans), όχι η κλάση με new. DI = ο τρόπος (constructor injection προτεινόμενος). Οφέλη: loose coupling, mock-άρεις στα tests, ένα shared instance. Ίδιο concept με NestJS/Hilt."
+/>
+
+<Exercise
+  question="Ποια η σχέση Spring Framework vs Spring Boot;"
+  options={[
+    "Είναι δύο άσχετα projects.",
+    "Το Spring Framework δίνει τον πυρήνα (IoC/DI, MVC, data). Το Spring Boot χτίζει από πάνω με starters (grouped dependencies) + auto-configuration + embedded server, ώστε να τρέχεις production app με ελάχιστο setup (convention over configuration).",
+    "Το Spring Boot αντικαθιστά τη Java.",
+    "Το Spring Framework είναι νεότερο από το Boot."
+  ]}
+  correctOptionIndex={1}
+  explanation="Spring Framework = ο πυρήνας (container/DI, web MVC, data access). Spring Boot = opinionated layer από πάνω: starters (ένα dependency φέρνει ό,τι χρειάζεσαι), auto-configuration (λογικά defaults βάσει classpath), embedded server (java -jar). Αποτέλεσμα: ελάχιστο boilerplate, production-ready γρήγορα."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «Explain dependency injection in Spring and what Spring Boot adds.»
+
+> The heart of Spring is the IoC container. Normally a class creates its own dependencies with `new`, which is tight coupling; with Inversion of Control I hand that responsibility to the Spring container, and dependency injection is how it supplies them. I annotate my classes — `@Service`, `@Repository`, `@Component` — so the container registers them as beans, and at startup component scanning finds them, instantiates them as singletons, and autowires their dependencies. I prefer constructor injection because it makes dependencies explicit and lets me mark the fields `final`, and it means I can drop in a fake in tests. The payoff is loose coupling, testability, and shared instances managed for me. Spring Boot builds on that framework with two things: starters, where a single dependency like `spring-boot-starter-web` pulls in a compatible set of libraries and an embedded Tomcat, and auto-configuration, where Boot inspects the classpath and wires sensible defaults automatically — convention over configuration. So I annotate a class with `@SpringBootApplication`, run one `main`, and get a working server on port 8080 without XML or boilerplate. Configuration like the database URL lives outside the code in `application.properties`, with profiles per environment.
+
+<Flashcards
+  title="Spring Boot foundations — interview drills"
+  cards={[
+    {
+      question: "Inversion of Control & dependency injection;",
+      answer: "IoC: το container (όχι η κλάση με new) φτιάχνει & συνδέει αντικείμενα. DI: ο τρόπος παροχής (constructor injection προτεινόμενο). Οφέλη: loose coupling, testability, single instances."
+    },
+    {
+      question: "Τι είναι ένα bean & το Application Context;",
+      answer: "Bean = αντικείμενο που διαχειρίζεται το Spring (δημιουργία/lifecycle/injection). Application Context = ο IoC container/registry όλων των beans. By default singletons."
+    },
+    {
+      question: "@Component vs @Service vs @Repository vs @RestController;",
+      answer: "Όλα κάνουν την κλάση bean (stereotypes). @Component γενικό, @Service business layer, @Repository data access (+exception translation), @RestController web layer. Σημασιολογικός διαχωρισμός layers."
+    },
+    {
+      question: "Τι είναι τα Spring Boot starters;",
+      answer: "Grouped dependencies: ένα starter φέρνει όλες τις συμβατές βιβλιοθήκες για μια δυνατότητα (starter-web = MVC+Tomcat+JSON, starter-data-jpa = JPA+Hibernate). Τέλος το manual dependency juggling."
+    },
+    {
+      question: "Τι κάνει το auto-configuration;",
+      answer: "Το Boot κοιτά το classpath και ρυθμίζει λογικά defaults αυτόματα (web starter → embedded Tomcat στο 8080, JPA starter → DataSource). Convention over configuration· override μόνο όπου χρειάζεται."
+    },
+    {
+      question: "Spring Framework vs Spring Boot;",
+      answer: "Framework = πυρήνας (IoC/DI, MVC, data). Boot = opinionated layer από πάνω (starters + auto-config + embedded server) για production app με ελάχιστο setup."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Στήσε ένα Spring Boot app με DI"
+  scenario="Δημιούργησε νοερά ένα μικρό Spring Boot service με σωστό dependency injection & configuration."
+  outcomes={[
+    "Να δηλώνεις beans (@Service/@Repository) & constructor injection.",
+    "Να εξηγείς πώς το container τα φτιάχνει/συνδέει.",
+    "Να διακρίνεις starters/auto-config & external config."
+  ]}
+  steps={[
+    "Φτιάξε @SpringBootApplication κλάση με main (SpringApplication.run).",
+    "Όρισε ProductRepository (@Repository) & ProductService (@Service) με constructor injection.",
+    "Εξήγησε τι κάνει το component scan στο startup.",
+    "Δείξε ποιον starter χρειάζεσαι για web (spring-boot-starter-web).",
+    "Βάλε μια ρύθμιση (server.port, feature flag) στο application.properties."
+  ]}
+  checkpoints={[
+    "Καμία κλάση δεν κάνει new τα dependencies της — τα δέχεται στον constructor.",
+    "Χρησιμοποιείς constructor injection (final fields), όχι field injection.",
+    "Ξέρεις ποιος starter φέρνει τι & τι ρυθμίζει το auto-config.",
+    "Οι ρυθμίσεις ζουν έξω από τον κώδικα (properties/yml)."
+  ]}
+  mistakes={[
+    "Να κάνεις new τα dependencies (χάνεις DI/testability).",
+    "Field injection (@Autowired σε field) αντί constructor injection.",
+    "Να ψάχνεις χειροκίνητη ρύθμιση εκεί που το auto-config τα κάνει.",
+    "Hardcoded config (DB URL/keys) μέσα στον κώδικα αντί properties."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν εξηγείς IoC/DI, δηλώνεις beans με constructor injection, και ξέρεις πώς starters + auto-configuration κάνουν το Spring Boot production-ready με ελάχιστο setup."
+/>

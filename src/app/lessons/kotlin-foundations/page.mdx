@@ -1,0 +1,336 @@
+# Kotlin Foundations
+
+Το **Kotlin** είναι η επίσημη γλώσσα για Android — από το 2019 η Google είναι **Kotlin-first**, και το Jetpack Compose είναι Kotlin-only. Είναι στατικά τυπωμένη (statically typed), τρέχει στο **JVM**, και σχεδιάστηκε από τη JetBrains για να λύσει τα πιο κοινά bugs της Java: κυρίως τα `NullPointerException`. Αν ξέρεις JavaScript/TypeScript, πολλά θα σου φανούν οικεία — αλλά το type system είναι πιο αυστηρό και το **null safety** είναι μέρος της γλώσσας, όχι σύμβαση.
+
+Αυτό το μάθημα είναι **μόνο η γλώσσα** — όχι ακόμα Android UI. Χτίζουμε το vocabulary που θα χρησιμοποιείς σε κάθε επόμενο μάθημα.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να διαλέγεις `val` vs `var` και να εξηγείς γιατί προτιμάς immutability,
+- να χειρίζεσαι null με ασφάλεια (`?`, `?.`, `?:`, `!!`) και να ξέρεις γιατί το `!!` είναι code smell,
+- να γράφεις `data class` και να ξέρεις τι σου δίνει δωρεάν,
+- να χρησιμοποιείς `when`, `if`/`when` ως **expressions**, και string templates,
+- να αναγνωρίζεις `sealed class`/`enum` για κλειστά σύνολα καταστάσεων,
+- να χρησιμοποιείς extension functions και scope functions (`let`/`apply`/`run`/`also`/`with`).
+
+## `val` vs `var` — immutability by default
+
+Δύο τρόποι να δηλώσεις μεταβλητή:
+
+```kotlin
+val name = "Giannis"   // read-only (σαν const/final) — δεν μπορεί να ξανα-ανατεθεί
+var count = 0          // mutable — μπορεί να αλλάξει
+count = count + 1      // OK
+// name = "Άλλο"       // ΔΕΝ compiler-άρει
+```
+
+Ο τύπος **συνάγεται** (type inference): το `val name = "Giannis"` είναι αυτόματα `String`. Μπορείς να τον δηλώσεις ρητά: `val name: String = "Giannis"`.
+
+> Κανόνας: **ξεκίνα πάντα με `val`.** Άλλαξε σε `var` μόνο όταν πραγματικά χρειάζεσαι reassignment. Ο immutable κώδικας είναι πιο εύκολος στο reasoning και κρίσιμος στο Compose (θα το δεις στο state μάθημα). Προσοχή: το `val` κάνει read-only το **reference**, όχι το αντικείμενο — μια `val list: MutableList` γεμίζει ακόμα.
+
+## Null safety — το χαρακτηριστικό που ορίζει το Kotlin
+
+Στην Java, κάθε reference μπορεί να είναι `null`, και το ξεχνάς μέχρι να σκάσει `NullPointerException` στο runtime. Στο Kotlin, ο τύπος **λέει** αν επιτρέπεται null:
+
+```kotlin
+var a: String = "hello"
+// a = null              // compile error — ο String ΔΕΝ δέχεται null
+
+var b: String? = "hello" // το ? σημαίνει nullable
+b = null                 // OK
+```
+
+Ο compiler σε **αναγκάζει** να χειριστείς το null πριν χρησιμοποιήσεις ένα `String?`:
+
+```kotlin
+val len = b.length       // compile error — το b μπορεί να είναι null
+
+// Safe call: επιστρέφει null αν το b είναι null
+val len: Int? = b?.length
+
+// Elvis operator: default αν είναι null
+val len: Int = b?.length ?: 0
+
+// Not-null assertion: "εγγυώμαι ότι δεν είναι null" — πετάει NPE αν κάνεις λάθος
+val len: Int = b!!.length
+```
+
+| Τελεστής | Τι κάνει |
+|---|---|
+| `?` (στον τύπο) | Δηλώνει nullable: `String?` |
+| `?.` | Safe call — αν null, όλη η έκφραση γίνεται null |
+| `?:` | Elvis — δώσε default όταν αριστερά είναι null |
+| `!!` | Not-null assertion — «σκάσε αν είναι null» |
+
+> Το `!!` είναι **code smell**: λες στον compiler «εμπιστέψου με» και ξαναφέρνεις πίσω τα NPE. Χρησιμοποίησέ το μόνο όταν αποδεδειγμένα δεν γίνεται null· αλλιώς προτίμησε `?.`/`?:` ή smart cast με `if (b != null)`.
+
+Το Kotlin κάνει και **smart casts**: μέσα σε `if (b != null) { b.length }` ο compiler ξέρει ότι το `b` είναι πλέον non-null και σε αφήνει να το χρησιμοποιήσεις κατευθείαν.
+
+## Functions & expressions
+
+```kotlin
+fun add(a: Int, b: Int): Int {
+    return a + b
+}
+
+// Single-expression form — χωρίς { } / return
+fun add(a: Int, b: Int): Int = a + b
+
+// Default & named arguments (αντικαθιστούν τα Java overloads)
+fun greet(name: String, punctuation: String = "!") = "Γεια $name$punctuation"
+greet("Άννα")                       // "Γεια Άννα!"
+greet("Άννα", punctuation = ".")    // named argument
+```
+
+Στο Kotlin, `if` και `when` είναι **expressions** — επιστρέφουν τιμή:
+
+```kotlin
+val label = if (count > 0) "έχει" else "άδειο"
+
+val tier = when {
+    count >= 100 -> "gold"
+    count >= 10  -> "silver"
+    else         -> "bronze"
+}
+
+// when με subject
+val name = when (day) {
+    1, 7 -> "Σαββατοκύριακο"
+    in 2..6 -> "Καθημερινή"
+    else -> "άγνωστο"
+}
+```
+
+**String templates** αντί για concatenation: `"Γεια $name, έχεις ${cart.size} προϊόντα"`.
+
+## Classes & `data class`
+
+```kotlin
+class User(val id: String, var name: String)  // primary constructor στην κεφαλή
+
+val u = User("1", "Giannis")   // χωρίς `new`
+println(u.name)                // property access, όχι getName()
+```
+
+Για αντικείμενα που κρατάνε **δεδομένα**, το `data class` σου δίνει δωρεάν `equals()`/`hashCode()`, `toString()`, `copy()` και destructuring:
+
+```kotlin
+data class Product(val id: String, val title: String, val price: Double)
+
+val p = Product("1", "Καφές", 3.5)
+val cheaper = p.copy(price = 2.9)      // νέο αντικείμενο, immutable update
+val (id, title) = p                    // destructuring
+println(p)                             // Product(id=1, title=Καφές, price=3.5)
+
+Product("1", "Καφές", 3.5) == Product("1", "Καφές", 3.5)  // true — value equality
+```
+
+Το `copy()` είναι το πώς κάνεις **immutable updates** — κρατάς `val` properties και φτιάχνεις νέο αντικείμενο αντί να μεταλλάσσεις. Αυτό ταιριάζει τέλεια με το state model του Compose.
+
+## `enum` & `sealed class` — κλειστά σύνολα
+
+Όταν κάτι μπορεί να είναι ένα από **λίγες γνωστές** καταστάσεις:
+
+```kotlin
+enum class Status { LOADING, SUCCESS, ERROR }
+```
+
+Το `enum` όμως δεν κρατάει διαφορετικά δεδομένα ανά περίπτωση. Γι' αυτό υπάρχει το `sealed class` — κλειστή ιεραρχία όπου κάθε υποκλάση μπορεί να έχει **δικά της** πεδία:
+
+```kotlin
+sealed interface UiState {
+    object Loading : UiState
+    data class Success(val items: List<Product>) : UiState
+    data class Error(val message: String) : UiState
+}
+
+fun render(state: UiState) = when (state) {
+    is UiState.Loading -> "Φόρτωση…"
+    is UiState.Success -> "${state.items.size} προϊόντα"   // smart cast σε Success
+    is UiState.Error   -> state.message
+    // χωρίς else! Ο compiler ξέρει ότι κάλυψες όλες τις περιπτώσεις
+}
+```
+
+> Αυτό το `sealed` + `when` pattern θα το δεις **παντού** στο Android UI state (Loading/Success/Error). Το μεγάλο κέρδος: αν προσθέσεις νέα υποκλάση, ο compiler σε αναγκάζει να ενημερώσεις κάθε `when` — **exhaustiveness**.
+
+## Collections — `List` vs `MutableList`
+
+```kotlin
+val nums = listOf(3, 1, 2)              // read-only List
+val more = mutableListOf(3, 1, 2)       // MutableList — .add()/.remove()
+
+// Functional API (σαν JS array methods)
+val doubled = nums.map { it * 2 }        // [6, 2, 4]
+val evens = nums.filter { it % 2 == 0 }  // [2]
+val sum = nums.sum()
+val sorted = nums.sortedBy { it }        // [1, 2, 3]
+
+val byId: Map<String, Product> = products.associateBy { it.id }
+```
+
+Το `it` είναι το implicit όνομα του μοναδικού lambda parameter. Το lambda που είναι το **τελευταίο** argument βγαίνει έξω από τις παρενθέσεις (trailing lambda): `nums.map { it * 2 }`.
+
+## Extension functions
+
+Προσθέτεις μεθόδους σε **υπάρχοντες** τύπους χωρίς να τους κληρονομήσεις:
+
+```kotlin
+fun String.isEmail(): Boolean = contains("@") && contains(".")
+
+"a@b.com".isEmail()   // true
+```
+
+Χρησιμοποιούνται πολύ στο Android (π.χ. `context.toast(...)`, formatting helpers) και στο Compose (τα `Modifier` chains είναι extension functions).
+
+## Scope functions — `let`, `apply`, `run`, `also`, `with`
+
+Μικρά αλλά πανταχού παρόντα. Τρέχουν ένα block στο context ενός αντικειμένου:
+
+```kotlin
+// let — τρέξε κώδικα ΜΟΝΟ αν non-null (πολύ κοινό με ?.)
+user?.let {
+    println("Ο χρήστης ${it.name} συνδέθηκε")
+}
+
+// apply — ρύθμισε ένα αντικείμενο και επίστρεψέ το (this = το αντικείμενο)
+val intent = Intent().apply {
+    putExtra("id", "1")
+    action = "OPEN"
+}   // επιστρέφει το intent
+
+// also — κάνε side-effect (π.χ. log) και επίστρεψε το ίδιο αντικείμενο
+val result = compute().also { println("υπολογίστηκε: $it") }
+```
+
+| Function | Reference μέσα | Επιστρέφει | Τυπική χρήση |
+|---|---|---|---|
+| `let` | `it` | το αποτέλεσμα του block | null-check, μετασχηματισμός |
+| `apply` | `this` | το αντικείμενο | configuration/setup |
+| `run` | `this` | το αποτέλεσμα του block | υπολογισμός σε context |
+| `also` | `it` | το αντικείμενο | side-effects (log) |
+| `with` | `this` | το αποτέλεσμα του block | πολλές κλήσεις σε ένα object |
+
+<PredictOutput
+  title="Null safety στην πράξη"
+  code={`val name: String? = null
+val length = name?.length ?: -1
+println(length)`}
+  options={[
+    "0",
+    "null",
+    "-1",
+    "NullPointerException"
+  ]}
+  correctOptionIndex={2}
+  answer="-1"
+  explanation="Το name?.length κάνει safe call: επειδή το name είναι null, όλη η έκφραση name?.length γίνεται null (τύπου Int?). Ο Elvis ?: -1 δίνει το default -1. Δεν πετάει NPE γιατί ποτέ δεν κάναμε dereference του null. Αν είχαμε name!!.length θα έσκαγε."
+/>
+
+<PredictOutput
+  title="data class copy & equality"
+  code={`data class P(val id: String, val n: Int)
+val a = P("x", 1)
+val b = a.copy(n = 2)
+println(a == P("x", 1))
+println(a === b)`}
+  options={[
+    "true / true",
+    "true / false",
+    "false / false",
+    "false / true"
+  ]}
+  correctOptionIndex={1}
+  answer="true (structural) / false (referential)"
+  explanation="Το data class δίνει value-based equals(): a == P('x', 1) είναι true γιατί έχουν ίδια πεδία (== = structural). Το === είναι referential identity — το b είναι ΝΕΟ αντικείμενο από copy(), άρα a === b είναι false. Το copy() δεν μεταλλάσσει· φτιάχνει καινούριο instance."
+/>
+
+<Exercise
+  question="Γιατί το sealed class προτιμάται από enum για UI state (Loading/Success/Error);"
+  options={[
+    "Είναι πιο γρήγορο στο runtime.",
+    "Κάθε περίπτωση μπορεί να κουβαλά διαφορετικά δεδομένα (π.χ. Success έχει list, Error έχει message), και το when γίνεται exhaustive χωρίς else.",
+    "Το enum δεν υπάρχει στο Kotlin.",
+    "Το sealed class επιτρέπει null χωρίς ?."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το enum έχει σταθερό σχήμα σε όλες τις τιμές· δεν μπορεί το LOADING να μην έχει δεδομένα ενώ το SUCCESS να κρατά μια λίστα. Το sealed class επιτρέπει κάθε υποκλάση να έχει δικά της πεδία, και επειδή η ιεραρχία είναι κλειστή, ο compiler ελέγχει ότι το when κάλυψε όλες τις περιπτώσεις (exhaustiveness) — προσθέτεις νέα κατάσταση, σπάει το build μέχρι να τη χειριστείς."
+/>
+
+<Exercise
+  question="Πότε είναι σωστό να χρησιμοποιήσεις !!;"
+  options={[
+    "Πάντα — είναι πιο σύντομο από το ?.",
+    "Σχεδόν ποτέ· μόνο όταν αποδεδειγμένα η τιμή δεν μπορεί να είναι null και το ?./?: δεν εκφράζει καθαρά την πρόθεση — αλλιώς επαναφέρεις τα NPE.",
+    "Όταν θέλεις default τιμή.",
+    "Όταν δουλεύεις με data classes."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το !! λέει «εγγυώμαι non-null» και πετάει NPE αν κάνεις λάθος — δηλαδή ακυρώνει το βασικό όφελος του Kotlin. Οι idiomatic λύσεις είναι safe call ?., Elvis ?:, ή smart cast μετά από null-check. Το !! κρατιέται για σπάνιες περιπτώσεις όπου η μη-nullότητα είναι εγγυημένη από context που ο compiler δεν βλέπει."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «What makes Kotlin safer than Java, and how does null safety work?»
+
+> Kotlin bakes null safety into the type system. A `String` can never be null; only a `String?` can, and the compiler forces me to handle the null case before I dereference it. I use the safe-call operator `?.`, which short-circuits to null instead of throwing, and the Elvis operator `?:` to supply a default. There's also `!!`, a not-null assertion, but that reintroduces the exact NullPointerExceptions Kotlin is trying to eliminate, so I treat it as a code smell and reach for it only when non-nullability is genuinely guaranteed. Beyond null safety, Kotlin defaults to immutability with `val`, gives me `data class` for value types with free `equals`, `copy`, and destructuring, and `sealed` hierarchies that make `when` exhaustive — the compiler tells me if I forgot a state. That last part is huge for modelling UI state as Loading, Success, or Error, which is the backbone of an Android screen.
+
+<Flashcards
+  title="Kotlin foundations — interview drills"
+  cards={[
+    {
+      question: "val vs var — και τι σημαίνει read-only;",
+      answer: "val = read-only reference (δεν ξανα-ανατίθεται), var = mutable. Ξεκίνα πάντα με val. Το val κλειδώνει το reference, όχι το αντικείμενο — ένα val MutableList γεμίζει ακόμα."
+    },
+    {
+      question: "?. vs ?: vs !! ;",
+      answer: "?. safe call (null αν ο δέκτης είναι null). ?: Elvis (default όταν αριστερά null). !! not-null assertion (πετάει NPE αν είναι null) — code smell."
+    },
+    {
+      question: "Τι σου δίνει δωρεάν το data class;",
+      answer: "equals()/hashCode() value-based, toString(), copy() για immutable updates, και destructuring (val (a,b) = obj)."
+    },
+    {
+      question: "sealed class vs enum;",
+      answer: "enum = σταθερές τιμές με ίδιο σχήμα. sealed = κλειστή ιεραρχία όπου κάθε υποκλάση κρατά δικά της δεδομένα· κάνει το when exhaustive (χωρίς else) με smart cast."
+    },
+    {
+      question: "Τι είναι scope functions; Πες let & apply.",
+      answer: "Τρέχουν block στο context ενός object. let: it, επιστρέφει το block result — κοινό για null-check (x?.let{}). apply: this, επιστρέφει το object — configuration/setup."
+    },
+    {
+      question: "if/when ως expression;",
+      answer: "Στο Kotlin το if και το when επιστρέφουν τιμή: val x = if (c) a else b. Το when χωρίς subject λειτουργεί σαν αλυσίδα συνθηκών."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Μοντελοποίησε ένα domain μόνο με Kotlin"
+  scenario="Πάρε μια οθόνη (π.χ. λίστα προϊόντων που φορτώνει από API) και μοντελοποίησε το domain + το UI state της σε καθαρό Kotlin — χωρίς Android ακόμα."
+  outcomes={[
+    "Να εκφράζεις δεδομένα με data classes και immutable updates (copy).",
+    "Να μοντελοποιείς καταστάσεις με sealed class + exhaustive when.",
+    "Να χειρίζεσαι null-able πεδία με ?./?: αντί για !!."
+  ]}
+  steps={[
+    "Γράψε ένα data class Product(id, title, price).",
+    "Φτιάξε sealed interface UiState με Loading/Success(list)/Error(message).",
+    "Γράψε fun render(state): String με when χωρίς else.",
+    "Πρόσθεσε ένα nullable πεδίο (π.χ. discount: Double?) και χειρίσου το με Elvis.",
+    "Κάνε ένα immutable update με copy() και δείξε ότι το παλιό object μένει ίδιο."
+  ]}
+  checkpoints={[
+    "Όλα τα πεδία δεδομένων είναι val (immutable).",
+    "Το when πάνω στο sealed δεν έχει else — είναι exhaustive.",
+    "Κανένα !! — τα null χειρίζονται με ?./?:.",
+    "Το update γίνεται με copy(), όχι με μετάλλαξη."
+  ]}
+  mistakes={[
+    "Να βάζεις var παντού 'για σιγουριά'.",
+    "Να χρησιμοποιείς !! για να σωπάσεις τον compiler.",
+    "Να χρησιμοποιείς enum εκεί που κάθε κατάσταση κρατά δικά της δεδομένα.",
+    "Να μεταλλάσσεις collections αντί για map/filter/copy."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν μοντελοποιείς δεδομένα & καταστάσεις με data/sealed classes, κάνεis immutable updates με copy, και δεν χρειάζεσαι ποτέ !!."
+/>

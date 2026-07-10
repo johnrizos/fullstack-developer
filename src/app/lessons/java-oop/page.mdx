@@ -1,0 +1,305 @@
+# OOP in Depth
+
+Η Java είναι **object-oriented** μέχρι το κόκκαλο — και οι OOP έννοιες είναι από τα πιο συχνά θέματα σε enterprise interviews. Σε αυτό το μάθημα πάμε βαθιά: **classes vs interfaces**, **inheritance vs composition**, **polymorphism**, **encapsulation**, και τα σύγχρονα **records** & **enums**. Δεν είναι academic — αυτά τα εργαλεία είναι που κάνουν έναν Spring codebase να είναι επεκτάσιμος αντί για μπερδεμένο.
+
+Αν ξέρεις Kotlin, οι έννοιες μεταφέρονται· η Java είναι πιο verbose (χρειάζεσαι `implements`/`extends`/`@Override` ρητά) αλλά το mental model είναι το ίδιο.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να διακρίνεις **class** vs **interface** και πότε το καθένα,
+- να εξηγείς **inheritance** (`extends`) vs **composition** και γιατί «prefer composition»,
+- να καταλαβαίνεις **polymorphism** (ένα interface, πολλές υλοποιήσεις),
+- να εφαρμόζεις **encapsulation** (private state, public API),
+- να χρησιμοποιείς **abstract classes**, **records** και **enums**,
+- να αναγνωρίζεις τις τέσσερις αρχές OOP σε μια συνέντευξη.
+
+## Τα τέσσερα πυλώνες του OOP
+
+| Πυλώνας | Τι σημαίνει |
+|---|---|
+| **Encapsulation** | Κρύβεις το εσωτερικό state· εκθέτεις μόνο ελεγχόμενο API |
+| **Inheritance** | Μια κλάση κληρονομεί behavior από άλλη |
+| **Polymorphism** | Ίδια διεπαφή, διαφορετική συμπεριφορά ανά τύπο |
+| **Abstraction** | Κρύβεις πολυπλοκότητα πίσω από απλή διεπαφή |
+
+## Encapsulation
+
+Κρατάς τα fields **`private`** και ελέγχεις την πρόσβαση μέσω methods. Έτσι το εσωτερικό μπορεί να αλλάξει χωρίς να σπάσει ο κώδικας που το χρησιμοποιεί, και επιβάλλεις κανόνες (validation):
+
+```java
+public class BankAccount {
+    private double balance;   // κανείς δεν το αγγίζει απευθείας
+
+    public void deposit(double amount) {
+        if (amount <= 0) throw new IllegalArgumentException("Θετικό ποσό μόνο");
+        balance += amount;
+    }
+
+    public double getBalance() { return balance; }
+}
+```
+
+> Χωρίς encapsulation (public `balance`), οποιοσδήποτε θα μπορούσε να γράψει `account.balance = -1000`. Με το private field + `deposit()`, επιβάλλεις το invariant «το balance αλλάζει μόνο με έγκυρους κανόνες». Αυτό είναι το «γιατί» πίσω από τους getters/setters.
+
+## Interfaces — το contract
+
+Ένα **interface** ορίζει **τι** πρέπει να κάνει μια κλάση, χωρίς **πώς**. Είναι ένα «συμβόλαιο»:
+
+```java
+public interface PaymentProcessor {
+    boolean charge(double amount);   // υπογραφή, χωρίς σώμα
+}
+
+public class StripeProcessor implements PaymentProcessor {
+    @Override
+    public boolean charge(double amount) {
+        // Stripe-specific λογική
+        return true;
+    }
+}
+
+public class PaypalProcessor implements PaymentProcessor {
+    @Override
+    public boolean charge(double amount) {
+        // PayPal-specific λογική
+        return true;
+    }
+}
+```
+
+Μια κλάση μπορεί να υλοποιεί **πολλά** interfaces (σε αντίθεση με single inheritance). Ο υπόλοιπος κώδικας εξαρτάται από το **interface**, όχι από τη συγκεκριμένη υλοποίηση — αυτό είναι το θεμέλιο του dependency injection (θα το δεις στο Spring).
+
+## Polymorphism
+
+**Polymorphism** = ο ίδιος κώδικας δουλεύει με **πολλούς** τύπους μέσω κοινής διεπαφής:
+
+```java
+public class CheckoutService {
+    private final PaymentProcessor processor;   // εξαρτάται από το interface
+
+    public CheckoutService(PaymentProcessor processor) {
+        this.processor = processor;              // δέχεται ΟΠΟΙΑΔΗΠΟΤΕ υλοποίηση
+    }
+
+    public void checkout(double amount) {
+        processor.charge(amount);   // δεν ξέρει/νοιάζεται αν είναι Stripe ή PayPal
+    }
+}
+
+// Runtime: αποφασίζεις ποια υλοποίηση
+new CheckoutService(new StripeProcessor()).checkout(50);
+new CheckoutService(new PaypalProcessor()).checkout(50);
+```
+
+> Το `checkout()` καλεί `processor.charge()` και το JVM διαλέγει τη **σωστή υλοποίηση** στο runtime (**dynamic dispatch**). Προσθέτεις νέο processor (π.χ. `ApplePayProcessor`) **χωρίς** να αγγίξεις το `CheckoutService`. Αυτό είναι το πραγματικό όφελος: επεκτασιμότητα χωρίς τροποποίηση (Open/Closed principle).
+
+## Inheritance vs composition
+
+**Inheritance** (`extends`): μια κλάση κληρονομεί fields/methods από μια **superclass**:
+
+```java
+public class Animal {
+    public void breathe() { /* ... */ }
+}
+
+public class Dog extends Animal {   // ο Dog ΕΙΝΑΙ Animal
+    public void bark() { /* ... */ }
+}
+```
+
+Η Java έχει **single inheritance** (μία superclass μόνο). Το `Dog` κληρονομεί το `breathe()`.
+
+**Composition**: αντί να κληρονομείς, **περιέχεις** άλλα αντικείμενα:
+
+```java
+public class Car {
+    private final Engine engine;   // ο Car ΕΧΕΙ Engine (δεν είναι Engine)
+    public Car(Engine engine) { this.engine = engine; }
+    public void start() { engine.ignite(); }
+}
+```
+
+> **«Prefer composition over inheritance»** — από τα πιο κοινά interview mantras. Η inheritance δημιουργεί **σφιχτή** σύζευξη (το subclass εξαρτάται από τα εσωτερικά του parent· αλλαγή στο parent σπάει τα children — το «fragile base class problem»). Η composition είναι πιο ευέλικτη: συνδυάζεις συμπεριφορές, τις αλλάζεις runtime, και δοκιμάζεις πιο εύκολα. Κανόνας: inheritance μόνο για γνήσιες **is-a** σχέσεις· αλλιώς composition (**has-a**).
+
+## Abstract classes
+
+Ένα **abstract class** είναι κάτι ανάμεσα σε interface και κανονική κλάση: **δεν** μπορεί να instantiate-αριστεί, μπορεί να έχει **και** υλοποιημένες methods **και** abstract (χωρίς σώμα) που τα subclasses πρέπει να υλοποιήσουν:
+
+```java
+public abstract class Shape {
+    public abstract double area();          // κάθε shape το ορίζει
+
+    public void describe() {                // κοινή υλοποίηση για όλα
+        System.out.println("Εμβαδόν: " + area());
+    }
+}
+
+public class Circle extends Shape {
+    private final double r;
+    public Circle(double r) { this.r = r; }
+    @Override
+    public double area() { return Math.PI * r * r; }
+}
+```
+
+| | Interface | Abstract class |
+|---|---|---|
+| Πολλαπλή | ναι (implements πολλά) | όχι (extends ένα) |
+| State (fields) | όχι (μόνο constants) | ναι |
+| Πότε | contract/capability | κοινή βάση + shared code |
+
+## Records — immutable data (Java 16+)
+
+Ένα **record** είναι σύντομη σύνταξη για **immutable data carrier** — αντίστοιχο του `data class` της Kotlin. Ο compiler παράγει constructor, getters, `equals()`, `hashCode()`, `toString()`:
+
+```java
+public record Product(String id, String title, double price) {}
+
+Product p = new Product("1", "Καφές", 3.5);
+p.title();                       // getter (χωρίς get prefix)
+p.equals(new Product("1", "Καφές", 3.5));   // true — value equality δωρεάν
+```
+
+> Τα records είναι **immutable** (final fields) — ιδανικά για DTOs, value objects, API responses. Ό,τι θα έγραφες σε 40 γραμμές boilerplate (fields + constructor + getters + equals + hashCode + toString) γίνεται μία γραμμή. Enterprise codebases τα υιοθετούν γρήγορα.
+
+## Enums
+
+Ένα **enum** ορίζει ένα κλειστό σύνολο σταθερών τιμών — type-safe, με δυνατότητα fields/methods:
+
+```java
+public enum Status {
+    ACTIVE, SUSPENDED, CLOSED
+}
+
+Status s = Status.ACTIVE;
+switch (s) {
+    case ACTIVE -> System.out.println("ενεργός");
+    case SUSPENDED, CLOSED -> System.out.println("ανενεργός");
+}
+```
+
+Type-safe: δεν μπορείς να περάσεις τυχαίο string· ο compiler ελέγχει τις περιπτώσεις.
+
+<PredictOutput
+  title="Polymorphism & dynamic dispatch"
+  code={`PaymentProcessor p = new PaypalProcessor();
+// Το CheckoutService καλεί p.charge(amount).
+// Ποια υλοποίηση του charge() τρέχει;`}
+  options={[
+    "Της PaymentProcessor (interface) — καμία λογική",
+    "Της PaypalProcessor — ο πραγματικός τύπος του αντικειμένου καθορίζει τη μέθοδο (dynamic dispatch), όχι ο δηλωμένος τύπος",
+    "Και των δύο",
+    "Compile error"
+  ]}
+  correctOptionIndex={1}
+  answer="Της PaypalProcessor (runtime type)"
+  explanation="Παρόλο που ο ΔΗΛΩΜΕΝΟΣ τύπος της μεταβλητής είναι PaymentProcessor (interface), το αντικείμενο είναι PaypalProcessor. Στο runtime το JVM κάνει dynamic dispatch: καλεί την υλοποίηση του ΠΡΑΓΜΑΤΙΚΟΥ τύπου. Γι' αυτό μπορείς να αλλάξεις processor χωρίς να πειράξεις το CheckoutService — polymorphism."
+/>
+
+<PredictOutput
+  title="Records & equality"
+  code={`record Point(int x, int y) {}
+Point a = new Point(1, 2);
+Point b = new Point(1, 2);
+System.out.println(a.equals(b));
+System.out.println(a == b);`}
+  options={[
+    "true / true",
+    "true / false",
+    "false / false",
+    "false / true"
+  ]}
+  correctOptionIndex={1}
+  answer="true / false"
+  explanation="Το record παράγει αυτόματα value-based equals(): a.equals(b) είναι true γιατί έχουν ίδια πεδία. Το == συγκρίνει references — είναι δύο ξεχωριστά αντικείμενα, άρα false. Ίδια λογική με String/objects: equals() για τιμή, == για reference. Τα records σου δίνουν σωστό equals/hashCode/toString δωρεάν."
+/>
+
+<Exercise
+  question="Γιατί 'prefer composition over inheritance';"
+  options={[
+    "Η inheritance είναι πιο αργή.",
+    "Η inheritance δημιουργεί σφιχτή σύζευξη (subclass εξαρτάται από τα εσωτερικά του parent — fragile base class)· η composition (has-a) είναι πιο ευέλικτη, αλλάζει runtime, δοκιμάζεται εύκολα. Inheritance μόνο για γνήσιες is-a σχέσεις.",
+    "Η composition δεν χρειάζεται interfaces.",
+    "Δεν υπάρχει inheritance στην Java."
+  ]}
+  correctOptionIndex={1}
+  explanation="Inheritance = tight coupling· αλλαγή στο parent σπάει τα children (fragile base class problem), και η single inheritance περιορίζει. Composition = συνδυάζεις αντικείμενα (has-a), αλλάζεις εξαρτήσεις (ακόμα & runtime), mock-άρεις στα tests. Χρησιμοποίησε inheritance μόνο όταν υπάρχει πραγματική is-a σχέση· αλλιώς composition."
+/>
+
+<Exercise
+  question="Interface vs abstract class — πότε το καθένα;"
+  options={[
+    "Είναι ταυτόσημα.",
+    "Interface: contract/capability, μια κλάση υλοποιεί πολλά, χωρίς state. Abstract class: κοινή βάση με shared code + state, μία μόνο (single inheritance). Interface για 'τι μπορεί να κάνει', abstract για 'κοινή βάση'.",
+    "Το interface έχει πάντα state.",
+    "Το abstract class υλοποιείται πολλαπλά."
+  ]}
+  correctOptionIndex={1}
+  explanation="Interface = συμβόλαιο/capability· πολλαπλή υλοποίηση, χωρίς fields (μόνο constants/default methods). Abstract class = μερικώς υλοποιημένη βάση με state + shared code, αλλά μία μόνο (single inheritance). Διάλεξε interface για ευελιξία/DI, abstract class όταν μοιράζεσαι κώδικα+state σε συγγενικές κλάσεις."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «Explain OOP in Java and when you'd use inheritance versus composition.»
+
+> Java's OOP rests on four pillars: encapsulation — private state exposed through a controlled API so I can enforce invariants; inheritance — a class extending another to reuse behavior; polymorphism — one interface with many implementations; and abstraction — hiding complexity behind a simple contract. In practice I lean on interfaces: they define what a class must do without the how, a class can implement many, and the rest of my code depends on the interface, not the concrete type. That gives me polymorphism through dynamic dispatch — a `CheckoutService` takes a `PaymentProcessor` and works with Stripe or PayPal without knowing which, so I can add a new processor without touching it. On inheritance versus composition, I prefer composition: inheritance creates tight coupling where a change to the base class can break subclasses — the fragile base class problem — while composition combines objects in a has-a relationship that's more flexible and testable. I reserve inheritance for genuine is-a relationships. For data I use records, which give me immutable value objects with `equals`, `hashCode`, and `toString` for free, and enums for type-safe closed sets of constants.
+
+<Flashcards
+  title="Java OOP — interview drills"
+  cards={[
+    {
+      question: "Οι 4 πυλώνες του OOP;",
+      answer: "Encapsulation (κρυφό state, ελεγχόμενο API), Inheritance (κληρονομιά behavior), Polymorphism (ίδια διεπαφή, πολλές υλοποιήσεις), Abstraction (κρύβεις πολυπλοκότητα)."
+    },
+    {
+      question: "Τι είναι το polymorphism / dynamic dispatch;",
+      answer: "Ίδιος κώδικας δουλεύει με πολλούς τύπους μέσω κοινού interface· στο runtime το JVM καλεί την υλοποίηση του πραγματικού τύπου. Προσθέτεις νέα υλοποίηση χωρίς να αλλάξεις τον καταναλωτή."
+    },
+    {
+      question: "Inheritance vs composition — γιατί prefer composition;",
+      answer: "Inheritance = tight coupling, fragile base class, single-inheritance limit. Composition (has-a) = ευέλικτη, runtime-swappable, testable. Inheritance μόνο για γνήσιο is-a."
+    },
+    {
+      question: "Interface vs abstract class;",
+      answer: "Interface: contract, πολλαπλή υλοποίηση, χωρίς state. Abstract class: shared code + state, single inheritance, δεν instantiate-άρεται. Interface για capability/DI, abstract για κοινή βάση."
+    },
+    {
+      question: "Τι είναι το record;",
+      answer: "Immutable data carrier (Java 16+, σαν Kotlin data class): auto constructor/getters/equals/hashCode/toString. Ιδανικό για DTOs/value objects. Value equality δωρεάν."
+    },
+    {
+      question: "Τι δίνει το encapsulation;",
+      answer: "Private fields + public methods → επιβάλλεις invariants (validation), κρύβεις υλοποίηση, αλλάζεις το εσωτερικό χωρίς να σπάσεις τους καταναλωτές. Το 'γιατί' των getters/setters."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Σχεδίασε ένα επεκτάσιμο domain με OOP"
+  scenario="Μοντελοποίησε ένα σύστημα πληρωμών με πολλούς providers, εφαρμόζοντας interfaces, polymorphism και composition."
+  outcomes={[
+    "Να ορίζεις interface (contract) & πολλαπλές υλοποιήσεις.",
+    "Να χρησιμοποιείς polymorphism ώστε ο consumer να μην ξέρει την υλοποίηση.",
+    "Να προτιμάς composition & records για data."
+  ]}
+  steps={[
+    "Όρισε interface PaymentProcessor { boolean charge(double amount); }.",
+    "Φτιάξε δύο υλοποιήσεις (Stripe/PayPal) με @Override.",
+    "Γράψε CheckoutService που δέχεται PaymentProcessor στον constructor (composition).",
+    "Δείξε ότι προσθέτεις νέο processor χωρίς να αλλάξεις το CheckoutService.",
+    "Μοντελοποίησε το Payment ως record (immutable) και ένα Status enum."
+  ]}
+  checkpoints={[
+    "Ο consumer εξαρτάται από το interface, όχι τη συγκεκριμένη κλάση.",
+    "Νέα υλοποίηση = μηδέν αλλαγές στον consumer (polymorphism/Open-Closed).",
+    "Τα data types είναι records (immutable), όχι mutable κλάσεις με setters.",
+    "Χρησιμοποιείς composition (has-a) αντί inheritance όπου δεν υπάρχει is-a."
+  ]}
+  mistakes={[
+    "Να κληρονομείς για code reuse εκεί που δεν υπάρχει is-a σχέση.",
+    "Public mutable fields αντί private + ελεγχόμενο API.",
+    "Ο consumer να εξαρτάται από συγκεκριμένη κλάση αντί interface.",
+    "Boilerplate data class αντί record."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν σχεδιάζεις με interfaces/polymorphism, προτιμάς composition από inheritance, και χρησιμοποιείς records/enums για καθαρά, επεκτάσιμα domain models."
+/>

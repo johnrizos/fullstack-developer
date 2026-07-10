@@ -1,0 +1,277 @@
+# Data & Networking
+
+Ένα app χωρίς δεδομένα είναι κενό. Στο Android, τα δεδομένα έρχονται από δύο πηγές: το **δίκτυο** (REST/GraphQL API) και την **τοπική βάση** (για caching & offline). Το καθιερωμένο stack είναι **Retrofit** για HTTP και **Room** για SQLite, ενωμένα πίσω από ένα **repository** που δίνει στην υπόλοιπη εφαρμογή μία καθαρή πηγή δεδομένων — offline-first.
+
+Το κρίσιμο mental model: το UI **δεν** μιλά ποτέ απευθείας σε Retrofit ή Room. Μιλά σε ένα **repository**, που αποφασίζει πότε να χτυπήσει το δίκτυο και πότε να σερβίρει από το cache. Αυτή η αφαίρεση είναι που κάνει το app να δουλεύει και στο μετρό χωρίς σήμα.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να ορίζεις REST endpoints με **Retrofit** (suspend functions),
+- να ορίζεις τοπική βάση με **Room** (Entity/DAO/Database),
+- να εφαρμόζεις το **repository pattern** ως αφαίρεση πάνω από network + db,
+- να καταλαβαίνεις **single source of truth** & **offline-first** caching,
+- να χειρίζεσαι network errors/loading καθαρά.
+
+## Retrofit — REST client
+
+Το **Retrofit** μετατρέπει ένα Kotlin interface σε HTTP client. Δηλώνεις endpoints με annotations· η βιβλιοθήκη κάνει τα calls και το JSON parsing (με έναν converter, π.χ. Kotlinx Serialization ή Moshi):
+
+```kotlin
+interface ProductApi {
+    @GET("products")
+    suspend fun getProducts(): List<ProductDto>
+
+    @GET("products/{id}")
+    suspend fun getProduct(@Path("id") id: String): ProductDto
+
+    @POST("products")
+    suspend fun createProduct(@Body body: ProductDto): ProductDto
+}
+```
+
+- Οι functions είναι **`suspend`** — καλούνται μέσα σε coroutine, χωρίς να μπλοκάρουν το Main thread (main-safe· το Retrofit κάνει το I/O σε background).
+- `@Path` για path params, `@Query` για query strings, `@Body` για το request payload.
+- Επιστρέφει το parsed αντικείμενο κατευθείαν· για errors, τυλίγεις σε `try/catch` (ή χρησιμοποιείς `Response<T>` για status codes).
+
+Το instance στήνεται μία φορά (συνήθως μέσω DI — επόμενο μάθημα):
+
+```kotlin
+val api = Retrofit.Builder()
+    .baseUrl("https://api.example.com/")
+    .addConverterFactory(/* JSON converter */)
+    .build()
+    .create(ProductApi::class.java)
+```
+
+> **DTO vs domain model:** το `ProductDto` αντιστοιχεί στο σχήμα του API (nullable πεδία, ονόματα του backend). Το mapping σε ένα καθαρό domain `Product` (που θέλει το UI) γίνεται στο repository. Έτσι μια αλλαγή στο API δεν διαχέεται σε όλο το app.
+
+## Room — τοπική βάση (SQLite)
+
+Το **Room** είναι ένα ORM πάνω από SQLite με compile-time έλεγχο των queries. Τρία κομμάτια:
+
+```kotlin
+// 1) Entity — ένας πίνακας
+@Entity(tableName = "products")
+data class ProductEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val price: Double,
+)
+
+// 2) DAO — τα queries
+@Dao
+interface ProductDao {
+    @Query("SELECT * FROM products")
+    fun observeAll(): Flow<List<ProductEntity>>   // Flow → auto-updates!
+
+    @Upsert
+    suspend fun upsertAll(products: List<ProductEntity>)
+
+    @Query("DELETE FROM products")
+    suspend fun clear()
+}
+
+// 3) Database
+@Database(entities = [ProductEntity::class], version = 1)
+abstract class AppDatabase : RoomDatabase() {
+    abstract fun productDao(): ProductDao
+}
+```
+
+- Το DAO με `@Query` επιστρέφει **`Flow<List<…>>`**: όποτε αλλάξει ο πίνακας, το Flow εκπέμπει νέα λίστα → το UI ενημερώνεται **αυτόματα**. Αυτό είναι το κλειδί του offline-first.
+- Τα write operations είναι `suspend` (τρέχουν σε background).
+- Το Room ελέγχει τα SQL queries σου σε **compile time** — typo στο SQL = build error, όχι crash.
+
+## Repository pattern — η ενοποίηση
+
+Το **repository** είναι η μοναδική πηγή δεδομένων για το υπόλοιπο app. Κρύβει το «από πού» (network ή cache) πίσω από μια καθαρή διεπαφή:
+
+```kotlin
+class ProductRepository(
+    private val api: ProductApi,
+    private val dao: ProductDao,
+) {
+    // Single source of truth: το UI παρατηρεί ΠΑΝΤΑ τη βάση
+    fun observeProducts(): Flow<List<Product>> =
+        dao.observeAll().map { entities -> entities.map { it.toDomain() } }
+
+    // Refresh: φέρε από δίκτυο, γράψε στη βάση (το Flow παραπάνω αυτο-ενημερώνεται)
+    suspend fun refresh() {
+        val remote = api.getProducts()
+        dao.upsertAll(remote.map { it.toEntity() })
+    }
+}
+```
+
+Το ViewModel χρησιμοποιεί μόνο το repository:
+
+```kotlin
+class ProductViewModel(private val repo: ProductRepository) : ViewModel() {
+    val products: StateFlow<List<Product>> =
+        repo.observeProducts()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun refresh() = viewModelScope.launch {
+        try { repo.refresh() } catch (e: Exception) { /* show error */ }
+    }
+}
+```
+
+> Το UI/ViewModel δεν γνωρίζει καν ότι υπάρχει Retrofit ή Room — βλέπει `observeProducts()` και `refresh()`. Μπορείς να αλλάξεις backend ή να προσθέσεις cache χωρίς να αγγίξεις το UI. Testable: βάζεις fake repository στα tests.
+
+## Single source of truth & offline-first
+
+Το **offline-first** μοτίβο:
+
+1. Το UI παρατηρεί **πάντα τη βάση** (`observeProducts()`), όχι το δίκτυο. Η βάση είναι το **single source of truth**.
+2. Το `refresh()` φέρνει φρέσκα δεδομένα από το API και τα **γράφει στη βάση**.
+3. Επειδή το DAO επιστρέφει `Flow`, το γράψιμο στη βάση **αυτόματα** ειδοποιεί το UI.
+
+```
+UI ──observe──▶ Room (source of truth) ──Flow──▶ UI αυτο-ενημερώνεται
+                  ▲
+                  │ upsert
+              Retrofit (refresh από δίκτυο)
+```
+
+Αποτέλεσμα: το app δείχνει **αμέσως** τα cached δεδομένα (ακόμα κι offline), και ενημερώνεται όταν έρθει δίκτυο. Ο χρήστης δεν βλέπει ποτέ λευκή οθόνη αναμονής αν υπάρχει cache.
+
+> Αντι-παράδειγμα (κακό): το UI χτυπά κατευθείαν το API και δείχνει το αποτέλεσμα. Χωρίς δίκτυο → λευκή οθόνη· δύο πηγές (network response + τοπικό state) → ασυνέπειες. Το single-source-of-truth το λύνει.
+
+## Loading & errors
+
+Το network state (loading/success/error) το μοντελοποιείς όπως είδες στο state μάθημα — ένα `data class` UI state ή sealed `UiState`:
+
+```kotlin
+data class ProductsUiState(
+    val products: List<Product> = emptyList(),
+    val isRefreshing: Boolean = false,
+    val error: String? = null,
+)
+```
+
+Το repository/ViewModel γεμίζει αυτά τα πεδία· το Compose δείχνει spinner όταν `isRefreshing`, snackbar όταν `error != null`, και τη λίστα από το cache. Επειδή η λίστα έρχεται από το cache, μπορείς να δείχνεις δεδομένα **και** error ταυτόχρονα («δείχνω παλιά δεδομένα, το refresh απέτυχε»).
+
+<PredictOutput
+  title="Γιατί Flow από το DAO;"
+  code={`@Query("SELECT * FROM products")
+fun observeAll(): Flow<List<ProductEntity>>
+
+// Το repository κάνει api refresh → dao.upsertAll(...)
+// Το UI παρατηρεί το observeAll(). Τι συμβαίνει στο UI μετά το upsert;`}
+  options={[
+    "Τίποτα — πρέπει να κάνεις χειροκίνητα re-query",
+    "Το Flow εκπέμπει αυτόματα τη νέα λίστα → το UI recomposes με τα φρέσκα δεδομένα",
+    "Crash — δεν μπορείς να γράψεις ενώ παρατηρείς",
+    "Πρέπει να κάνεις restart το app"
+  ]}
+  correctOptionIndex={1}
+  answer="Το Flow εκπέμπει αυτόματα — το UI ενημερώνεται"
+  explanation="Το Room παρακολουθεί τους πίνακες: όταν το upsertAll γράψει νέα δεδομένα, κάθε Flow query πάνω σε αυτόν τον πίνακα εκπέμπει νέα τιμή. Το UI (που collect-άρει το Flow) ενημερώνεται αυτόματα. Αυτός είναι ο πυρήνας του offline-first: γράφεις στη βάση, το UI αντιδρά — μία source of truth."
+/>
+
+<PredictOutput
+  title="Offline behavior"
+  code={`Το app είναι offline-first: UI παρατηρεί Room, refresh() φέρνει από API.
+Ο χρήστης ανοίγει το app χωρίς δίκτυο (αλλά έχει ξαναμπεί πριν).
+Τι βλέπει;`}
+  options={[
+    "Λευκή οθόνη μέχρι να έρθει δίκτυο",
+    "Τα cached δεδομένα αμέσως από τη Room· το refresh() αποτυγχάνει σιωπηλά/δείχνει error αλλά η λίστα παραμένει",
+    "Crash λόγω network error",
+    "Άδεια λίστα"
+  ]}
+  correctOptionIndex={1}
+  answer="Cached δεδομένα αμέσως, refresh αποτυγχάνει ελεγχόμενα"
+  explanation="Επειδή το UI παρατηρεί τη βάση (single source of truth), δείχνει αμέσως ό,τι έχει cached — ακόμα κι offline. Το refresh() που χτυπά το API αποτυγχάνει, το πιάνεις σε try/catch και δείχνεις error/snackbar, αλλά τα cached δεδομένα μένουν ορατά. Ο χρήστης δεν βλέπει ποτέ λευκή οθόνη αν υπάρχει cache."
+/>
+
+<Exercise
+  question="Τι ρόλο παίζει το repository;"
+  options={[
+    "Είναι το UI component για λίστες.",
+    "Είναι η αφαίρεση/single source of truth πάνω από network (Retrofit) + local db (Room)· το ViewModel/UI μιλά μόνο σε αυτό, χωρίς να ξέρει από πού έρχονται τα δεδομένα.",
+    "Είναι ο navigation controller.",
+    "Αντικαθιστά τα coroutines."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το repository ενοποιεί τις πηγές δεδομένων (remote + local) πίσω από καθαρή διεπαφή (observeProducts/refresh). Το UI/ViewModel δεν γνωρίζει Retrofit/Room — μπορείς να αλλάξεις υλοποίηση ή να προσθέσεις cache χωρίς να το αγγίξεις, και να το mock-άρεις στα tests. Είναι το data layer της αρχιτεκτονικής."
+/>
+
+<Exercise
+  question="Τι σημαίνει single source of truth στο offline-first;"
+  options={[
+    "Το API είναι πάντα η αλήθεια· το UI χτυπά κατευθείαν το API.",
+    "Το UI παρατηρεί πάντα τη ΒΑΣΗ (Room)· το network refresh γράφει στη βάση και το UI ενημερώνεται μέσω Flow — μία αυθεντική πηγή, δουλεύει και offline.",
+    "Κάθε οθόνη έχει το δικό της αντίγραφο δεδομένων.",
+    "Τα δεδομένα ζουν μόνο στο ViewModel."
+  ]}
+  correctOptionIndex={1}
+  explanation="Single source of truth = μία πηγή που το UI εμπιστεύεται — εδώ η τοπική βάση. Το refresh φέρνει από δίκτυο και γράφει στη βάση· το DAO Flow ειδοποιεί το UI. Έτσι υπάρχει μία συνεπής κατάσταση (όχι αντικρουόμενα network/local states), instant load από cache και offline λειτουργία."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you handle data and networking in an Android app?»
+
+> The standard stack is Retrofit for HTTP and Room for local storage, hidden behind a repository. With Retrofit I declare a Kotlin interface of `suspend` endpoints annotated with `@GET`, `@POST`, `@Path`, and so on, and it does the calls and JSON parsing off the main thread. I map the API DTOs into clean domain models in the repository so a backend change doesn't leak through the app. Room gives me a compile-time-checked SQLite layer — Entity, DAO, Database — and crucially my DAO queries return `Flow`, so any write triggers a new emission. Then the repository ties them together as a single source of truth: the UI always observes the database, and `refresh()` fetches from the network and writes to the DB, which the observing Flow picks up automatically. That's offline-first — the app shows cached data instantly, even with no connection, and updates when the network returns. The ViewModel and UI only ever talk to the repository, so they don't know Retrofit or Room exist, which keeps everything testable and swappable. Errors and loading are modelled as fields on a UI-state object, so I can show stale data and a failed-refresh message at the same time.
+
+<Flashcards
+  title="Data & networking — interview drills"
+  cards={[
+    {
+      question: "Τι είναι το Retrofit;",
+      answer: "REST client που μετατρέπει ένα Kotlin interface (@GET/@POST/@Path/@Query/@Body, suspend functions) σε HTTP calls + JSON parsing, main-safe (I/O σε background)."
+    },
+    {
+      question: "Τα τρία κομμάτια του Room;",
+      answer: "Entity (πίνακας/@Entity), DAO (@Query/@Upsert queries, compile-time checked), Database (@Database, δίνει τα DAOs). DAO queries επιστρέφουν Flow → auto-updates."
+    },
+    {
+      question: "Γιατί επιστρέφει Flow το DAO;",
+      answer: "Όταν αλλάξει ο πίνακας, το Flow εκπέμπει νέα λίστα και το UI ενημερώνεται αυτόματα. Πυρήνας του offline-first: γράφεις στη βάση, το UI αντιδρά."
+    },
+    {
+      question: "Ρόλος του repository;",
+      answer: "Single source of truth / αφαίρεση πάνω από network + local db. UI/ViewModel μιλά μόνο σε αυτό· άγνωστο από πού έρχονται τα δεδομένα → swappable & testable."
+    },
+    {
+      question: "Τι είναι το offline-first / single source of truth;",
+      answer: "Το UI παρατηρεί πάντα τη βάση· το refresh γράφει από δίκτυο στη βάση, το Flow ειδοποιεί το UI. Instant load από cache, δουλεύει offline, καμία ασυνέπεια δύο πηγών."
+    },
+    {
+      question: "DTO vs domain model;",
+      answer: "DTO = σχήμα του API (nullable, backend names). Domain = καθαρό model για το UI. Mapping στο repository ώστε αλλαγές API να μη διαχέονται στο app."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Στήσε offline-first data layer"
+  scenario="Φτιάξε feature 'λίστα προϊόντων' που φορτώνει από API, cache-άρει σε Room, και δουλεύει offline."
+  outcomes={[
+    "Να ορίζεις Retrofit API & Room Entity/DAO/Database.",
+    "Να ενοποιείς τα πάντα σε repository με single source of truth.",
+    "Να χειρίζεσαι loading/error & offline συμπεριφορά."
+  ]}
+  steps={[
+    "Όρισε ProductApi (suspend @GET) και ProductDto.",
+    "Όρισε ProductEntity/@Entity, ProductDao με observeAll(): Flow και upsertAll (suspend).",
+    "Γράψε ProductRepository: observeProducts() (map DAO→domain) + refresh() (api→dao.upsert).",
+    "Στο ViewModel: εκθέσε StateFlow από repo.observeProducts().stateIn(...) + refresh().",
+    "Χειρίσου error σε try/catch· δείξε cached δεδομένα ακόμα κι όταν το refresh αποτυγχάνει."
+  ]}
+  checkpoints={[
+    "Το UI παρατηρεί τη ΒΑΣΗ, όχι το API κατευθείαν.",
+    "Το DAO query επιστρέφει Flow (auto-update μετά upsert).",
+    "DTO→domain mapping γίνεται στο repository.",
+    "Offline: δείχνει cached δεδομένα, το refresh αποτυγχάνει ελεγχόμενα."
+  ]}
+  mistakes={[
+    "Να χτυπάς το API κατευθείαν από το UI (λευκή οθόνη offline, ασυνέπειες).",
+    "Να εκθέτεις DTOs στο UI (API αλλαγές διαχέονται παντού).",
+    "Blocking network στο Main thread (θα ήταν ANR — χρησιμοποίησε suspend/coroutines).",
+    "Να αγνοείς errors — το refresh πρέπει να αποτυγχάνει χωρίς να σβήνει το cache."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν στήνεις Retrofit+Room πίσω από repository με single source of truth, το UI παρατηρεί τη βάση (offline-first), και χειρίζεσαι loading/error καθαρά."
+/>

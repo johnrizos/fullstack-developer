@@ -1,0 +1,247 @@
+# Testing & Production
+
+Ένα Spring Boot app δεν είναι έτοιμο επειδή «τρέχει τοπικά». Πρέπει να είναι **δοκιμασμένο** (unit + integration tests) και **production-ready** (configuration ανά περιβάλλον, health/metrics, σωστό packaging). Αυτό το μάθημα κλείνει το track: **JUnit 5 + Mockito**, τα Spring test slices, **profiles**, το **Actuator**, και το πώς πακετάρεις & τρέχεις σε production.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να γράφεις **unit tests** με JUnit 5 & **Mockito** (mock dependencies),
+- να διακρίνεις unit vs **integration tests** (`@SpringBootTest` vs slices),
+- να χρησιμοποιείς **profiles** για config ανά περιβάλλον,
+- να εκθέτεις health/metrics με **Spring Boot Actuator**,
+- να πακετάρεις ένα **executable JAR** και να το τρέχεις,
+- να ξέρεις τις production βασικές (externalized config, secrets, logging).
+
+## Unit tests: JUnit 5 + Mockito
+
+Ένα **unit test** ελέγχει **μία** κλάση **απομονωμένα** — τα dependencies της γίνονται **mocks**. Η Java χρησιμοποιεί **JUnit 5** ως test framework και **Mockito** για mocking:
+
+```java
+class ProductServiceTest {
+
+    @Test
+    void returnsDiscountedPrice() {
+        // Arrange — mock το dependency
+        ProductRepository repo = mock(ProductRepository.class);
+        when(repo.findById(1L)).thenReturn(Optional.of(new Product("Καφές", 10.0)));
+        ProductService service = new ProductService(repo);
+
+        // Act
+        double result = service.priceWithDiscount(1L, 0.1);
+
+        // Assert
+        assertEquals(9.0, result);
+        verify(repo).findById(1L);   // επιβεβαίωσε ότι κλήθηκε
+    }
+}
+```
+
+- `@Test` σημαίνει test method (JUnit 5 / Jupiter).
+- `mock(...)` + `when(...).thenReturn(...)` = ορίζεις τη συμπεριφορά του fake dependency (**stubbing**).
+- `assertEquals`/`assertThrows`/`assertTrue` = assertions.
+- `verify(...)` = επιβεβαιώνεις interactions.
+
+> Το DI που στήσαμε κάνει τα unit tests εύκολα: επειδή το `ProductService` δέχεται το repository στον constructor, περνάς ένα **mock** στο test — χωρίς βάση, χωρίς Spring, γρήγορο. Γι' αυτό το constructor injection είναι σημαντικό. Δομή: **Arrange-Act-Assert**.
+
+## Integration tests & test slices
+
+Τα unit tests δεν αρκούν — θέλεις να δοκιμάσεις ότι τα κομμάτια δουλεύουν **μαζί** (controller → service → DB). Το Spring δίνει διαβαθμίσεις:
+
+| Annotation | Τι σηκώνει | Χρήση |
+|---|---|---|
+| `@SpringBootTest` | **ΟΛΟΚΛΗΡΟ** context | full integration (αργό) |
+| `@WebMvcTest` | μόνο το web layer (controllers) | test controllers με mock services |
+| `@DataJpaTest` | μόνο JPA/repository layer | test queries σε in-memory DB |
+
+```java
+@WebMvcTest(ProductController.class)
+class ProductControllerTest {
+    @Autowired MockMvc mockMvc;
+    @MockBean ProductService service;   // mock το service layer
+
+    @Test
+    void returns404WhenMissing() throws Exception {
+        when(service.findById(99L)).thenThrow(new ProductNotFoundException());
+        mockMvc.perform(get("/api/products/99"))
+               .andExpect(status().isNotFound());
+    }
+}
+```
+
+> **Test slices** (`@WebMvcTest`/`@DataJpaTest`) σηκώνουν **μόνο** το σχετικό κομμάτι του context — πολύ πιο γρήγορα από το `@SpringBootTest` που φορτώνει τα πάντα. Κανόνας (test pyramid): **πολλά** γρήγορα unit tests, **λιγότερα** slice/integration, **ελάχιστα** full end-to-end. Χρησιμοποίησε `@SpringBootTest` μόνο όταν χρειάζεσαι πραγματικά όλο το context.
+
+## Profiles — config ανά περιβάλλον
+
+Τα **profiles** επιτρέπουν διαφορετική configuration ανά περιβάλλον (dev/test/prod):
+
+```
+application.properties           # κοινά defaults
+application-dev.properties       # τοπική ανάπτυξη (H2, verbose logging)
+application-prod.properties      # production (PostgreSQL, minimal logging)
+```
+
+```properties
+# application-prod.properties
+spring.datasource.url=jdbc:postgresql://prod-db:5432/shop
+spring.jpa.hibernate.ddl-auto=validate
+logging.level.root=WARN
+```
+
+Ενεργοποιείς με `spring.profiles.active=prod` (env var ή flag). Μπορείς επίσης να έχεις beans που υπάρχουν **μόνο** σε ένα profile με `@Profile("dev")`.
+
+> Το μοτίβο: **ένα** build artifact, **διαφορετική** config ανά περιβάλλον — δεν ξαναχτίζεις το app για prod. Αυτό δένει με το «externalized configuration» (12-factor): οι ρυθμίσεις έρχονται από environment, όχι hardcoded στον κώδικα.
+
+## Spring Boot Actuator
+
+Το **Actuator** εκθέτει **production-ready** endpoints για monitoring & management — χωρίς να τα γράψεις εσύ:
+
+```
+GET /actuator/health     → { "status": "UP" }   (liveness/readiness)
+GET /actuator/metrics    → JVM memory, HTTP requests, DB pool...
+GET /actuator/info       → build/version info
+```
+
+- **`/health`** — χρησιμοποιείται από load balancers/Kubernetes probes για να ξέρουν αν το app είναι ζωντανό/έτοιμο.
+- **`/metrics`** — τροφοδοτεί monitoring (Prometheus/Grafana).
+
+> Το health endpoint είναι ό,τι ρωτά ένα orchestrator (readiness/liveness probe — το είδες στο containers μάθημα): αν επιστρέψει `DOWN`, το Kubernetes σταματά να στέλνει traffic ή κάνει restart. Πρόσεχε την **έκθεση**: μην εκθέτεις ευαίσθητα actuator endpoints δημόσια χωρίς security.
+
+## Packaging & running
+
+Το Spring Boot πακετάρει σε **executable JAR** — με τον embedded server **μέσα**:
+
+```bash
+./mvnw clean package          # ή ./gradlew build → φτιάχνει target/app.jar
+java -jar target/app.jar      # τρέχει· ο Tomcat είναι μέσα, χωρίς external server
+```
+
+Αυτό το «**fat JAR**» (περιέχει όλες τις εξαρτήσεις + server) είναι που κάνει το deployment απλό: ένα αρχείο, `java -jar`, τρέχει παντού όπου υπάρχει JVM — ιδανικό για Docker (`FROM eclipse-temurin`, `COPY app.jar`, `ENTRYPOINT java -jar`).
+
+Production checklist που πρέπει να ξέρεις:
+- **Externalized config & secrets:** DB passwords/keys από env vars, **όχι** στο properties/git.
+- **Profiles:** `prod` profile ενεργό, `ddl-auto=validate` (όχι `create`/`update` σε prod!).
+- **Logging:** structured, σωστά levels, όχι sensitive data.
+- **Observability:** Actuator health/metrics + monitoring.
+
+<PredictOutput
+  title="Ποιο test annotation;"
+  code={`Θέλεις να δοκιμάσεις ΜΟΝΟ έναν controller (routing, status codes, JSON)
+mockάροντας το service layer — γρήγορα, χωρίς DB/full context.
+Ποιο χρησιμοποιείς;`}
+  options={[
+    "@SpringBootTest — σηκώνει όλο το context",
+    "@WebMvcTest — σηκώνει μόνο το web layer με MockMvc, mockάρεις το service με @MockBean· γρήγορο & εστιασμένο",
+    "@DataJpaTest — για το repository layer",
+    "Κανένα — χρειάζεσαι πραγματική βάση"
+  ]}
+  correctOptionIndex={1}
+  answer="@WebMvcTest — slice για controllers"
+  explanation="Το @WebMvcTest είναι test slice: σηκώνει ΜΟΝΟ το web layer (controllers, MockMvc) χωρίς services/DB. Mockάρεις το service με @MockBean και δοκιμάζεις routing/status/JSON γρήγορα. Το @SpringBootTest θα φόρτωνε ΟΛΟ το context (αργό, περιττό εδώ). Test pyramid: προτίμησε slices από full integration όπου γίνεται."
+/>
+
+<PredictOutput
+  title="Mockito stubbing"
+  code={`ProductRepository repo = mock(ProductRepository.class);
+when(repo.findById(1L)).thenReturn(Optional.of(new Product("Καφές", 10.0)));
+ProductService service = new ProductService(repo);
+// service.priceWithDiscount(1L, 0.1) → price * (1 - 0.1)
+double r = service.priceWithDiscount(1L, 0.1);`}
+  options={[
+    "Χτυπά την πραγματική βάση δεδομένων",
+    "Χρησιμοποιεί το mock: repo.findById(1L) επιστρέφει το stubbed Product(10.0), άρα r = 9.0 — χωρίς DB, γρήγορα",
+    "NullPointerException — δεν υπάρχει βάση",
+    "Compile error"
+  ]}
+  correctOptionIndex={1}
+  answer="Χρησιμοποιεί το mock → r = 9.0"
+  explanation="Το mock(ProductRepository.class) φτιάχνει fake. Το when(...).thenReturn(...) ορίζει ότι findById(1L) επιστρέφει Product(10.0). Επειδή το service δέχεται το repo στον constructor (DI), το unit test τρέχει ΧΩΡΙΣ πραγματική βάση — απομονωμένο, ντετερμινιστικό, γρήγορο. r = 10 * (1-0.1) = 9.0."
+/>
+
+<Exercise
+  question="Γιατί το DI (constructor injection) κάνει τα tests ευκολότερα;"
+  options={[
+    "Δεν σχετίζεται με tests.",
+    "Επειδή τα dependencies δίνονται στον constructor, περνάς mocks στο test — δοκιμάζεις την κλάση απομονωμένα, χωρίς βάση/δίκτυο/full Spring context· γρήγορα & ντετερμινιστικά.",
+    "Επειδή κάνει τα tests να τρέχουν στο cloud.",
+    "Επειδή αφαιρεί την ανάγκη για assertions."
+  ]}
+  correctOptionIndex={1}
+  explanation="Constructor injection = τα dependencies είναι ρητά & αντικαταστάσιμα. Στο unit test περνάς mock (Mockito) αντί για πραγματικό repository/service, οπότε ελέγχεις μόνο τη λογική της κλάσης, χωρίς εξωτερικά συστήματα. Γι' αυτό το DI & το constructor injection είναι θεμέλιο για testability."
+/>
+
+<Exercise
+  question="Τι ρόλο παίζει το /actuator/health;"
+  options={[
+    "Δείχνει τον πηγαίο κώδικα.",
+    "Εκθέτει την κατάσταση του app (UP/DOWN)· load balancers & Kubernetes probes το ρωτούν για readiness/liveness — αν DOWN, σταματά το traffic ή κάνει restart.",
+    "Τρέχει τα tests.",
+    "Αντικαθιστά τα profiles."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το Actuator /health είναι production-ready endpoint που δηλώνει αν το app είναι ζωντανό/έτοιμο. Orchestrators (K8s liveness/readiness probes) & load balancers το χρησιμοποιούν για να αποφασίσουν αν θα στείλουν traffic ή θα κάνουν restart. Μαζί με /metrics τροφοδοτεί το monitoring. Πρόσεχε την ασφαλή έκθεση."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you test and productionize a Spring Boot app?»
+
+> I test in layers following the pyramid. Unit tests use JUnit 5 and Mockito: because my classes take dependencies through the constructor, I pass mocks, stub them with `when(...).thenReturn(...)`, and assert the logic in isolation — no database, fast and deterministic. For wiring I use Spring's test slices rather than always booting the whole app: `@WebMvcTest` with `MockMvc` for controllers, `@DataJpaTest` for repository queries against an in-memory DB, and `@SpringBootTest` only when I genuinely need the full context. For production, configuration is externalized via profiles — `application-prod.properties` with the real datasource, `ddl-auto` set to validate, and secrets coming from environment variables, never committed. The same artifact runs in every environment; I just activate a profile. I expose Spring Boot Actuator for operations — `/health` for Kubernetes readiness and liveness probes, `/metrics` for monitoring — being careful not to expose sensitive endpoints publicly. Finally, Boot packages everything into an executable fat JAR with the embedded server inside, so deployment is just `java -jar app.jar`, which drops cleanly into a Docker image.
+
+<Flashcards
+  title="Testing & production — interview drills"
+  cards={[
+    {
+      question: "Unit test με JUnit 5 + Mockito;",
+      answer: "@Test method· mock(...) + when(...).thenReturn(...) για fake dependencies (stubbing)· assertEquals/assertThrows· verify(...) για interactions. Arrange-Act-Assert. Απομονωμένο, γρήγορο."
+    },
+    {
+      question: "@SpringBootTest vs test slices;",
+      answer: "@SpringBootTest = όλο το context (αργό, full integration). @WebMvcTest = μόνο web layer (controllers+MockMvc). @DataJpaTest = μόνο repository layer. Slices = γρήγορα & εστιασμένα."
+    },
+    {
+      question: "Γιατί το DI βοηθά το testing;",
+      answer: "Constructor injection → περνάς mocks στο test, δοκιμάζεις την κλάση χωρίς βάση/δίκτυο/full context. Θεμέλιο για γρήγορα, ντετερμινιστικά unit tests."
+    },
+    {
+      question: "Τι κάνουν τα profiles;",
+      answer: "Config ανά περιβάλλον (application-{dev,test,prod}.properties + @Profile beans). Ένα build artifact, διαφορετική config· ενεργό με spring.profiles.active. Externalized config."
+    },
+    {
+      question: "Τι είναι το Actuator;",
+      answer: "Production-ready endpoints: /health (K8s/LB probes readiness/liveness), /metrics (monitoring), /info. Έτοιμα, χωρίς custom κώδικα. Πρόσεχε την ασφαλή έκθεση."
+    },
+    {
+      question: "Τι είναι το executable/fat JAR;",
+      answer: "Spring Boot πακετάρει app + εξαρτήσεις + embedded server σε ένα JAR. java -jar app.jar τρέχει παντού με JVM· ιδανικό για Docker. Χωρίς external application server."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Δοκίμασε & ετοίμασε για production"
+  scenario="Πάρε το Product service/API και κάλυψέ το με tests + κάν' το production-ready."
+  outcomes={[
+    "Να γράφεις unit tests με mocks & integration με slices.",
+    "Να ρυθμίζεις config ανά περιβάλλον με profiles.",
+    "Να εκθέτεις health/metrics & να πακετάρεις για deploy."
+  ]}
+  steps={[
+    "Γράψε unit test για ProductService με mock(ProductRepository) & assertions.",
+    "Γράψε @WebMvcTest για τον controller (MockMvc + @MockBean service, έλεγξε 404/201).",
+    "Στήσε application-prod.properties (PostgreSQL, ddl-auto=validate, WARN logging).",
+    "Ενεργοποίησε Actuator & έλεγξε /actuator/health.",
+    "Πακετάρισε executable JAR (mvn/gradle) και τρέξε java -jar."
+  ]}
+  checkpoints={[
+    "Τα unit tests τρέχουν χωρίς πραγματική βάση (mocks).",
+    "Χρησιμοποιείς slices (@WebMvcTest/@DataJpaTest) αντί πάντα @SpringBootTest.",
+    "Secrets/config έξω από τον κώδικα (env/profiles), όχι στο git.",
+    "Το app πακετάρεται σε executable JAR & εκθέτει health."
+  ]}
+  mistakes={[
+    "Να χτυπάς πραγματική βάση σε unit tests (αργά, flaky).",
+    "@SpringBootTest για τα πάντα (αργό test suite).",
+    "ddl-auto=create/update σε production (κίνδυνος data loss).",
+    "Hardcoded secrets στο properties/git αντί env vars."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν γράφεις unit + slice tests με mocks, ρυθμίζεις profiles/secrets σωστά, εκθέτεις Actuator health/metrics, και πακετάρεις executable JAR έτοιμο για production."
+/>

@@ -1,0 +1,295 @@
+# Navigation
+
+Μια πραγματική εφαρμογή έχει **πολλές οθόνες**: λίστα → λεπτομέρεια, tabs, ρυθμίσεις, login. Στο Compose, η μετακίνηση μεταξύ οθονών γίνεται με το **Navigation Compose** — μια βιβλιοθήκη που διαχειρίζεται ποια οθόνη φαίνεται, το **back stack**, το πέρασμα **arguments**, και τα **deep links** (άνοιγμα συγκεκριμένης οθόνης από URL/notification).
+
+Το βασικό concept που πρέπει να «κουμπώσει»: στο Android υπάρχει το **back button** (και το system back gesture). Ο χρήστης περιμένει ότι το back τον πάει στην προηγούμενη οθόνη — και αυτό το χειρίζεται το back stack, όχι εσύ χειροκίνητα.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να στήνεις `NavHost` + `NavController` με **routes**,
+- να πλοηγείσαι μεταξύ οθονών και να καταλαβαίνεις το **back stack**,
+- να περνάς **arguments** μεταξύ οθονών,
+- να διαχειρίζεσαι σωστά το back (`popUpTo`, `launchSingleTop`),
+- να στήνεις **bottom navigation** (tabs),
+- να καταλαβαίνεις **deep links** και type-safe navigation.
+
+## `NavController` & `NavHost`
+
+Το **`NavController`** είναι το αντικείμενο που κρατά το state της πλοήγησης (πού είσαι, το back stack). Το **`NavHost`** είναι το composable-container που δείχνει την **τρέχουσα** οθόνη με βάση το `NavController`. Κάθε οθόνη έχει ένα μοναδικό **route** (string identifier):
+
+```kotlin
+@Composable
+fun AppNav() {
+    val navController = rememberNavController()
+
+    NavHost(navController = navController, startDestination = "home") {
+        composable("home") {
+            HomeScreen(onProductClick = { id ->
+                navController.navigate("detail/$id")
+            })
+        }
+        composable("detail/{productId}") { backStackEntry ->
+            val id = backStackEntry.arguments?.getString("productId")
+            DetailScreen(productId = id)
+        }
+        composable("settings") {
+            SettingsScreen()
+        }
+    }
+}
+```
+
+- `rememberNavController()` δημιουργεί τον controller (επιβιώνει recomposition).
+- `startDestination` = η αρχική οθόνη.
+- κάθε `composable("route") { }` δηλώνει μια destination.
+- `navController.navigate("detail/1")` πάει στην οθόνη και την **σπρώχνει στο back stack**.
+
+## Back stack — η καρδιά της πλοήγησης
+
+Το **back stack** είναι μια **στοίβα** από οθόνες. Κάθε `navigate(...)` **σπρώχνει (push)** νέα οθόνη από πάνω· το **back** κάνει **pop** την κορυφαία και επιστρέφει στην προηγούμενη.
+
+```
+navigate("home")        stack: [home]
+navigate("detail/1")    stack: [home, detail/1]     ← βλέπεις detail
+navigate("detail/2")    stack: [home, detail/1, detail/2]
+back →                  stack: [home, detail/1]     ← πίσω στο detail/1
+back →                  stack: [home]
+```
+
+> Στο Android, το **system back button/gesture** κάνει αυτόματα pop το back stack — δεν γράφεις κώδικα γι' αυτό. Το Navigation Compose ενσωματώνεται με το back handling του συστήματος. Αυτό είναι θεμελιώδης διαφορά από web routing: το back είναι πρώτης τάξεως concept.
+
+Έλεγχος του stack σε ειδικές περιπτώσεις:
+
+```kotlin
+// Μετά από login: πήγαινε home ΚΑΙ σβήσε το login από το stack
+navController.navigate("home") {
+    popUpTo("login") { inclusive = true }   // back δεν ξαναπάει login
+}
+
+// Αποφυγή διπλών αντιγράφων της ίδιας οθόνης (π.χ. διπλό tap)
+navController.navigate("detail/1") {
+    launchSingleTop = true
+}
+```
+
+- **`popUpTo(route)`** αφαιρεί οθόνες από το stack μέχρι το `route` (με `inclusive = true` σβήνει και το ίδιο). Κλασικό για login → home ώστε το back να μη γυρίζει στο login.
+- **`launchSingleTop`** αποτρέπει διπλό instance της ίδιας οθόνης στην κορυφή.
+
+## Arguments — πέρασμα δεδομένων
+
+Περνάς δεδομένα ως **μέρος του route** (path parameters) ή ως optional **query-style** args:
+
+```kotlin
+// Δήλωση με typed argument
+composable(
+    route = "detail/{productId}",
+    arguments = listOf(navArgument("productId") { type = NavType.StringType })
+) { backStackEntry ->
+    val id = backStackEntry.arguments?.getString("productId") ?: return@composable
+    DetailScreen(productId = id)
+}
+
+// Κλήση
+navController.navigate("detail/${product.id}")
+```
+
+> **Σημαντικός κανόνας:** περνάς **IDs / μικρά primitives**, όχι ολόκληρα αντικείμενα. Η destination φορτώνει τα δεδομένα από repository/ViewModel με βάση το id (single source of truth). Το να «σειριοποιείς» ένα μεγάλο object μέσα στο route είναι anti-pattern — εύθραυστο και μπορεί να είναι stale.
+
+## Bottom navigation (tabs)
+
+Για tabbed UI (Home / Search / Profile), συνδυάζεις `Scaffold` + `NavigationBar` με το `NavHost`:
+
+```kotlin
+@Composable
+fun MainScreen() {
+    val navController = rememberNavController()
+    val items = listOf("home", "search", "profile")
+
+    Scaffold(
+        bottomBar = {
+            NavigationBar {
+                val current = navController.currentBackStackEntryAsState().value?.destination?.route
+                items.forEach { route ->
+                    NavigationBarItem(
+                        selected = current == route,
+                        onClick = {
+                            navController.navigate(route) {
+                                popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        icon = { /* icon */ },
+                        label = { Text(route) }
+                    )
+                }
+            }
+        }
+    ) { padding ->
+        NavHost(navController, startDestination = "home", modifier = Modifier.padding(padding)) {
+            composable("home") { HomeScreen() }
+            composable("search") { SearchScreen() }
+            composable("profile") { ProfileScreen() }
+        }
+    }
+}
+```
+
+Τα `saveState`/`restoreState` κρατάνε το state κάθε tab όταν αλλάζεις μεταξύ tabs (π.χ. scroll position), και το `popUpTo(startDestination)` αποτρέπει το back stack να γεμίσει με tab switches.
+
+## Deep links
+
+Ένα **deep link** ανοίγει **συγκεκριμένη** οθόνη απευθείας — από URL (`myapp://product/1`), notification, ή web link. Το δηλώνεις στη destination:
+
+```kotlin
+composable(
+    route = "detail/{productId}",
+    deepLinks = listOf(navDeepLink { uriPattern = "myapp://product/{productId}" })
+) { ... }
+```
+
+Έτσι ένα notification «η παραγγελία σου εστάλη» μπορεί να ανοίξει κατευθείαν την οθόνη της παραγγελίας, με σωστά στημένο back stack.
+
+## Type-safe navigation
+
+Τα string routes (`"detail/$id"`) είναι εύθραυστα — typos, λάθος τύποι args, καμία compile-time ασφάλεια. Οι νεότερες εκδόσεις του Navigation Compose υποστηρίζουν **type-safe routes** με `@Serializable` data classes/objects αντί για strings:
+
+```kotlin
+@Serializable data class Detail(val productId: String)
+
+// navigate με αντικείμενο — type-checked
+navController.navigate(Detail(productId = product.id))
+
+// destination
+composable<Detail> { backStackEntry ->
+    val args = backStackEntry.toRoute<Detail>()
+    DetailScreen(productId = args.productId)
+}
+```
+
+> Το όφελος: ο compiler ελέγχει ότι περνάς τα σωστά arguments με τους σωστούς τύπους — τέλος τα runtime crashes από κακοδιατυπωμένα routes. Στη συνέντευξη, ανάφερε ότι το ξέρεις: string routes για γρήγορα πράγματα, type-safe routes για production.
+
+<PredictOutput
+  title="popUpTo μετά από login"
+  code={`// Στο login screen, μετά από επιτυχία:
+navController.navigate("home") {
+    popUpTo("login") { inclusive = true }
+}
+// Ο χρήστης είναι στο home και πατά system back. Τι γίνεται;`}
+  options={[
+    "Γυρνά στην οθόνη login",
+    "Βγαίνει από το app (ή πάει στην προηγούμενη ρίζα) — το login αφαιρέθηκε από το back stack",
+    "Ξανακάνει login αυτόματα",
+    "Crash — άδειο stack"
+  ]}
+  correctOptionIndex={1}
+  answer="Δεν γυρνά στο login — αφαιρέθηκε"
+  explanation="Το popUpTo('login') { inclusive = true } αφαιρεί από το back stack τα πάντα μέχρι ΚΑΙ το login. Έτσι όταν ο χρήστης πατά back από το home, δεν υπάρχει login να επιστρέψει — σωστή UX (δεν θες ο χρήστης να 'γυρίζει' στην οθόνη login μετά που μπήκε). Χωρίς αυτό, το back θα τον ξανάφερνε στο login."
+/>
+
+<PredictOutput
+  title="Τι περνάς στο route;"
+  code={`// Οθόνη λίστας → οθόνη λεπτομέρειας προϊόντος.
+// Επιλογή Α: navigate("detail/\${product.id}")
+// Επιλογή Β: σειριοποιείς όλο το product object στο route
+// Ποιο είναι το σωστό pattern;`}
+  options={[
+    "Β — για να μη ξαναφορτώσεις δεδομένα",
+    "Α — περνάς το id, και η detail οθόνη φορτώνει το product από repository (single source of truth)",
+    "Κανένα — τα αντικείμενα περνιούνται με global variable",
+    "Και τα δύο ίδια"
+  ]}
+  correctOptionIndex={1}
+  answer="Α — πέρνα id, φόρτωσε από repository"
+  explanation="Περνάς IDs/primitives, όχι ολόκληρα objects. Η destination φορτώνει τα φρέσκα δεδομένα από το repository/ViewModel με βάση το id. Το να σειριοποιείς μεγάλα objects στο route είναι εύθραυστο (μεγέθη, encoding) και μπορεί να δείξει stale δεδομένα. Το id + single source of truth είναι το καθιερωμένο pattern."
+/>
+
+<Exercise
+  question="Τι είναι το back stack και ποιος το χειρίζεται;"
+  options={[
+    "Μια λίστα από API calls· τη χειρίζεσαι εσύ χειροκίνητα.",
+    "Η στοίβα των οθονών· navigate() κάνει push, το system back button κάνει pop αυτόματα. Το Navigation Compose ενσωματώνεται με το back handling του Android.",
+    "Ένα cache εικόνων.",
+    "Το ίδιο με το ViewModel."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το back stack είναι στοίβα οθονών: κάθε navigate() σπρώχνει μία, το back (κουμπί/gesture) την κάνει pop και επιστρέφει στην προηγούμενη. Στο Android το back είναι first-class· το Navigation Compose το χειρίζεται αυτόματα, ενώ με popUpTo/launchSingleTop ελέγχεις ειδικές περιπτώσεις (login flow, αποφυγή διπλών)."
+/>
+
+<Exercise
+  question="Ποιο είναι το πλεονέκτημα του type-safe navigation;"
+  options={[
+    "Είναι πιο γρήγορο στο runtime.",
+    "Ο compiler ελέγχει routes & argument types (με @Serializable classes αντί για strings) — αποφεύγεις runtime crashes από typos/λάθος τύπους args.",
+    "Δεν χρειάζεται NavController.",
+    "Επιτρέπει deep links μόνο του."
+  ]}
+  correctOptionIndex={1}
+  explanation="String routes ('detail/$id') είναι εύθραυστα: typos, λάθος τύποι, μηδέν compile-time έλεγχος. Type-safe routes χρησιμοποιούν @Serializable data classes/objects, οπότε ο compiler επιβεβαιώνει ότι περνάς τα σωστά args με τους σωστούς τύπους — λιγότερα navigation bugs στο production."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How does navigation work in Jetpack Compose?»
+
+> I use Navigation Compose. A `NavController` holds the navigation state and back stack, and a `NavHost` renders the current destination based on it; each screen is registered with a route. To move between screens I call `navController.navigate(route)`, which pushes onto the back stack, and Android's system back button pops it automatically — back is a first-class concept, I don't manage it by hand. For special flows I control the stack: after login I navigate home with `popUpTo("login") { inclusive = true }` so back doesn't return to login, and `launchSingleTop` avoids duplicate copies of a screen. I pass small arguments — IDs and primitives — as part of the route, and the destination loads the actual data from a repository, keeping a single source of truth rather than serializing whole objects. Tabs are a `NavigationBar` in a `Scaffold` with `saveState`/`restoreState` so each tab keeps its state. Deep links let a notification or URL open a specific screen directly. In production I prefer type-safe routes with `@Serializable` classes so the compiler checks my arguments instead of relying on fragile strings.
+
+<Flashcards
+  title="Android navigation — interview drills"
+  cards={[
+    {
+      question: "NavController vs NavHost;",
+      answer: "NavController κρατά το navigation state + back stack. NavHost είναι το container-composable που δείχνει την τρέχουσα destination βάσει του controller. Κάθε οθόνη έχει route."
+    },
+    {
+      question: "Τι είναι το back stack;",
+      answer: "Στοίβα οθονών· navigate() = push, system back = pop (αυτόματα στο Android). Το Navigation Compose ενσωματώνεται με το back handling του συστήματος."
+    },
+    {
+      question: "Τι κάνει το popUpTo(inclusive=true);",
+      answer: "Αφαιρεί οθόνες από το stack μέχρι (και μαζί με) το route. Κλασικό μετά από login → home ώστε το back να μη γυρίζει στο login."
+    },
+    {
+      question: "Τι περνάς ως navigation argument;",
+      answer: "IDs/primitives, όχι ολόκληρα objects. Η destination φορτώνει δεδομένα από repository με το id (single source of truth). Serializing μεγάλων objects = anti-pattern."
+    },
+    {
+      question: "Πώς στήνεις bottom navigation;",
+      answer: "Scaffold + NavigationBar/NavigationBarItem γύρω από NavHost. saveState/restoreState για state ανά tab, popUpTo(startDestination)+launchSingleTop για καθαρό stack."
+    },
+    {
+      question: "String routes vs type-safe navigation;",
+      answer: "String routes εύθραυστα (typos, λάθος τύποι). Type-safe: @Serializable data classes, ο compiler ελέγχει args/τύπους — λιγότερα runtime crashes."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Στήσε multi-screen navigation"
+  scenario="Φτιάξε app με λίστα προϊόντων → λεπτομέρεια, bottom bar (Home/Profile) και deep link για ένα προϊόν."
+  outcomes={[
+    "Να στήνεις NavHost/NavController με routes & arguments.",
+    "Να χειρίζεσαι το back stack (popUpTo/launchSingleTop).",
+    "Να καταλαβαίνεις deep links & type-safe routes."
+  ]}
+  steps={[
+    "Όρισε NavHost με startDestination=home και destinations home/detail/{id}/profile.",
+    "Από τη λίστα, navigate(\"detail/$id\") και διάβασε το id στη detail.",
+    "Πρόσθεσε bottom bar με Home/Profile (saveState/restoreState).",
+    "Πρόσθεσε deep link uriPattern για το detail.",
+    "(Bonus) Ξαναγράψε ένα route ως type-safe @Serializable."
+  ]}
+  checkpoints={[
+    "Το back button επιστρέφει σωστά (χωρίς χειροκίνητο handling).",
+    "Περνάς id, όχι ολόκληρο object· η detail φορτώνει από repository.",
+    "Το login/entry flow δεν αφήνει ανεπιθύμητες οθόνες στο stack (popUpTo).",
+    "Τα tabs κρατούν state όταν εναλλάσσονται."
+  ]}
+  mistakes={[
+    "Να σειριοποιείς μεγάλα objects μέσα στο route.",
+    "Να προσπαθείς να χειριστείς το back χειροκίνητα αντί να αφήσεις το back stack.",
+    "Να ξεχνάς popUpTo σε login → home (back γυρνά στο login).",
+    "Να γεμίζεις το stack με διπλά instances (χωρίς launchSingleTop)."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν στήνεις NavHost με routes & arguments, ελέγχεις το back stack για login/tabs, περνάς ids όχι objects, και ξέρεις deep links + type-safe navigation."
+/>

@@ -1,0 +1,269 @@
+# State & ViewModel
+
+Στο προηγούμενο μάθημα είδες ότι **UI = f(state)** — το Compose ζωγραφίζει με βάση το state. Αλλά **πού ζει** αυτό το state, **πώς αλλάζει**, και **πώς επιβιώνει** ένα rotation της οθόνης; Αυτό είναι το πιο κρίσιμο μάθημα του Compose. Θα δεις `remember`/`mutableStateOf`, το πρότυπο **state hoisting**, το **unidirectional data flow**, και το **ViewModel** που κρατά state πέρα από τον κύκλο ζωής του UI.
+
+Αν ξέρεις React: `remember { mutableStateOf() }` ≈ `useState`, `LaunchedEffect` ≈ `useEffect`, το ViewModel παίζει τον ρόλο ενός store/hook που ζει έξω από το render.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να δημιουργείς state με `remember { mutableStateOf(...) }` και να ξέρεις τι κάνει το καθένα,
+- να εφαρμόζεις **state hoisting** και **unidirectional data flow** (state κάτω, events πάνω),
+- να διατηρείς state σε configuration changes με `rememberSaveable` και `ViewModel`,
+- να εκθέτεις UI state από ViewModel ως `StateFlow` και να το διαβάζεις με `collectAsStateWithLifecycle`,
+- να τρέχεις side-effects σωστά με `LaunchedEffect`.
+
+## `remember` + `mutableStateOf`
+
+Δύο ξεχωριστά πράγματα που σχεδόν πάντα πάνε μαζί:
+
+```kotlin
+@Composable
+fun Counter() {
+    var count by remember { mutableStateOf(0) }
+
+    Button(onClick = { count++ }) {
+        Text("Πατήθηκε $count φορές")
+    }
+}
+```
+
+- **`mutableStateOf(0)`** φτιάχνει ένα **observable** state holder. Όταν η `.value` του αλλάξει, το Compose κάνει **recompose** όποιο composable το διαβάζει.
+- **`remember { }`** λέει «κράτα αυτή την τιμή **ανάμεσα σε recompositions**». Χωρίς `remember`, κάθε recomposition θα ξανάφτιαχνε το state από την αρχή (0) — και ποτέ δεν θα μετρούσε.
+- Το **`by`** (property delegate) σε αφήνει να γράφεις `count` αντί `count.value`.
+
+> Το ζευγάρι: `mutableStateOf` = «κάν' το observable ώστε το UI να αντιδρά», `remember` = «μη το ξαναφτιάχνεις σε κάθε recompose». Χρειάζεσαι **και** τα δύο. Παράλληλο με React: `mutableStateOf` ≈ το reactive κομμάτι του `useState`, `remember` ≈ ότι το `useState` επιβιώνει μεταξύ renders.
+
+## State hoisting & unidirectional data flow
+
+Ένα καλό composable είναι **stateless** όσο γίνεται: δέχεται την τιμή ως παράμετρο και «ανεβάζει» (hoists) το state στον γονιό, ειδοποιώντας τον για αλλαγές μέσω callback. Αυτό είναι **state hoisting**:
+
+```kotlin
+// Stateless — reusable, testable, "controlled"
+@Composable
+fun SearchBar(query: String, onQueryChange: (String) -> Unit) {
+    OutlinedTextField(value = query, onValueChange = onQueryChange)
+}
+
+// Ο γονιός κρατά το state (stateful)
+@Composable
+fun SearchScreen() {
+    var query by remember { mutableStateOf("") }
+    SearchBar(query = query, onQueryChange = { query = it })
+}
+```
+
+Το μοτίβο λέγεται **unidirectional data flow (UDF)**:
+
+- **State ρέει προς τα κάτω** (parent → child ως παράμετρος).
+- **Events ρέουν προς τα πάνω** (child → parent ως callback: `onQueryChange`).
+
+> Ίδια αρχή με React «controlled components» (`value` + `onChange`). Οφέλη: το child είναι reusable & εύκολα testable (δεν κρατά κρυφό state), και υπάρχει **μία** πηγή αλήθειας. Ο κανόνας: σήκωσε το state **ακριβώς όσο ψηλά** χρειάζεται να το μοιραστούν/ελεγχθούν — όχι πιο ψηλά.
+
+## Το πρόβλημα: configuration changes
+
+Όταν ο χρήστης **γυρίζει** τη συσκευή (portrait↔landscape), το Android **καταστρέφει και ξαναφτιάχνει** το Activity. Ό,τι state ήταν σε `remember` **χάνεται** (το composition ξαναστήνεται). Δύο εργαλεία:
+
+```kotlin
+// rememberSaveable: επιβιώνει configuration changes (σώζεται σε Bundle)
+var query by rememberSaveable { mutableStateOf("") }
+```
+
+Το `rememberSaveable` καλύπτει απλά, serializable UI state (κείμενο ενός πεδίου, ποιο tab). Αλλά για **πραγματικό app state** (φορτωμένα δεδομένα, business logic) η σωστή λύση είναι το **ViewModel**.
+
+## `ViewModel` — state πέρα από το UI lifecycle
+
+Ένα **`ViewModel`** είναι μια κλάση που **επιβιώνει configuration changes**: ζει όσο η οθόνη λογικά υπάρχει (ακόμα κι αν το Activity ξαναφτιαχτεί), και καθαρίζεται μόνο όταν ο χρήστης φύγει οριστικά. Κρατά το UI state και το business logic **έξω** από τα composables.
+
+```kotlin
+class SearchViewModel : ViewModel() {
+    private val _state = MutableStateFlow(SearchUiState())
+    val state: StateFlow<SearchUiState> = _state.asStateFlow()
+
+    fun onQueryChange(q: String) {
+        _state.update { it.copy(query = q) }
+    }
+
+    fun search() {
+        viewModelScope.launch {
+            _state.update { it.copy(loading = true) }
+            val results = repo.search(_state.value.query)
+            _state.update { it.copy(loading = false, results = results) }
+        }
+    }
+}
+
+data class SearchUiState(
+    val query: String = "",
+    val loading: Boolean = false,
+    val results: List<Product> = emptyList(),
+)
+```
+
+Στο composable, παίρνεις το ViewModel και **collect**-άρεις το state:
+
+```kotlin
+@Composable
+fun SearchScreen(vm: SearchViewModel = viewModel()) {
+    val state by vm.state.collectAsStateWithLifecycle()
+
+    SearchBar(query = state.query, onQueryChange = vm::onQueryChange)
+    if (state.loading) CircularProgressIndicator()
+    LazyColumn {
+        items(state.results) { ProductRow(it) }
+    }
+}
+```
+
+- `viewModel()` δίνει το (ίδιο) ViewModel instance που επιβιώνει το rotation.
+- `collectAsStateWithLifecycle()` μετατρέπει το `StateFlow` σε Compose state **και** σταματά να συλλέγει όταν η οθόνη πάει background (εξοικονομεί πόρους) — προτιμάται από το σκέτο `collectAsState()`.
+- Ένα **`data class` UI state** (single object) αντί για πολλά ξεχωριστά flows κρατά την οθόνη συνεπή· τα updates γίνονται immutable με `copy()`.
+
+> Ο διαχωρισμός: **ViewModel** = state + logic (survives rotation, testable χωρίς UI). **Composable** = μόνο rendering + προώθηση events. Το UDF συνεχίζεται: state ρέει από το ViewModel στο UI, events (`vm::onQueryChange`) πάνε από το UI στο ViewModel.
+
+## Side-effects: `LaunchedEffect`
+
+Δεν κάνεις side-effects (network call, analytics) στο **σώμα** ενός composable — τρέχει σε κάθε recomposition. Το `LaunchedEffect` τρέχει μια coroutine **όταν το composable μπει** στο composition (ή όταν αλλάξει το `key`):
+
+```kotlin
+@Composable
+fun ProductScreen(id: String, vm: ProductViewModel = viewModel()) {
+    LaunchedEffect(id) {          // τρέχει μια φορά ανά νέο id
+        vm.load(id)
+    }
+    // ... render state
+}
+```
+
+- `LaunchedEffect(Unit)` → τρέχει **μία φορά** (σαν `useEffect(..., [])`).
+- `LaunchedEffect(id)` → ξανατρέχει όταν αλλάξει το `id` (σαν dependency array).
+- Ακυρώνεται αυτόματα όταν το composable φύγει (structured concurrency).
+
+Συγγενικά: `rememberCoroutineScope()` (για coroutines από event handlers, π.χ. `onClick`), `DisposableEffect` (cleanup όταν φεύγει το composable).
+
+<PredictOutput
+  title="Ξεχνάς το remember"
+  code={`@Composable
+fun Counter() {
+    var count by mutableStateOf(0)   // ΧΩΡΙΣ remember
+    Button(onClick = { count++ }) {
+        Text("$count")
+    }
+}`}
+  options={[
+    "Μετράει κανονικά 1,2,3…",
+    "Ο μετρητής δείχνει πάντα 0 (ή 'κολλάει'): κάθε recomposition ξαναφτιάχνει το state στο 0, οπότε το ++ χάνεται",
+    "Compile error",
+    "Το app κρασάρει στο πάτημα"
+  ]}
+  correctOptionIndex={1}
+  answer="Δεν μετράει — χάνεται σε κάθε recomposition"
+  explanation="Το mutableStateOf(0) χωρίς remember ξαναδημιουργείται σε κάθε recomposition, μηδενίζοντας το count. Το ++ προκαλεί recompose, που ξαναφτιάχνει το 0. Χρειάζεσαι remember { mutableStateOf(0) } ώστε η τιμή να επιβιώσει μεταξύ recompositions. (Και για rotation → rememberSaveable ή ViewModel.)"
+/>
+
+<PredictOutput
+  title="Πού μπαίνει το network call;"
+  code={`@Composable
+fun Screen(vm: MyViewModel = viewModel()) {
+    vm.loadData()          // κλήση στο σώμα του composable
+    // render...
+}`}
+  options={[
+    "Σωστό — φορτώνει μία φορά",
+    "Λάθος — τρέχει σε ΚΑΘΕ recomposition (πιθανώς ατέρμονο loop). Το call πρέπει να μπει σε LaunchedEffect",
+    "Compile error",
+    "Τρέχει μόνο σε rotation"
+  ]}
+  correctOptionIndex={1}
+  answer="Λάθος — side-effect στο σώμα τρέχει σε κάθε recompose"
+  explanation="Το σώμα ενός composable μπορεί να τρέξει πολλές φορές. Ένα loadData() εκεί καλείται σε κάθε recomposition — και αν το loadData αλλάζει state, προκαλεί νέο recompose → potential infinite loop. Τα side-effects μπαίνουν σε LaunchedEffect(key) που τρέχει ελεγχόμενα (μία φορά, ή όταν αλλάξει το key)."
+/>
+
+<Exercise
+  question="Τι είναι το state hoisting και το unidirectional data flow;"
+  options={[
+    "Να κρατάς όλο το state global.",
+    "Να ανεβάζεις το state στον γονιό: το child δέχεται την τιμή ως παράμετρο (state κάτω) και στέλνει αλλαγές ως callback (events πάνω) — μία πηγή αλήθειας, stateless reusable children.",
+    "Να αποφεύγεις τα ViewModels.",
+    "Να χρησιμοποιείς findViewById σε composables."
+  ]}
+  correctOptionIndex={1}
+  explanation="State hoisting = μετακίνηση του state στον καλούντα, κάνοντας το composable stateless/controlled. UDF: state ρέει προς τα κάτω (parameter), events προς τα πάνω (callback onXChange). Αποτέλεσμα: reusable & testable children, μία source of truth — ακριβώς όπως τα controlled components στη React."
+/>
+
+<Exercise
+  question="Γιατί χρησιμοποιείς ViewModel αντί για σκέτο remember για app state;"
+  options={[
+    "Είναι πιο γρήγορο στο rendering.",
+    "Το ViewModel επιβιώνει configuration changes (π.χ. rotation) και κρατά state + business logic έξω από το UI — testable χωρίς composables· το remember χάνεται όταν ξαναφτιαχτεί το Activity.",
+    "Το remember δεν υπάρχει στο Compose.",
+    "Το ViewModel κάνει το UI declarative."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το remember/rememberSaveable ζει με το composition — το remember χάνεται σε rotation (το rememberSaveable κρατά μόνο απλό serializable UI state). Το ViewModel επιβιώνει τα configuration changes, κρατά UI state ως StateFlow + τη λογική, και είναι unit-testable ανεξάρτητα από το UI. Γι' αυτό είναι ο σωστός τόπος για app/business state."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How does state work in Compose, and where should it live?»
+
+> State in Compose is any observable value the UI reads; I create it with `remember { mutableStateOf(...) }`. `mutableStateOf` makes it observable so recomposition happens when it changes, and `remember` keeps it across recompositions — you need both. I keep composables as stateless as possible through state hoisting: a child takes its value as a parameter and reports changes with a callback, so state flows down and events flow up. That's unidirectional data flow, and it gives me reusable, testable components with a single source of truth. For anything beyond trivial UI state, I don't rely on `remember`, because it's lost when the Activity is recreated on rotation — `rememberSaveable` covers simple serializable values, but real app state and business logic belong in a `ViewModel`, which survives configuration changes. The ViewModel exposes a single immutable UI-state `data class` as a `StateFlow`, updated with `copy`, and the screen collects it with `collectAsStateWithLifecycle`. Side effects like loading data go in `LaunchedEffect` keyed appropriately, never in the composable body, which runs on every recomposition.
+
+<Flashcards
+  title="Compose state — interview drills"
+  cards={[
+    {
+      question: "Τι κάνει το mutableStateOf και τι το remember;",
+      answer: "mutableStateOf: observable state holder — αλλαγή → recompose. remember: κράτα την τιμή μεταξύ recompositions (χωρίς αυτό ξαναφτιάχνεται). Χρειάζεσαι και τα δύο."
+    },
+    {
+      question: "State hoisting & UDF;",
+      answer: "Σήκωσε το state στον γονιό· child δέχεται value ως παράμετρο (state κάτω) & στέλνει callback (events πάνω). Μία πηγή αλήθειας, stateless/reusable children."
+    },
+    {
+      question: "Τι χάνεται σε rotation και πώς το σώζεις;",
+      answer: "Το remember χάνεται (το Activity ξαναφτιάχνεται). rememberSaveable για απλό serializable UI state· ViewModel για πραγματικό app state + logic."
+    },
+    {
+      question: "Πώς εκθέτει state ένα ViewModel και πώς το διαβάζει το UI;",
+      answer: "Private MutableStateFlow + public read-only StateFlow ενός data class UI state (updates με copy). UI: collectAsStateWithLifecycle() → recomposes· σταματά το collect στο background."
+    },
+    {
+      question: "Πότε LaunchedEffect;",
+      answer: "Για side-effects (network/analytics) — ΟΧΙ στο σώμα του composable. LaunchedEffect(Unit) τρέχει μία φορά· LaunchedEffect(key) ξανατρέχει όταν αλλάξει το key· ακυρώνεται όταν φύγει το composable."
+    },
+    {
+      question: "Γιατί ένα data class ως UI state;",
+      answer: "Ένα object (query+loading+results) κρατά την οθόνη συνεπή vs πολλά ξεχωριστά flags· immutable updates με copy(), εύκολο testing, καθαρό rendering με when/if."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Στήσε state με ViewModel & hoisting"
+  scenario="Φτιάξε μια search screen: πεδίο αναζήτησης, κουμπί, loading spinner, λίστα αποτελεσμάτων — με σωστό διαχωρισμό state/UI."
+  outcomes={[
+    "Να μοντελοποιείς UI state ως ένα data class σε ViewModel/StateFlow.",
+    "Να εφαρμόζεις hoisting/UDF (state κάτω, events πάνω).",
+    "Να τρέχεις το load σε LaunchedEffect/coroutine, όχι στο σώμα."
+  ]}
+  steps={[
+    "Όρισε data class SearchUiState(query, loading, results).",
+    "Στο ViewModel: private MutableStateFlow + public StateFlow· onQueryChange & search() με copy()/update.",
+    "Στο composable: val state by vm.state.collectAsStateWithLifecycle().",
+    "Κάνε το SearchBar stateless (value + onQueryChange).",
+    "Τρέξε το αρχικό load σε LaunchedEffect(Unit)/(key)."
+  ]}
+  checkpoints={[
+    "Κάθε remember state που πρέπει να επιβιώσει rotation είναι σε ViewModel/rememberSaveable.",
+    "Το child (SearchBar) είναι stateless — δέχεται value & callback.",
+    "Τα updates γίνονται immutable με copy()/update.",
+    "Κανένα side-effect στο σώμα — μόνο σε LaunchedEffect/scope."
+  ]}
+  mistakes={[
+    "mutableStateOf χωρίς remember → state χάνεται σε recompose.",
+    "Network call στο σώμα του composable → τρέχει σε κάθε recomposition.",
+    "Να κρατάς app state σε remember → χάνεται σε rotation.",
+    "Πολλά ξεχωριστά states αντί ενός data class → ασυνεπής οθόνη."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν διαχωρίζεις καθαρά state (ViewModel/StateFlow) από UI (stateless composables με hoisting), σώζεις state σε configuration changes, και τρέχεις side-effects μόνο σε LaunchedEffect."
+/>

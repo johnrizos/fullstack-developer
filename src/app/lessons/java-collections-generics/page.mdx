@@ -1,0 +1,263 @@
+# Collections, Generics & Streams
+
+Ο πραγματικός κώδικας δουλεύει συνέχεια με **συλλογές δεδομένων**: λίστες προϊόντων, χάρτες από id σε χρήστη, σύνολα από tags. Η Java έχει ένα πλούσιο **Collections Framework**, τα **generics** για type safety, και το **Stream API** για δηλωτική επεξεργασία (filter/map/reduce χωρίς loops). Αυτά τα τρία είναι από τα πιο πρακτικά — και πιο συχνά στα interviews — εργαλεία της γλώσσας.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να διαλέγεις σωστά ανάμεσα σε `List`, `Set`, `Map` (και τις υλοποιήσεις τους),
+- να καταλαβαίνεις **generics** & type safety (`List<String>`, bounded types),
+- να γράφεις **lambdas** & method references,
+- να επεξεργάζεσαι δεδομένα με το **Stream API** (`filter`/`map`/`collect`),
+- να χειρίζεσαι απόντα δεδομένα με **`Optional<T>`** αντί για null.
+
+## Το Collections Framework
+
+Τρεις βασικές διεπαφές, με πολλές υλοποιήσεις:
+
+| Interface | Τι είναι | Κύρια υλοποίηση | Πότε |
+|---|---|---|---|
+| **`List`** | διατεταγμένη, επιτρέπει διπλά | `ArrayList` | σειρά μετράει, index access |
+| **`Set`** | μοναδικά στοιχεία, χωρίς διπλά | `HashSet` | deduplication, membership |
+| **`Map`** | ζεύγη key→value | `HashMap` | lookup με κλειδί |
+
+```java
+List<String> names = new ArrayList<>();
+names.add("Άννα");
+names.add("Άννα");           // επιτρέπεται (διπλό)
+names.get(0);                 // index access
+
+Set<String> tags = new HashSet<>();
+tags.add("java");
+tags.add("java");             // αγνοείται — ήδη υπάρχει
+tags.contains("java");        // O(1) lookup
+
+Map<String, Integer> ages = new HashMap<>();
+ages.put("Άννα", 30);
+ages.get("Άννα");             // 30
+ages.getOrDefault("Χ", 0);    // 0 αν λείπει
+```
+
+> **Programming to the interface:** δηλώνεις `List<String> x = new ArrayList<>()` — ο τύπος της μεταβλητής είναι το **interface** (`List`), όχι η υλοποίηση. Έτσι μπορείς να αλλάξεις σε `LinkedList` χωρίς να πειράξεις τον υπόλοιπο κώδικα. Interview note: `ArrayList` = γρήγορο index access· `HashMap`/`HashSet` = O(1) lookup χάρη στο hashing (γι' αυτό τα keys χρειάζονται σωστό `equals`/`hashCode` — εδώ βοηθούν τα records).
+
+## Generics — type safety
+
+Τα **generics** επιτρέπουν σε μια κλάση/μέθοδο να δουλεύει με **οποιονδήποτε τύπο**, διατηρώντας **compile-time type safety**. Το `<String>` λέει «αυτή η λίστα κρατά μόνο Strings»:
+
+```java
+List<String> names = new ArrayList<>();
+names.add("Άννα");
+// names.add(42);        // compile error — μόνο String
+String first = names.get(0);   // χωρίς cast — ο compiler ξέρει τον τύπο
+```
+
+Πριν τα generics, οι λίστες κρατούσαν `Object` και χρειαζόσουν χειροκίνητα casts (με κίνδυνο `ClassCastException` στο runtime). Τα generics μεταφέρουν αυτόν τον έλεγχο στο **compile time**.
+
+Δικά σου generic types & **bounded types**:
+
+```java
+// Generic method — δουλεύει για κάθε T
+public <T> T firstOrNull(List<T> list) {
+    return list.isEmpty() ? null : list.get(0);
+}
+
+// Bounded: το T πρέπει να είναι Number (ή subclass)
+public <T extends Number> double sum(List<T> nums) {
+    double total = 0;
+    for (T n : nums) total += n.doubleValue();
+    return total;
+}
+```
+
+> **Type erasure** (interview classic): τα generics υπάρχουν μόνο σε **compile time** — το JVM τα «σβήνει» στο runtime (ένα `List<String>` γίνεται απλώς `List`). Γι' αυτό δεν μπορείς π.χ. `new T()` ή `if (x instanceof List<String>)`. Ο σκοπός τους είναι compile-time safety, όχι runtime πληροφορία.
+
+## Lambdas & functional interfaces
+
+Μια **lambda** είναι σύντομη σύνταξη για μια συνάρτηση — υλοποιεί ένα **functional interface** (interface με μία abstract method):
+
+```java
+// Παλιά (anonymous class)
+Runnable r = new Runnable() {
+    public void run() { System.out.println("hi"); }
+};
+
+// Lambda
+Runnable r = () -> System.out.println("hi");
+
+// Με παραμέτρους
+Comparator<String> byLength = (a, b) -> a.length() - b.length();
+
+// Method reference — ακόμα πιο σύντομο
+names.forEach(System.out::println);
+```
+
+Οι lambdas είναι το θεμέλιο του Stream API. Συχνά functional interfaces: `Function<T,R>`, `Predicate<T>` (επιστρέφει boolean), `Consumer<T>`, `Supplier<T>`.
+
+## Stream API — δηλωτική επεξεργασία
+
+Ένα **Stream** επιτρέπει να επεξεργάζεσαι collections **δηλωτικά** — αλυσίδα από operations αντί για loops (ανάλογο των JS array methods / Kotlin sequences):
+
+```java
+List<Product> products = ...;
+
+List<String> cheapTitles = products.stream()
+    .filter(p -> p.price() < 10)              // κράτα τα φθηνά
+    .map(Product::title)                       // πάρε μόνο τον τίτλο
+    .sorted()                                  // ταξινόμησε
+    .toList();                                 // μάζεψε σε List
+
+double total = products.stream()
+    .mapToDouble(Product::price)
+    .sum();
+
+Map<String, List<Product>> byCategory = products.stream()
+    .collect(Collectors.groupingBy(Product::category));
+```
+
+- **Intermediate** operations (`filter`, `map`, `sorted`) είναι **lazy** — δεν τρέχουν μέχρι να έρθει terminal.
+- **Terminal** operations (`toList`, `sum`, `collect`, `forEach`) ενεργοποιούν την αλυσίδα και παράγουν αποτέλεσμα.
+
+> Οφέλη: πιο **αναγνώσιμος** κώδικας (λες *τι* θέλεις, όχι *πώς*), λιγότερα bugs από manual loops, και εύκολη παραλληλοποίηση (`.parallelStream()`). Τα streams **δεν** μεταλλάσσουν την πηγή — παράγουν νέο αποτέλεσμα. Interview note: intermediate = lazy, terminal = eager.
+
+## `Optional<T>` — ρητή απουσία
+
+Το **`Optional<T>`** είναι ένα container που μπορεί να περιέχει τιμή **ή όχι** — ρητός τρόπος να εκφράσεις «μπορεί να λείπει», αντί να επιστρέφεις `null`:
+
+```java
+public Optional<Product> findById(String id) {
+    // ...
+    return Optional.ofNullable(product);   // empty αν null
+}
+
+// Χρήση — ο caller ΑΝΑΓΚΑΖΕΤΑΙ να σκεφτεί το «λείπει»
+String title = findById("1")
+    .map(Product::title)
+    .orElse("Άγνωστο");        // default αν empty
+
+findById("1").ifPresent(p -> System.out.println(p.title()));
+```
+
+> Το `Optional` κάνει το «μπορεί να μην υπάρχει» **ορατό στην υπογραφή** — ο caller δεν μπορεί να το αγνοήσει όπως ένα σιωπηλό null. Είναι η πλησιέστερη Java απάντηση στο null safety της Kotlin. Best practice: χρησιμοποίησέ το ως **return type** για «μπορεί να λείπει»· **μην** το βάζεις σε fields/parameters ούτε να καλείς `.get()` χωρίς έλεγχο (ισοδυναμεί με NPE).
+
+<PredictOutput
+  title="Stream: lazy vs terminal"
+  code={`List<Integer> nums = List.of(1, 2, 3, 4);
+var stream = nums.stream()
+    .filter(n -> { System.out.println("filter " + n); return n % 2 == 0; });
+System.out.println("πριν το terminal");
+stream.toList();`}
+  options={[
+    "Τυπώνει όλα τα 'filter' ΠΡΙΝ το 'πριν το terminal'",
+    "Τυπώνει 'πριν το terminal' ΠΡΩΤΑ, μετά τα 'filter' — τα intermediate ops είναι lazy, τρέχουν μόνο στο terminal (toList)",
+    "Δεν τυπώνει κανένα 'filter'",
+    "Compile error"
+  ]}
+  correctOptionIndex={1}
+  answer="'πριν το terminal' πρώτα, μετά τα filter"
+  explanation="Τα intermediate operations (filter/map/sorted) είναι lazy: ορίζουν το pipeline αλλά ΔΕΝ εκτελούνται. Ο κώδικας φτάνει στο println('πριν το terminal'), το τυπώνει, και μόνο όταν καλείται το terminal (toList()) τρέχει το filter σε κάθε στοιχείο. Χωρίς terminal, τίποτα δεν επεξεργάζεται."
+/>
+
+<PredictOutput
+  title="Generics & compile-time safety"
+  code={`List<String> names = new ArrayList<>();
+names.add("Άννα");
+names.add(42);   // ;`}
+  options={[
+    "Τρέχει και προσθέτει το 42 ως string",
+    "Compile error — η λίστα δηλώθηκε List<String>, ο compiler απορρίπτει το int",
+    "ClassCastException στο runtime",
+    "Προσθέτει null"
+  ]}
+  correctOptionIndex={1}
+  answer="Compile error"
+  explanation="Το List<String> λέει ρητά ότι η λίστα κρατά μόνο String. Ο compiler απορρίπτει το names.add(42) πριν καν τρέξει ο κώδικας — αυτό είναι το όφελος των generics: μεταφέρουν τον έλεγχο τύπων από το runtime (ClassCastException, όπως στα παλιά raw types) στο compile time."
+/>
+
+<Exercise
+  question="Πότε διαλέγεις List vs Set vs Map;"
+  options={[
+    "Είναι εναλλάξιμα.",
+    "List: διατεταγμένη σειρά + επιτρέπει διπλά (ArrayList, index access). Set: μοναδικά στοιχεία/deduplication (HashSet, O(1) membership). Map: lookup key→value (HashMap, O(1)).",
+    "List μόνο για αριθμούς, Set για strings.",
+    "Map είναι τύπος της List."
+  ]}
+  correctOptionIndex={1}
+  explanation="List = ordered, allows duplicates, index access (ArrayList). Set = unique elements, γρήγορο membership/dedup (HashSet). Map = ζεύγη key→value, γρήγορο lookup (HashMap). Το HashSet/HashMap βασίζονται σε hashing → σωστό equals/hashCode στα κλειδιά (records βοηθούν). Διάλεξε βάσει: σειρά; διπλά; lookup με κλειδί;"
+/>
+
+<Exercise
+  question="Ποιο είναι το νόημα του Optional<T>;"
+  options={[
+    "Να αντικαταστήσει όλα τα null παντού, ακόμα και σε fields.",
+    "Να κάνει την πιθανή απουσία τιμής ΟΡΑΤΗ στην υπογραφή (return type), ώστε ο caller να μην την αγνοήσει σιωπηλά όπως ένα null — η Java απάντηση στο null safety.",
+    "Να επιταχύνει τα streams.",
+    "Είναι collection όπως η List."
+  ]}
+  correctOptionIndex={1}
+  explanation="Optional<T> = container με τιμή ή empty· εκφράζει ρητά 'μπορεί να λείπει' στο return type, αναγκάζοντας τον caller να το χειριστεί (map/orElse/ifPresent). Best practice: return type για 'may be absent', ΟΧΙ σε fields/params, και απόφυγε το .get() χωρίς έλεγχο (ισοδύναμο NPE)."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you work with collections and process data in Java?»
+
+> The Collections Framework gives me three core interfaces: `List` for ordered data that allows duplicates, usually `ArrayList`; `Set` for unique elements with fast membership, usually `HashSet`; and `Map` for key-to-value lookup, usually `HashMap`. I program to the interface — declare a `List` but instantiate an `ArrayList` — so I can swap implementations freely. Generics like `List<String>` give me compile-time type safety: the compiler rejects a wrong type and I never need casts, which moves errors from runtime `ClassCastException` to compile time. One subtlety is type erasure — generics exist only at compile time and are erased at runtime. For processing I use the Stream API: I chain `filter`, `map`, `sorted`, and finish with a terminal like `toList` or `collect`. Intermediate operations are lazy and only run when the terminal fires, which makes the code declarative and easy to parallelize, and streams don't mutate the source. For values that might be absent I return `Optional<T>` instead of null, so the absence is visible in the signature and the caller has to handle it with `map` and `orElse` — it's Java's closest answer to Kotlin's null safety.
+
+<Flashcards
+  title="Collections, generics & streams — interview drills"
+  cards={[
+    {
+      question: "List vs Set vs Map;",
+      answer: "List: ordered, duplicates, index (ArrayList). Set: unique, dedup/membership O(1) (HashSet). Map: key→value lookup O(1) (HashMap). HashSet/HashMap χρειάζονται σωστό equals/hashCode."
+    },
+    {
+      question: "Τι δίνουν τα generics & τι είναι το type erasure;",
+      answer: "Generics (List<String>) = compile-time type safety, χωρίς casts. Type erasure: υπάρχουν μόνο σε compile time, σβήνονται στο runtime (List<String>→List) — γι' αυτό όχι new T() / instanceof List<String>."
+    },
+    {
+      question: "Intermediate vs terminal stream operations;",
+      answer: "Intermediate (filter/map/sorted): lazy, ορίζουν pipeline, δεν τρέχουν. Terminal (toList/collect/sum/forEach): ενεργοποιεί την αλυσίδα & παράγει αποτέλεσμα. Χωρίς terminal, τίποτα δεν εκτελείται."
+    },
+    {
+      question: "Τι είναι μια lambda / functional interface;",
+      answer: "Lambda = σύντομη σύνταξη συνάρτησης, υλοποιεί functional interface (μία abstract method): Predicate<T>, Function<T,R>, Consumer<T>, Supplier<T>. Θεμέλιο των streams. Method reference (Product::title) ακόμα πιο σύντομο."
+    },
+    {
+      question: "Πώς & πότε χρησιμοποιείς Optional<T>;",
+      answer: "Ως return type για 'μπορεί να λείπει'· ο caller χειρίζεται με map/orElse/ifPresent. ΟΧΙ σε fields/params, όχι .get() χωρίς έλεγχο. Κάνει την απουσία ορατή αντί για σιωπηλό null."
+    },
+    {
+      question: "Programming to the interface;",
+      answer: "Δήλωσε τον τύπο μεταβλητής ως interface (List/Map), instantiate συγκεκριμένη υλοποίηση (ArrayList/HashMap). Αλλάζεις υλοποίηση χωρίς να πειράξεις τον υπόλοιπο κώδικα."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Επεξεργασία δεδομένων με Streams"
+  scenario="Έχεις μια λίστα από Product records και θέλεις διάφορες προβολές (φθηνά, ανά κατηγορία, σύνολο) — δηλωτικά, χωρίς loops."
+  outcomes={[
+    "Να διαλέγεις σωστή collection (List/Set/Map).",
+    "Να επεξεργάζεσαι με Stream (filter/map/collect/groupingBy).",
+    "Να χειρίζεσαι απόντα δεδομένα με Optional."
+  ]}
+  steps={[
+    "Όρισε record Product(String id, String title, double price, String category).",
+    "Με stream: φίλτραρε price < 10, map σε title, sorted, toList.",
+    "Υπολόγισε σύνολο τιμών με mapToDouble().sum().",
+    "Group ανά category με Collectors.groupingBy.",
+    "Γράψε findById που επιστρέφει Optional<Product> και κατανάλωσέ το με orElse."
+  ]}
+  checkpoints={[
+    "Χρησιμοποιείς την κατάλληλη collection ανά ανάγκη (dedup→Set, lookup→Map).",
+    "Το stream pipeline τελειώνει με terminal operation.",
+    "Δεν μεταλλάσσεις την πηγή — παράγεις νέο αποτέλεσμα.",
+    "Το 'μπορεί να λείπει' εκφράζεται με Optional, όχι σιωπηλό null."
+  ]}
+  mistakes={[
+    "Να ξεχνάς το terminal operation (το pipeline δεν τρέχει).",
+    "Raw types (List αντί List<String>) → χάνεις type safety, casts.",
+    "Να καλείς Optional.get() χωρίς έλεγχο (ισοδύναμο NPE).",
+    "Λάθος collection (List για membership check αντί Set → O(n))."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν διαλέγεις σωστές collections, γράφεις type-safe generics, επεξεργάζεσαι δεδομένα δηλωτικά με Streams, και χειρίζεσαι απουσία με Optional."
+/>

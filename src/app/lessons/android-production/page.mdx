@@ -1,0 +1,246 @@
+# Build, Signing & Play Store
+
+Έγραψες το app. Τώρα πρέπει να το **στείλεις** σε πραγματικούς χρήστες. Αυτό σημαίνει: το **Gradle** build system που μεταγλωττίζει & πακετάρει, **build variants** (debug vs release, dev vs prod), **signing** (κρυπτογραφική υπογραφή ώστε το Play Store να εμπιστεύεται τα updates σου), **R8** shrinking (μικρότερο/γρηγορότερο app), το **Android App Bundle** format, και το **Play Console** release flow με staged rollout.
+
+Είναι το κομμάτι που ένας beginner αγνοεί μέχρι την ημέρα του launch — και μετά κολλάει. Ας το ξεκαθαρίσουμε από πριν.
+
+## Τι πρέπει να μπορείς στο τέλος
+
+- να εξηγείς τι κάνει το **Gradle** και τι είναι τα **build variants**,
+- να καταλαβαίνεις **versioning** (`versionCode` vs `versionName`),
+- να εξηγείς **app signing** και γιατί το keystore είναι κρίσιμο,
+- να ξέρεις τι κάνει το **R8/ProGuard** (shrinking, obfuscation) και τους κινδύνους,
+- να ξεχωρίζεις **APK vs AAB** (App Bundle),
+- να περιγράφεις το **Play Console release flow** (tracks, staged rollout).
+
+## Gradle — το build system
+
+Το **Gradle** είναι το build tool του Android: μεταγλωττίζει Kotlin, ενσωματώνει resources, τρέχει το R8, και παράγει το τελικό package. Το ρυθμίζεις σε `build.gradle.kts` (Kotlin DSL) αρχεία:
+
+```kotlin
+android {
+    namespace = "com.example.shop"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "com.example.shop"   // μοναδικό ID στο Play Store — ΔΕΝ αλλάζει ποτέ
+        minSdk = 24                            // παλαιότερη υποστηριζόμενη Android έκδοση
+        targetSdk = 35
+        versionCode = 12                       // ακέραιος, αυξάνει σε ΚΑΘΕ release
+        versionName = "1.4.0"                  // string που βλέπει ο χρήστης
+    }
+}
+
+dependencies {
+    implementation("androidx.compose.material3:material3:...")
+    // ...
+}
+```
+
+- Οι **dependencies** δηλώνονται εδώ (το Gradle τις κατεβάζει από Maven repos).
+- Το **`applicationId`** είναι η μοναδική ταυτότητα του app στο Play Store — αν το αλλάξεις, γίνεται **άλλο app**.
+
+## Versioning — `versionCode` vs `versionName`
+
+Δύο διαφορετικά πράγματα, συχνό σημείο σύγχυσης:
+
+| | `versionCode` | `versionName` |
+|---|---|---|
+| Τύπος | ακέραιος (π.χ. `12`) | string (π.χ. `"1.4.0"`) |
+| Ποιος το βλέπει | το **σύστημα/Play Store** | ο **χρήστης** |
+| Κανόνας | αυξάνει σε **κάθε** upload | ό,τι θέλεις (semver συνήθως) |
+
+> Το Play Store χρησιμοποιεί το **`versionCode`** για να καταλάβει «ποιο είναι νεότερο». Αν ανεβάσεις build με ίδιο ή μικρότερο `versionCode`, το Play **το απορρίπτει**. Το `versionName` είναι απλώς ετικέτα για ανθρώπους. Κλασική interview ερώτηση: «ποια διαφορά;».
+
+## Build variants — debug vs release
+
+Το Gradle παράγει διαφορετικά **variants** από **build types** και **product flavors**:
+
+- **Build types:** `debug` (debuggable, χωρίς shrinking, debug signing) vs `release` (optimized, R8, signed με το πραγματικό σου key).
+- **Product flavors** (προαιρετικά): π.χ. `dev`/`prod` με διαφορετικό API URL, ή `free`/`paid`.
+
+```kotlin
+buildTypes {
+    release {
+        isMinifyEnabled = true          // ενεργοποιεί R8
+        proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        signingConfig = signingConfigs.getByName("release")
+    }
+}
+```
+
+> Ποτέ μη στέλνεις **debug** build στο store: είναι μεγαλύτερο, πιο αργό, χωρίς obfuscation, και υπογεγραμμένο με το κοινό debug key. Το **release** variant είναι το production artifact.
+
+## App signing — το keystore
+
+Κάθε Android app **υπογράφεται** κρυπτογραφικά. Η υπογραφή αποδεικνύει ότι ένα update προέρχεται από **τον ίδιο** developer — το Android **αρνείται** να εγκαταστήσει update αν η υπογραφή δεν ταιριάζει με την εγκατεστημένη έκδοση.
+
+- Το **keystore** (`.jks`) περιέχει το ιδιωτικό σου κλειδί.
+- Υπογράφεις το release build με αυτό.
+
+> **Κρίσιμο:** αν **χάσεις** το keystore (ή το password), **δεν μπορείς πια να ανεβάσεις updates** στο ίδιο app — ποτέ. Θα έπρεπε να δημοσιεύσεις νέο app και να χάσεις όλους τους χρήστες/reviews. Γι' αυτό υπάρχει το **Play App Signing**: ανεβάζεις έναν *upload key*, και η Google κρατά/διαχειρίζεται το πραγματικό *app signing key* — αν χάσεις το upload key, η Google σε βοηθά να το επαναφέρεις. Backup του keystore σε ασφαλές μέρος είναι υποχρεωτικό.
+
+## R8 / ProGuard — shrinking & obfuscation
+
+Το **R8** (ο διάδοχος του ProGuard, ενσωματωμένος στο build) κάνει τρία πράγματα στο release build:
+
+1. **Shrinking (tree-shaking):** αφαιρεί κώδικα & resources που δεν χρησιμοποιούνται → μικρότερο app.
+2. **Obfuscation:** μετονομάζει κλάσεις/μεθόδους σε `a`, `b`, `c` → δυσκολότερο reverse-engineering, μικρότερο.
+3. **Optimization:** inlining, dead-code elimination → γρηγορότερο.
+
+Ο κίνδυνος: το R8 μπορεί να αφαιρέσει ή να μετονομάσει κώδικα που χρειάζεται **reflection** (π.χ. JSON parsing βάσει ονομάτων πεδίων). Γι' αυτό υπάρχουν **keep rules** στο `proguard-rules.pro`:
+
+```
+-keep class com.example.shop.model.** { *; }   # μη μετονομάζεις τα data models
+```
+
+> Πρακτικός κίνδυνος: το app δουλεύει τέλεια σε **debug** αλλά **κρασάρει μόνο σε release** — σχεδόν πάντα λείπει ένα keep rule (το R8 πείραξε κάτι που το reflection ψάχνει με το όνομα). Πάντα **δοκίμασε το release build** πριν το ανεβάσεις. Οι σύγχρονες βιβλιοθήκες (Retrofit, Room, serialization) φέρνουν τα δικά τους consumer rules, αλλά ο δικός σου reflection-based κώδικας χρειάζεται προσοχή.
+
+## APK vs AAB (Android App Bundle)
+
+- **APK** (`.apk`): το κλασικό installable package — περιέχει κώδικα & resources για **όλες** τις αρχιτεκτονικές/πυκνότητες. Μεγάλο.
+- **AAB** (`.aab`, Android App Bundle): το format που **απαιτεί** πλέον το Play Store για νέα apps. Ανεβάζεις **ένα** bundle· η Google παράγει **βελτιστοποιημένα APKs ανά συσκευή** (σωστό ABI, density, γλώσσα) — ο χρήστης κατεβάζει μόνο ό,τι χρειάζεται η συσκευή του → **μικρότερο download**.
+
+> Στη συνέντευξη: «AAB = ανεβάζεις ένα bundle, η Google κάνει split σε per-device APKs (Dynamic Delivery)· το Play απαιτεί AAB για νέα apps από το 2021». Για sideloading/άλλα stores μπορεί ακόμα να χρειάζεσαι APK.
+
+## Play Console release flow
+
+Δημοσιεύεις μέσω του **Play Console**, με **tracks** (κανάλια δοκιμής πριν το production):
+
+```
+internal  →  closed (alpha)  →  open (beta)  →  production
+(ομάδα)      (testers)          (public opt-in)   (όλοι)
+```
+
+Στο production κάνεις **staged rollout**: κυκλοφορείς σε **ποσοστό** χρηστών (π.χ. 10%), παρακολουθείς crash rate/reviews, και αν όλα καλά **αυξάνεις** σταδιακά στο 100% — αλλιώς **halt** το rollout πριν επηρεαστούν όλοι.
+
+Πριν το production, το app περνά **Play review** (policy/security). Απαιτούνται επίσης store listing (screenshots, περιγραφή), content rating, privacy policy, και data safety form.
+
+> Το mental model σαν deployment strategy (canary): μην πετάς ένα νέο build σε 100% των χρηστών μεμιάς. Staged rollout + crash monitoring (π.χ. Crashlytics/Sentry — είδαμε παρόμοιο στο RN production) σου δίνει δίχτυ ασφαλείας.
+
+<PredictOutput
+  title="versionCode στο Play upload"
+  code={`Το τρέχον live app έχει versionCode = 12.
+Φτιάχνεις μια διόρθωση και ανεβάζεις build με versionCode = 12
+(ξέχασες να το αυξήσεις), versionName = "1.4.1".
+Τι λέει το Play Console;`}
+  options={[
+    "Το δέχεται — το versionName άλλαξε",
+    "Το απορρίπτει: υπάρχει ήδη build με versionCode 12· πρέπει να είναι μεγαλύτερο (π.χ. 13)",
+    "Το εγκαθιστά ως downgrade",
+    "Δημιουργεί νέο app"
+  ]}
+  correctOptionIndex={1}
+  answer="Απόρριψη — versionCode πρέπει να αυξηθεί"
+  explanation="Το Play Store χρησιμοποιεί το versionCode (ακέραιος) για να ξεχωρίσει ποιο build είναι νεότερο. Δεν μπορείς να ανεβάσεις build με ίδιο ή μικρότερο versionCode από υπάρχον — απορρίπτεται. Το versionName ('1.4.1') είναι μόνο για ανθρώπους και δεν παίζει ρόλο εδώ. Κανόνας: αύξησε το versionCode σε ΚΑΘΕ upload."
+/>
+
+<PredictOutput
+  title="Δουλεύει σε debug, κρασάρει σε release"
+  code={`Το app τρέχει τέλεια σε debug build. Στο release build (isMinifyEnabled=true)
+κρασάρει όταν κάνει parse ένα JSON response σε data class.
+Πιο πιθανή αιτία;`}
+  options={[
+    "Bug στο δίκτυο",
+    "Το R8 μετονόμασε/αφαίρεσε τα πεδία του data class που το JSON parsing βρίσκει με reflection — λείπει keep rule",
+    "Το versionCode είναι λάθος",
+    "Το keystore έληξε"
+  ]}
+  correctOptionIndex={1}
+  answer="R8 obfuscation χωρίς keep rule"
+  explanation="Κλασικό release-only crash: το R8 (minify) μετονομάζει/αφαιρεί κώδικα. Αν το JSON parsing βασίζεται σε reflection (ονόματα πεδίων), και τα πεδία μετονομάστηκαν σε a/b/c, το mapping σπάει. Λύση: keep rule (-keep) για τα models, ή χρήση serialization με σωστά consumer rules. Γι' αυτό δοκιμάζεις ΠΑΝΤΑ το release build πριν το ανεβάσεις."
+/>
+
+<Exercise
+  question="Γιατί προτιμάται το AAB από το APK για το Play Store;"
+  options={[
+    "Είναι πιο εύκολο να το κάνεις sideload.",
+    "Ανεβάζεις ένα bundle και η Google παράγει βελτιστοποιημένα per-device APKs (σωστό ABI/density/γλώσσα) — μικρότερο download για τον χρήστη· το Play το απαιτεί για νέα apps.",
+    "Δεν χρειάζεται signing.",
+    "Τρέχει πιο γρήγορα ο κώδικας."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το APK περιέχει resources/κώδικα για όλες τις συσκευές (μεγάλο). Το AAB (App Bundle) αφήνει τη Google να κάνει Dynamic Delivery: split σε APKs ανά συσκευή, ώστε ο χρήστης να κατεβάζει μόνο ό,τι χρειάζεται. Το Play απαιτεί AAB για νέα apps. Το APK μένει χρήσιμο για sideload/άλλα stores."
+/>
+
+<Exercise
+  question="Τι γίνεται αν χάσεις το app signing keystore;"
+  options={[
+    "Τίποτα — το ξαναφτιάχνεις.",
+    "Χωρίς Play App Signing, δεν μπορείς πια να ανεβάσεις updates στο ίδιο app (η υπογραφή δεν θα ταιριάζει) — γι' αυτό κρατάς backup και χρησιμοποιείς Play App Signing (η Google διαχειρίζεται το app signing key).",
+    "Το Play σου στέλνει νέο αυτόματα.",
+    "Απλώς αλλάζεις το versionCode."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το Android εγκαθιστά update μόνο αν η υπογραφή ταιριάζει με την εγκατεστημένη έκδοση. Χαμένο keystore = αδύνατα updates → νέο app, χαμένοι χρήστες/reviews. Το Play App Signing μετριάζει τον κίνδυνο: ανεβάζεις με upload key, η Google κρατά το app signing key και βοηθά σε recovery. Backup του keystore είναι υποχρεωτικό."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «Walk me through shipping an Android app to production.»
+
+> Gradle is the build system — it compiles Kotlin, bundles resources, runs R8, and produces the artifact, configured in `build.gradle.kts`. I ship the `release` variant, not debug: it's minified, optimized, and signed with my real key. Versioning has two parts people mix up — `versionCode` is an integer the Play Store uses to tell which build is newer, so it must increase on every upload, while `versionName` is just the human-facing string. Every app is cryptographically signed, and Android refuses an update whose signature doesn't match, so the keystore is critical — lose it and you can't update the app ever, which is exactly why I use Play App Signing, where Google manages the real signing key and I upload with an upload key. R8 shrinks, obfuscates, and optimizes the release build; the classic gotcha is a crash that only happens in release because R8 renamed something reflection relies on, so I add keep rules and always test the release build before uploading. I upload an Android App Bundle, not an APK — the Play Store requires it for new apps and generates optimized per-device APKs so users download less. Finally I release through Play Console tracks — internal, closed, open, then production — with a staged rollout to a small percentage first while I watch crash rates, ready to halt before it reaches everyone.
+
+<Flashcards
+  title="Build & release — interview drills"
+  cards={[
+    {
+      question: "Τι κάνει το Gradle;",
+      answer: "Build system του Android: compile Kotlin, resources, dependencies (Maven), τρέχει R8, παράγει APK/AAB. Ρυθμίζεται σε build.gradle.kts."
+    },
+    {
+      question: "versionCode vs versionName;",
+      answer: "versionCode = ακέραιος που το Play χρησιμοποιεί για 'ποιο είναι νεότερο' — αυξάνει σε κάθε upload. versionName = string για τον χρήστη (π.χ. 1.4.0)."
+    },
+    {
+      question: "debug vs release build type;",
+      answer: "debug: debuggable, χωρίς shrinking, debug key. release: R8 minify/optimize, signed με πραγματικό key. Στο store πάει ΜΟΝΟ release."
+    },
+    {
+      question: "Γιατί κρίσιμο το keystore / τι κάνει το Play App Signing;",
+      answer: "Η υπογραφή αποδεικνύει ίδιο developer· χαμένο keystore = αδύνατα updates ποτέ. Play App Signing: upload key εσύ, app signing key η Google (+ recovery). Πάντα backup."
+    },
+    {
+      question: "Τι κάνει το R8 και ποιος ο κίνδυνος;",
+      answer: "Shrinking (tree-shake), obfuscation (rename), optimization. Κίνδυνος: σπάει reflection-based κώδικα (JSON parsing) → release-only crash. Λύση: keep rules· test το release build."
+    },
+    {
+      question: "APK vs AAB;",
+      answer: "APK: ένα package για όλες τις συσκευές (μεγάλο). AAB: ανεβάζεις ένα bundle, Google παράγει per-device APKs (Dynamic Delivery) → μικρότερο download. Απαιτείται για νέα apps."
+    },
+    {
+      question: "Play Console release flow;",
+      answer: "Tracks: internal→closed→open→production. Staged rollout: κυκλοφορία σε % χρηστών, monitor crashes, αύξηση ή halt. + Play review, store listing, data safety."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Ετοίμασε ένα production release"
+  scenario="Πάρε το app σου και σχεδίασε το πλήρες μονοπάτι από κώδικα σε staged rollout στο Play Store."
+  outcomes={[
+    "Να ρυθμίζεις release variant (signing, R8, versioning).",
+    "Να παράγεις signed AAB και να ξέρεις τι κάνει.",
+    "Να σχεδιάζεις safe rollout (tracks + staged)."
+  ]}
+  steps={[
+    "Όρισε versionCode/versionName και applicationId στο build.gradle.kts.",
+    "Ρύθμισε το release build type: isMinifyEnabled=true + proguard rules + signingConfig.",
+    "Στήσε Play App Signing (upload key) και keep-rule όπου χρειάζεται reflection.",
+    "Παρήγαγε signed AAB και δοκίμασε το RELEASE build σε συσκευή (όχι μόνο debug).",
+    "Σχεδίασε rollout: internal→closed→production με staged % και crash monitoring."
+  ]}
+  checkpoints={[
+    "Το versionCode αυξάνει σε κάθε upload· δεν το μπερδεύεις με versionName.",
+    "Ανεβάζεις AAB, όχι APK· release variant, όχι debug.",
+    "Δοκίμασες το release (R8) build — καμία release-only έκπληξη.",
+    "Το keystore/upload key έχει backup· υπάρχει staged rollout plan."
+  ]}
+  mistakes={[
+    "Να ανεβάζεις debug build ή APK αντί release AAB.",
+    "Να ξεχνάς να αυξήσεις το versionCode → απόρριψη.",
+    "Να μη δοκιμάζεις το release build → R8/keep-rule crash στους χρήστες.",
+    "Να χάσεις το keystore χωρίς Play App Signing/backup → αδύνατα updates."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν ρυθμίζεις release variant με signing/R8/versioning, παράγεις & δοκιμάζεις signed AAB, και κυκλοφορείς με staged rollout αντί για big-bang σε όλους."
+/>
