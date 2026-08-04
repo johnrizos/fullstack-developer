@@ -18,6 +18,23 @@ createUser("Ada", 30, "admin", "vip", "beta");
 
 Δύο κανόνες: τα **optional** (`?`) και τα **default** params μπαίνουν μετά τα required· ένα optional param έχει τύπο `T | undefined`, άρα ο compiler σε αναγκάζει να το χειριστείς.
 
+### Destructured parameters — το συντακτικό που μπερδεύει
+
+Όταν κάνεις destructuring στην παράμετρο, ο τύπος μπαίνει **στο σύνολο**, όχι σε κάθε πεδίο:
+
+```ts
+function createTask({ title, done = false }: { title: string; done?: boolean }) {}
+
+// Με named type — έτσι το γράφεις στην πράξη:
+interface CreateTaskInput { title: string; done?: boolean }
+function createTask2({ title, done = false }: CreateTaskInput) {}
+
+// Ολόκληρο object optional:
+function search({ q = "", page = 1 }: { q?: string; page?: number } = {}) {}
+```
+
+Παγίδα αρχαρίων: το `{ title: string }` **μέσα** στο destructuring pattern δεν είναι τύπος — είναι μετονομασία (`title` → μεταβλητή `string`). Ο τύπος πάει πάντα μετά τα `}` με `:`.
+
 ## Return types: άσε το inference, εκτός από τα όρια
 
 Ο compiler συμπεραίνει το return type. Καλό για τοπικές functions· για **exported / public** functions βάλε explicit return type — λειτουργεί ως συμβόλαιο και πιάνει λάθη μέσα στη function:
@@ -45,6 +62,32 @@ function apply(fn: (n: number) => number, x: number) {
   return fn(x);
 }
 ```
+
+Πρόσεξε το `(s) => ...`: **δεν** χρειάστηκε annotation. Αυτό λέγεται **contextual typing** — όταν ο compiler ξέρει τι τύπο περιμένει σε αυτή τη θέση, δίνει τύπους στις παραμέτρους μόνος του. Είναι ο λόγος που δεν τυπώνεις ποτέ τα callbacks των array methods:
+
+```ts
+const nums = [1, 2, 3];
+nums.map((n) => n * 2);          // το n είναι number αυτόματα — μην γράψεις (n: number)
+tasks.filter((t) => t.done);     // το t είναι Task
+
+// Χάνεται όταν βγάλεις τη function από το context:
+const double = (n) => n * 2;     // ❌ Parameter 'n' implicitly has an 'any' type
+const double2 = (n: number) => n * 2;                    // ✅ annotation
+const double3: (n: number) => number = (n) => n * 2;     // ✅ ή τύπος στη μεταβλητή
+```
+
+### Τυπώνοντας το `this`
+
+Σε μια κανονική `function` το `this` εξαρτάται από το πώς καλείται. Αν το χρειάζεσαι typed, το δηλώνεις ως **πρώτη ψευδο-παράμετρο** (εξαφανίζεται στο compile — δεν είναι πραγματικό argument):
+
+```ts
+function handleClick(this: HTMLButtonElement, event: MouseEvent) {
+  this.disabled = true;   // ✅ typed
+}
+button.addEventListener("click", handleClick);
+```
+
+Στις arrow functions δεν υπάρχει δικό τους `this` (κληρονομείται λεξικά), γι' αυτό και δεν δέχονται `this` παράμετρο — και γι' αυτό είναι η ασφαλής επιλογή για callbacks.
 
 ## Overloads — διαφορετικά signatures για ίδια function
 
@@ -83,6 +126,68 @@ type User = Awaited<ReturnType<typeof getUser>>; // User (όχι Promise<User>)
 ```
 
 > Συχνό λάθος: να ξεχνάς ότι το return type μιας `async` function είναι `Promise<T>`, όχι `T`. Αν γράψεις `: User` σε async function, ο compiler διαμαρτύρεται — βάλε `: Promise<User>`.
+
+### Η μεγάλη τρύπα: το `res.json()` είναι `any`
+
+Ο τύπος του `Response.json()` στα built-in lib types είναι `Promise<any>`. Δηλαδή **κάθε fetch είναι μια πόρτα από την οποία μπαίνει `any` στο codebase σου** — χωρίς κανένα error, χωρίς κανένα warning:
+
+```ts
+const res = await fetch("/api/user");
+const user = await res.json();   // τύπος: any 😱
+user.whatever.nonsense;          // περνά καθαρά — σκάει στη runtime
+```
+
+Το `as Promise<User>` παραπάνω κλείνει την τρύπα **μόνο για τον compiler** — δεν ελέγχει τίποτα. Η σωστή λύση είναι `unknown` + runtime validation στο σύνορο (μάθημα *Type Safety & tsconfig*). Κράτα το εδώ ως τη Νο1 πηγή «κρυφού any» σε fullstack κώδικα.
+
+### Παράλληλα Promises
+
+```ts
+const [user, tasks] = await Promise.all([getUser("1"), getTasks()]);
+// user: User, tasks: Task[] — το tuple διατηρεί τον τύπο κάθε θέσης
+
+const results = await Promise.allSettled([getUser("1"), getTasks()]);
+if (results[0].status === "fulfilled") {
+  results[0].value;   // discriminated union: value μόνο εδώ, reason στο "rejected"
+}
+```
+
+Το `Promise.all` κρατά τη σχέση θέση→τύπος (είναι tuple, όχι array) — γι' αυτό το destructuring βγαίνει σωστά typed. Το `Promise.allSettled` επιστρέφει discriminated union, άρα ο compiler σε αναγκάζει να ελέγξεις το `status` πριν αγγίξεις το `value`.
+
+### Τυπώνοντας τα errors — το `catch` δίνει `unknown`
+
+Με `strict` (συγκεκριμένα `useUnknownInCatchVariables`), η μεταβλητή του `catch` είναι **`unknown`** — γιατί στη JavaScript μπορείς να κάνεις `throw` οτιδήποτε, όχι μόνο `Error`:
+
+```ts
+try {
+  await getUser("1");
+} catch (err) {
+  err.message;                       // ❌ το unknown δεν επιτρέπει πρόσβαση
+  if (err instanceof Error) {
+    console.error(err.message);      // ✅ narrowed
+  } else {
+    console.error("Unknown error:", err);
+  }
+}
+```
+
+Εναλλακτική για functions που μπορεί να αποτύχουν «κανονικά» (validation, εξωτερικά APIs): αντί για `throw`, επίστρεψε **result type** — discriminated union που κάνει το σφάλμα μέρος του συμβολαίου:
+
+```ts
+type Result<T, E = string> =
+  | { ok: true; value: T }
+  | { ok: false; error: E };
+
+async function getUser(id: string): Promise<Result<User>> {
+  const res = await fetch(`/api/users/${id}`);
+  if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+  return { ok: true, value: (await res.json()) as User };
+}
+
+const result = await getUser("1");
+if (result.ok) result.value.name;    // ✅ ο compiler σε υποχρεώνει να ελέγξεις
+```
+
+> Μια `Promise<T>` δεν κουβαλά **καμία** πληροφορία για το τι μπορεί να πεταχτεί — τα σφάλματα είναι αόρατα στο type system. Το result type είναι ο τρόπος να τα κάνεις ορατά.
 
 <PredictOutput
   title="Async return type"
@@ -137,6 +242,26 @@ const result = load();
     {
       question: "Πότε function overloads;",
       answer: "Όταν η function έχει διαφορετικό output ανά input type και η σχέση δεν εκφράζεται με union/generic. Δηλώνεις πολλαπλά signatures πάνω από μία implementation. Συχνά ένα generic είναι απλούστερο."
+    },
+    {
+      question: "Τι είναι contextual typing;",
+      answer: "Όταν ο compiler ξέρει τι τύπο περιμένει σε μια θέση, τυπώνει μόνος του τις παραμέτρους: nums.map((n) => n * 2) — το n είναι number χωρίς annotation. Χάνεται αν βγάλεις τη function από το context (const f = (n) => ... → implicit any)."
+    },
+    {
+      question: "Τι τύπο επιστρέφει το res.json();",
+      answer: "Promise<any> — στα built-in lib types. Είναι η Νο1 πηγή κρυφού any σε fullstack κώδικα: κάθε fetch περνά ανεξέλεγκτα δεδομένα. Σωστή λύση: unknown + runtime validation (Zod) στο σύνορο, όχι as MyType."
+    },
+    {
+      question: "Τι τύπο έχει το err στο catch;",
+      answer: "unknown (με strict / useUnknownInCatchVariables), γιατί στη JS μπορείς να κάνεις throw οτιδήποτε — όχι μόνο Error. Πρέπει να κάνεις narrowing: if (err instanceof Error) πριν αγγίξεις το .message."
+    },
+    {
+      question: "Πώς κάνεις τα σφάλματα ορατά στο type system;",
+      answer: "Μια Promise<T> δεν λέει τίποτα για το τι μπορεί να πεταχτεί. Λύση: result type ως discriminated union — { ok: true; value: T } | { ok: false; error: E }. Ο compiler υποχρεώνει τον caller να ελέγξει το ok πριν διαβάσει το value."
+    },
+    {
+      question: "Τι διατηρεί το Promise.all στους τύπους;",
+      answer: "Επιστρέφει TUPLE, όχι array — άρα κρατά τη σχέση θέση→τύπος και το destructuring βγαίνει σωστά typed. Το Promise.allSettled δίνει discriminated union σε status: 'fulfilled' (value) | 'rejected' (reason)."
     }
   ]}
 />

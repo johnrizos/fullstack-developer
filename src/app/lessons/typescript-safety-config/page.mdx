@@ -38,6 +38,25 @@ const el = document.getElementById("email")!; // αφαιρεί το | null
 
 Και τα δύο είναι «υποσχέσεις» χωρίς runtime έλεγχο. Δικαιολογούνται όταν **ξέρεις κάτι που ο compiler δεν μπορεί να συμπεράνει**· είναι αντι-pattern για δεδομένα που δεν ελέγχεις.
 
+Δύο πράγματα που πρέπει να ξέρεις για το `as`:
+
+```ts
+const n = "5" as number;                  // ❌ ο compiler ΑΡΝΕΙΤΑΙ άσχετους τύπους
+const n2 = "5" as unknown as number;      // 😬 double assertion — παρακάμπτει τα πάντα
+```
+
+Το `as` επιτρέπει μόνο μετακίνηση «προς τα πάνω ή προς τα κάτω» στην ίδια ιεραρχία τύπων — γι' αυτό ο κόσμος καταφεύγει στο `as unknown as X`. **Αν το γράφεις, σταμάτα**: είναι σήμα ότι το μοντέλο των τύπων είναι λάθος ή ότι χρειάζεσαι validation. Και σε καμία περίπτωση το `as` **δεν μετατρέπει** δεδομένα — για μετατροπή θέλεις `Number("5")`.
+
+Εναλλακτικές του `!` που κάνουν πραγματικό έλεγχο:
+
+```ts
+const el = document.getElementById("email");
+if (!el) throw new Error("#email not found");   // ✅ ρητό, με μήνυμα
+el.focus();
+
+const name = user.profile?.name ?? "anonymous";  // ✅ optional chaining + default
+```
+
 ## Runtime validation — γιατί τα types δεν αρκούν
 
 Επειδή τα types εξαφανίζονται στη runtime (foundations μάθημα), ένα `as User` σε δεδομένα fetch δεν εγγυάται τίποτα. Το σωστό production pattern: `unknown` + **runtime validation** με schema validator (π.χ. Zod). Bonus: το schema παράγει και τον TypeScript τύπο:
@@ -68,13 +87,55 @@ const user = UserSchema.parse(await res.json()); // ✅ ελέγχει στη ru
 }
 ```
 
-Το `"strict": true` ενεργοποιεί μια ομάδα ελέγχων — οι σημαντικότεροι:
+> Τα υπόλοιπα πεδία του `tsconfig` (`target`, `lib`, `module`, `paths`, `skipLibCheck`…) εξηγούνται ένα-ένα στο μάθημα *Setup, Compiler & Καθημερινό Workflow*. Εδώ μας απασχολεί μόνο η **ασφάλεια**.
 
-- **`strictNullChecks`** — το `null`/`undefined` δεν είναι πια «μέλος κάθε τύπου». Σε αναγκάζει να χειριστείς ρητά τις null περιπτώσεις (ο Νο1 λόγος που το strict πιάνει bugs).
-- **`noImplicitAny`** — απαγορεύει το σιωπηλό `any` (π.χ. param χωρίς τύπο). Σε αναγκάζει να τυπώσεις.
-- συν `strictFunctionTypes`, `strictBindCallApply`, `strictPropertyInitialization` κ.ά.
+Το `"strict": true` δεν είναι ένας έλεγχος — είναι **διακόπτης για μια ολόκληρη οικογένεια**:
 
-> Κανόνας: **`strict: true` πάντα** σε νέο project. Χωρίς strict (ειδικά χωρίς `strictNullChecks`), χάνεις το μεγαλύτερο μέρος της αξίας του TypeScript — γι' αυτό είναι συχνή ερώτηση «τι κάνει το strict mode;».
+| Flag | Τι κάνει |
+|---|---|
+| `strictNullChecks` | Το `null`/`undefined` παύει να είναι μέλος κάθε τύπου — τα χειρίζεσαι ρητά. **Ο Νο1 λόγος που το strict πιάνει bugs.** |
+| `noImplicitAny` | Απαγορεύει το σιωπηλό `any` (π.χ. παράμετρος χωρίς τύπο). Σε αναγκάζει να τυπώσεις. |
+| `strictFunctionTypes` | Αυστηρός έλεγχος συμβατότητας στις παραμέτρους function types. |
+| `strictPropertyInitialization` | Κάθε property class πρέπει να αρχικοποιείται (δήλωση ή constructor). |
+| `strictBindCallApply` | Τυπώνει σωστά τα `bind`/`call`/`apply`. |
+| `useUnknownInCatchVariables` | Η μεταβλητή του `catch` γίνεται `unknown` αντί για `any`. |
+| `alwaysStrict` | Προσθέτει `"use strict"` στο παραγόμενο JS. |
+
+Κανόνας: **`strict: true` πάντα** σε νέο project. Χωρίς strict (ειδικά χωρίς `strictNullChecks`), χάνεις το μεγαλύτερο μέρος της αξίας του TypeScript — γι' αυτό είναι συχνή ερώτηση «τι κάνει το strict mode;».
+
+### Πέρα από το strict — τα flags που δεν είναι μέσα
+
+Το `strict: true` **δεν** τα ενεργοποιεί· τα προσθέτεις ξεχωριστά:
+
+```json
+{
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  }
+}
+```
+
+Το σημαντικότερο είναι το **`noUncheckedIndexedAccess`**, γιατί κλείνει μια τρύπα που εκπλήσσει σχεδόν όλους:
+
+```ts
+const names: string[] = [];
+const first = names[0];        // ο τύπος λέει string...
+first.toUpperCase();           // 💥 runtime: undefined — ο πίνακας είναι άδειος!
+
+// Με noUncheckedIndexedAccess:
+const first2 = names[0];       // τύπος: string | undefined ✅
+first2?.toUpperCase();
+```
+
+Το ίδιο ισχύει για κάθε index signature / `Record<string, T>`: **ο compiler υποθέτει ότι το κλειδί υπάρχει**, χωρίς καμία εγγύηση. Το flag προσθέτει `| undefined` και σε αναγκάζει να ελέγξεις. Είναι λίγο ενοχλητικό στην αρχή — και πιάνει πραγματικά production bugs.
+
+Τα υπόλοιπα με δύο λόγια: `exactOptionalPropertyTypes` (το `x?: string` δεν δέχεται ρητό `undefined`), `noImplicitOverride` (θέλει `override` keyword όταν πατάς μέθοδο υποκλάσης), `noFallthroughCasesInSwitch` (ξεχασμένο `break`), `noUnusedLocals`/`noUnusedParameters` (νεκρός κώδικας — συχνά τα αφήνει κανείς στον linter).
 
 <PredictOutput
   title="strictNullChecks"
@@ -131,7 +192,19 @@ function getLength(s: string | null) {
     },
     {
       question: "Τι κάνει το strict mode (tsconfig);",
-      answer: "Ενεργοποιεί ομάδα αυστηρών ελέγχων. Σημαντικότεροι: strictNullChecks (το null δεν ανήκει σε κάθε τύπο — χειρίζεσαι ρητά null) και noImplicitAny (όχι σιωπηλό any). strict: true πάντα σε νέο project."
+      answer: "Ενεργοποιεί ομάδα αυστηρών ελέγχων. Σημαντικότεροι: strictNullChecks (το null δεν ανήκει σε κάθε τύπο — χειρίζεσαι ρητά null) και noImplicitAny (όχι σιωπηλό any). Συν strictFunctionTypes, strictPropertyInitialization, strictBindCallApply, useUnknownInCatchVariables. strict: true πάντα σε νέο project."
+    },
+    {
+      question: "Τι κάνει το noUncheckedIndexedAccess και γιατί το θες;",
+      answer: "Προσθέτει | undefined σε κάθε index access: arr[0] γίνεται T | undefined, το ίδιο και Record/index signatures. Κλείνει την τρύπα όπου ο compiler υπόσχεται τιμή για κλειδί/θέση που μπορεί να μην υπάρχει. ΔΕΝ περιλαμβάνεται στο strict."
+    },
+    {
+      question: "Τι σημαίνει το as unknown as X;",
+      answer: "Double assertion: το as αρνείται να συνδέσει άσχετους τύπους, οπότε περνάς από unknown για να το παρακάμψεις. Είναι κόκκινη σημαία — σημαίνει λάθος μοντέλο τύπων ή έλλειψη validation. Και θυμήσου: το as ΔΕΝ μετατρέπει δεδομένα (για μετατροπή: Number('5'))."
+    },
+    {
+      question: "Τι βάζεις αντί για non-null !;",
+      answer: "Ρητό έλεγχο με μήνυμα (if (!el) throw new Error(...)), optional chaining με default (a?.b ?? fallback), ή assertion function (asserts x is NonNullable<T>). Και τα τρία κάνουν πραγματικό runtime έλεγχο — το ! δεν κάνει κανέναν."
     }
   ]}
 />

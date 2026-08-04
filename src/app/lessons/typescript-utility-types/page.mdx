@@ -26,6 +26,37 @@ type Args = Parameters<typeof createTask>;        // [TaskDraft]
 
 Τα πιο συχνά στις συνεντεύξεις: `Partial`, `Pick`, `Omit`, `Record`, `Readonly`, `Required`, `ReturnType`, `Parameters`, `Awaited`. Το πραγματικό μάθημα: ορίζεις το `Task` **μία φορά** και παράγεις τα υπόλοιπα — αν αλλάξει το `Task`, ενημερώνονται αυτόματα.
 
+### Η δεύτερη ομάδα: δουλεύουν πάνω σε **unions**
+
+Τα παραπάνω δουλεύουν σε object types. Αυτά εδώ φιλτράρουν **unions** — και είναι εξίσου καθημερινά:
+
+```ts
+type Status = "todo" | "doing" | "done" | "archived";
+
+type Active = Exclude<Status, "archived">;          // "todo" | "doing" | "done"
+type Finished = Extract<Status, "done" | "archived">; // "done" | "archived"
+
+type MaybeUser = User | null | undefined;
+type SureUser = NonNullable<MaybeUser>;             // User
+
+// Λιγότερο συχνά, αλλά καλό να τα αναγνωρίζεις:
+type Inst = InstanceType<typeof Store>;             // ο τύπος ενός instance
+type CtorArgs = ConstructorParameters<typeof Store>;
+```
+
+Θυμήσου τη διαφορά με τα `Pick`/`Omit`: **`Pick`/`Omit` διαλέγουν κλειδιά ενός object type· `Extract`/`Exclude` διαλέγουν μέλη ενός union.** Είναι από τα πιο συχνά μπερδέματα.
+
+### Οι τέσσερις string utilities
+
+```ts
+type Upper = Uppercase<"todo">;        // "TODO"
+type Lower = Lowercase<"TODO">;        // "todo"
+type Cap = Capitalize<"todo">;         // "Todo"
+type Uncap = Uncapitalize<"Todo">;     // "todo"
+```
+
+Φαίνονται παιχνίδι — μέχρι να τα συνδυάσεις με template literal types (παρακάτω).
+
 ## Mapped types — πώς χτίζονται τα utility types
 
 Ένα mapped type «περπατά» πάνω στα κλειδιά ενός τύπου και φτιάχνει νέο. Έτσι ορίζεται, π.χ., το `Partial`:
@@ -36,6 +67,49 @@ type MyReadonly<T> = { readonly [K in keyof T]: T[K] };
 ```
 
 Το `[K in keyof T]` είναι το «for κάθε κλειδί K του T». Μπορείς να προσθέσεις/αφαιρέσεις modifiers (`?`, `readonly`) και να μετασχηματίσεις τον τύπο `T[K]`. Αυτό ακριβώς (keyof + indexed access από το προηγούμενο μάθημα) στηρίζει όλα τα built-in.
+
+Το πρόθεμα `-` **αφαιρεί** modifier — έτσι ορίζονται τα `Required` και το «mutable»:
+
+```ts
+type MyRequired<T> = { [K in keyof T]-?: T[K] };          // αφαιρεί το ?
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };     // αφαιρεί το readonly
+```
+
+Και με **key remapping** (`as`) μπορείς να *μετονομάσεις* ή να **φιλτράρεις** κλειδιά:
+
+```ts
+type Getters<T> = {
+  [K in keyof T as `get${Capitalize<string & K>}`]: () => T[K];
+};
+
+type TaskGetters = Getters<{ id: string; done: boolean }>;
+// { getId: () => string; getDone: () => boolean }
+
+// Φιλτράρισμα: αν το νέο κλειδί είναι never, το property πέφτει έξω
+type OnlyStrings<T> = {
+  [K in keyof T as T[K] extends string ? K : never]: T[K];
+};
+```
+
+### Template literal types
+
+Ένας τύπος που χτίζεται σαν template string — σου δίνει τυποασφάλεια σε **strings με μοτίβο**:
+
+```ts
+type Route = `/${string}`;                    // κάθε string που ξεκινά με /
+const ok: Route = "/tasks";                   // ✅
+const bad: Route = "tasks";                   // ❌
+
+type Method = "get" | "post";
+type Endpoint = "users" | "tasks";
+type Handler = `${Method}:${Endpoint}`;
+// "get:users" | "get:tasks" | "post:users" | "post:tasks" — το union πολλαπλασιάζεται
+
+type EventName<T extends string> = `on${Capitalize<T>}`;
+type Click = EventName<"click">;              // "onClick"
+```
+
+Έτσι τυπώνονται API routes, CSS custom properties, event names και i18n κλειδιά — χωρίς να τα απαριθμείς με το χέρι.
 
 ## Conditional types & `infer`
 
@@ -55,6 +129,15 @@ type R = MyAwaited<Promise<string>>; // string
 
 type MyReturnType<F> = F extends (...args: any[]) => infer R ? R : never;
 ```
+
+Μια συμπεριφορά που εκπλήσσει: όταν ο ελεγχόμενος τύπος είναι **union**, το conditional type εφαρμόζεται σε **κάθε μέλος ξεχωριστά** και τα αποτελέσματα ξαναενώνονται (**distributive conditional types**):
+
+```ts
+type ToArray<T> = T extends unknown ? T[] : never;
+type A = ToArray<string | number>;   // string[] | number[] — ΟΧΙ (string | number)[]
+```
+
+Αυτό ακριβώς κάνει το `Exclude<T, U>` να δουλεύει: ορίζεται ως `T extends U ? never : T`, και επειδή «διανέμεται», πετάει έξω ένα-ένα τα μέλη που ταιριάζουν.
 
 > Mapped & conditional types είναι «προχωρημένα» — δεν θα τα γράφεις κάθε μέρα. Αλλά το να **καταλαβαίνεις** πώς χτίζονται τα utility types ξεχωρίζει στις συνεντεύξεις και σε ξεμπλοκάρει όταν διαβάζεις types βιβλιοθηκών.
 
@@ -133,6 +216,22 @@ const c = colors.primary;
     {
       question: "Omit vs Pick vs Partial;",
       answer: "Omit<T,K>: όλα εκτός K. Pick<T,K>: μόνο K. Partial<T>: όλα optional. Παράγεις παράγωγα types αντί να αντιγράφεις — αλλάζει το source, ενημερώνονται αυτόματα."
+    },
+    {
+      question: "Pick/Omit vs Extract/Exclude;",
+      answer: "Pick/Omit δουλεύουν σε ΚΛΕΙΔΙΑ ενός object type. Extract/Exclude δουλεύουν σε ΜΕΛΗ ενός union: Exclude<Status, 'archived'> πετάει μέλη, Extract κρατά όσα ταιριάζουν. Συν NonNullable<T> που βγάζει null | undefined."
+    },
+    {
+      question: "Τι είναι template literal type;",
+      answer: "Τύπος χτισμένος σαν template string: type Route = `/${string}`. Με unions πολλαπλασιάζεται: `${Method}:${Endpoint}` δίνει όλους τους συνδυασμούς. Μαζί με Capitalize/Uppercase τυπώνει event names, routes, i18n κλειδιά χωρίς χειροκίνητη απαρίθμηση."
+    },
+    {
+      question: "Τι είναι key remapping σε mapped type;",
+      answer: "[K in keyof T as NewKey] — μετονομάζει κλειδιά (π.χ. `get${Capitalize<K>}` για getters) ή τα ΦΙΛΤΡΑΡΕΙ: αν το νέο κλειδί βγει never, το property πέφτει έξω. Επίσης: -? και -readonly αφαιρούν modifiers."
+    },
+    {
+      question: "Τι είναι distributive conditional type;",
+      answer: "Όταν ο ελεγχόμενος τύπος είναι union, το conditional εφαρμόζεται σε ΚΑΘΕ μέλος χωριστά και τα αποτελέσματα ξαναενώνονται: ToArray<string|number> = string[] | number[]. Έτσι δουλεύει το Exclude = T extends U ? never : T."
     }
   ]}
 />

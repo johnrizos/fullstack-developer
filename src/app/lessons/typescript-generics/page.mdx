@@ -39,6 +39,66 @@ getById([1, 2, 3], "1");  // ❌ τα numbers δεν έχουν id
 
 Το `T extends { id: string }` σημαίνει «οποιοσδήποτε τύπος που **έχει τουλάχιστον** `id: string`».
 
+## Πολλαπλές παράμετροι, defaults & ρητά type arguments
+
+```ts
+// Πολλαπλές — και η μία μπορεί να περιορίζεται από την άλλη:
+function pick<T, K extends keyof T>(obj: T, keys: K[]): Pick<T, K> { /* ... */ }
+
+// Default type parameter — αν δεν δοθεί, χρησιμοποιείται το προεπιλεγμένο:
+interface ApiResponse<T = unknown> {
+  data: T;
+  error?: string;
+}
+const r: ApiResponse = { data: 42 };  // T = unknown
+
+// Convention ονομάτων: T (type), K (key), V (value), E (element/error), R (return).
+// Σε πραγματικό κώδικα προτίμησε περιγραφικά ονόματα όταν βοηθούν: <TItem, TKey>.
+```
+
+Συνήθως το `T` **συμπεραίνεται** από τα arguments. Όταν δεν υπάρχει τίποτα να συμπεράνει (ή το inference βγάζει κάτι πολύ πλατύ), το δίνεις ρητά:
+
+```ts
+const empty = first([]);              // T = never — δεν υπάρχει στοιχείο να κοιτάξει
+const empty2 = first<Task>([]);       // ✅ ρητό type argument
+
+const set = new Set<string>();        // αλλιώς: Set<unknown>
+const res = await fetchJson<User>("/api/user");
+```
+
+Κανόνας: **δίνεις type argument μόνο όταν το inference αποτυγχάνει**. Αν το γράφεις παντού, μάλλον η υπογραφή έχει πρόβλημα.
+
+## Generics σε types, interfaces & classes
+
+Δεν είναι μόνο για functions — οποιαδήποτε δήλωση τύπου δέχεται παραμέτρους:
+
+```ts
+type Nullable<T> = T | null;
+type Pair<A, B> = { first: A; second: B };
+
+interface Repository<T> {
+  findById(id: string): Promise<T | null>;
+}
+
+class Store<T> {
+  private items: T[] = [];
+  add(item: T) { this.items.push(item); }
+}
+```
+
+## Πότε ΔΕΝ χρειάζεσαι generic
+
+Ο χρυσός κανόνας (και ωραία απάντηση σε συνέντευξη): **μια type parameter αξίζει μόνο αν εμφανίζεται τουλάχιστον δύο φορές** — αλλιώς δεν *συνδέει* τίποτα και είναι απλώς ένα `any` με καπέλο:
+
+```ts
+function log<T>(value: T): void {}          // ❌ το T εμφανίζεται μία φορά
+function log2(value: unknown): void {}      // ✅ αυτό εννοούσες
+
+function first<T>(items: T[]): T | undefined {}  // ✅ το T συνδέει input με output
+```
+
+Δεύτερος κανόνας: μη γράφεις generic «για την περίπτωση που». Γράψε τη συγκεκριμένη version, και κάν' την generic όταν εμφανιστεί η **δεύτερη** χρήση.
+
 ## `keyof` — τα κλειδιά ενός τύπου ως union
 
 Το `keyof` παίρνει ένα object type και δίνει union από τα **κλειδιά** του:
@@ -145,6 +205,18 @@ const x = getProp(u, "active");
     {
       question: "typeof (type operator) vs runtime typeof;",
       answer: "Στο type-level, typeof value δίνει τον ΤΥΠΟ μιας υπάρχουσας τιμής: type C = typeof config. Συχνά με keyof: keyof typeof config. Διαφορετικό από το runtime typeof που δίνει string ('number' κ.λπ.)."
+    },
+    {
+      question: "Πότε ΔΕΝ πρέπει να βάλεις generic;",
+      answer: "Χρυσός κανόνας: αν η type parameter εμφανίζεται ΜΙΑ φορά στην υπογραφή, δεν συνδέει τίποτα — είναι any με καπέλο. function log<T>(v: T): void → γράψε log(v: unknown). Το T αξίζει όταν συνδέει input με output."
+    },
+    {
+      question: "Πότε δίνεις ρητά type argument;",
+      answer: "Μόνο όταν το inference αποτυγχάνει ή βγάζει κάτι πολύ πλατύ: first<Task>([]) (κενός πίνακας → T = never), new Set<string>(), fetchJson<User>(url). Αν το γράφεις παντού, η υπογραφή έχει πρόβλημα."
+    },
+    {
+      question: "Τι είναι default type parameter;",
+      answer: "<T = unknown> — αν ο χρήστης δεν δώσει τύπο, χρησιμοποιείται το προεπιλεγμένο: interface ApiResponse<T = unknown>. Επιτρέπει ApiResponse χωρίς <>. Συχνό σε public API types βιβλιοθηκών."
     }
   ]}
 />

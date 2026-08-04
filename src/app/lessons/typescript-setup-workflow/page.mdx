@@ -1,0 +1,234 @@
+# Setup, Compiler & Καθημερινό Workflow
+
+Πριν γράψεις σοβαρό TypeScript, πρέπει να ξέρεις **πώς τρέχει**. Αυτό το μάθημα καλύπτει ό,τι συνήθως θεωρείται «δεδομένο» και σε αφήνει να ψάχνεις: πώς εγκαθιστάς και τρέχεις TS, τι ακριβώς κάνει ο `tsc`, τι σημαίνει κάθε πεδίο στο `tsconfig.json`, πώς **διαβάζεις** ένα error message, `import type`, και πώς σιωπάς έναν έλεγχο χωρίς να χαλάσεις την ασφάλεια.
+
+## Εγκατάσταση & πρώτο τρέξιμο
+
+Το TypeScript είναι ένα npm package — **dev dependency**, γιατί χρειάζεται μόνο κατά την ανάπτυξη:
+
+```bash
+npm i -D typescript          # ο compiler
+npx tsc --init               # δημιουργεί tsconfig.json με σχόλια
+npx tsc                      # compile: .ts -> .js (και type check)
+npx tsc --watch              # ξανατρέχει σε κάθε αλλαγή αρχείου
+npx tsc --noEmit             # ΜΟΝΟ type check, χωρίς να παράγει αρχεία
+```
+
+Το `npx` τρέχει το τοπικά εγκατεστημένο binary από το `node_modules/.bin` — γι' αυτό δεν χρειάζεται global install (και δεν το θέλεις: κάθε project θέλει τη δική του έκδοση TS).
+
+## Πώς «τρέχεις» ένα .ts αρχείο
+
+Το Node **δεν** καταλαβαίνει `.ts` όπως-όπως. Έχεις τρεις τυπικές διαδρομές:
+
+| Διαδρομή | Πώς | Πότε |
+|---|---|---|
+| Compile & run | `npx tsc && node dist/index.js` | Node backend, βιβλιοθήκες |
+| Direct run | `npx tsx src/index.ts` | scripts, γρήγορο dev |
+| Framework | Next.js / Vite το κάνουν μόνα τους | frontend apps |
+
+Το [`tsx`](https://www.npmjs.com/package/tsx) (και το παλαιότερο `ts-node`) τρέχουν το αρχείο χωρίς χωριστό build βήμα. Στις νεότερες εκδόσεις του Node υπάρχει και built-in type stripping, αλλά το `tsx` παραμένει η πιο ανώδυνη επιλογή σε projects.
+
+## Η πιο σημαντική διάκριση: type checking ≠ build
+
+Ο `tsc` κάνει **δύο** πράγματα: ελέγχει τύπους **και** παράγει JavaScript. Τα μοντέρνα εργαλεία (Next.js, Vite, esbuild, swc) όμως κάνουν μόνο το δεύτερο — **πετάνε** τους τύπους χωρίς να τους ελέγξουν, γιατί είναι δραματικά ταχύτερο.
+
+> Πρακτική συνέπεια που σε τσιμπάει: το `npm run dev` μπορεί να δουλεύει μια χαρά ενώ ο κώδικας έχει type errors. Γι' αυτό κάθε σοβαρό project έχει ξεχωριστό script:
+>
+> ```json
+> { "scripts": { "typecheck": "tsc --noEmit" } }
+> ```
+>
+> …και το τρέχει στο CI. Ο editor σου δείχνει τα ίδια errors ζωντανά (τρέχει τον **tsserver**), αλλά ο editor βλέπει μόνο τα ανοιχτά αρχεία — το `tsc --noEmit` βλέπει ολόκληρο το project.
+
+## tsconfig.json — τι σημαίνει κάθε πεδίο
+
+Το `tsconfig.json` ορίζει **ποια αρχεία** ελέγχονται και **με ποιους κανόνες**. Δεν χρειάζεται να τα ξέρεις όλα (είναι 100+), αλλά αυτά τα συναντάς παντού:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "preserve",
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["src"],
+  "exclude": ["node_modules"]
+}
+```
+
+- **`target`** — σε ποια έκδοση JavaScript μεταγλωττίζεται (π.χ. `ES2022`). Χαμηλό target = περισσότερο downleveling (το `async/await` γίνεται generators κ.λπ.). Για Node ή μοντέρνους browsers, `ES2022` είναι ασφαλές.
+- **`lib`** — ποια **built-in APIs** ξέρει ο compiler. Χωρίς `"DOM"` δεν υπάρχει `document`/`window`. Ένα καθαρό Node project δεν βάζει DOM.
+- **`module`** / **`moduleResolution`** — τι σύστημα modules παράγεται (`ESNext` = `import`/`export`, `CommonJS` = `require`) και πώς βρίσκονται τα imports. Σε Next.js/Vite: `"ESNext"` + `"bundler"`. Σε καθαρό Node: `"NodeNext"` και για τα δύο.
+- **`jsx`** — πώς χειρίζεται JSX. `"preserve"` σημαίνει «άσ' το, θα το κάνει το framework».
+- **`strict`** — η ομάδα αυστηρών ελέγχων (αναλυτικά στο μάθημα *Type Safety & tsconfig*). **Πάντα `true`.**
+- **`noEmit`** — «μην παράγεις αρχεία, μόνο έλεγξε». Το βάζεις όταν το build το κάνει ο bundler.
+- **`outDir` / `rootDir`** — πού πάει το παραγόμενο JS και πού είναι οι πηγές (όταν *δεν* έχεις `noEmit`).
+- **`esModuleInterop`** — επιτρέπει `import express from "express"` για CommonJS packages, αντί για `import * as express`. Θέλεις `true`.
+- **`skipLibCheck`** — παραλείπει τον έλεγχο μέσα στα `.d.ts` των dependencies. Κάνει το build πολύ ταχύτερο και σε γλιτώνει από errors σε κώδικα που δεν ελέγχεις. Σχεδόν πάντα `true`.
+- **`baseUrl` / `paths`** — path aliases: `@/lib/x` αντί για `../../../lib/x`. Προσοχή: ο **bundler** πρέπει να ξέρει τα ίδια aliases (στο Next.js τα διαβάζει αυτόματα).
+- **`include` / `exclude`** — ποια αρχεία μπαίνουν στο project. Το `exclude` **δεν** εξαιρεί αρχεία που κάποιο άλλο αρχείο κάνει import.
+- **`allowJs`** / **`checkJs`** — επιτρέπει `.js` αρχεία μέσα στο project, και (προαιρετικά) τα ελέγχει. Χρήσιμο σε σταδιακή μετάβαση JS → TS.
+- **`declaration`** — παράγει `.d.ts` για τη δική σου βιβλιοθήκη (μάθημα *Declaration Files*).
+
+## `import type` — γιατί υπάρχει
+
+Ένας τύπος δεν υπάρχει στη runtime. Όταν κάνεις import **μόνο** έναν τύπο, το `import type` το δηλώνει ρητά, ώστε το import να **σβήνεται** ολόκληρο στο compile:
+
+```ts
+import type { User } from "./models";     // εξαφανίζεται στο build
+import { formatUser } from "./format";    // μένει — είναι κώδικας
+
+import { type User, formatUser } from "./mixed"; // inline μορφή
+export type { User };
+```
+
+Γιατί έχει σημασία: αποφεύγεις να τραβήξεις κατά λάθος ένα ολόκληρο module στο bundle μόνο για έναν τύπο, και γλιτώνεις κυκλικά imports. Με τη ρύθμιση **`verbatimModuleSyntax: true`** ο compiler σε **υποχρεώνει** να το γράφεις — γι' αυτό το βλέπεις παντού σε νέα projects.
+
+## Πώς διαβάζεις ένα error message
+
+Τα TS errors φαίνονται τρομακτικά επειδή είναι **αναδρομικά**: σου λένε το γενικό πρόβλημα και μετά σκάβουν προς το ακριβές σημείο. Διάβασέ τα **από κάτω προς τα πάνω** — η τελευταία γραμμή είναι η αλήθεια:
+
+```text
+Type '{ id: number; title: string; }' is not assignable to type 'Task'.
+  Types of property 'id' are incompatible.
+    Type 'number' is not assignable to type 'string'.
+```
+
+Μετάφραση: «το `id` σου είναι `number`, το `Task` θέλει `string`». Τρία μοτίβα που θα δεις συνέχεια:
+
+| Μήνυμα | Τι σημαίνει |
+|---|---|
+| `Type 'X' is not assignable to type 'Y'` | Έδωσες X εκεί που περίμενε Y |
+| `Property 'x' does not exist on type 'Y'` | Ή typo, ή ο τύπος είναι πιο στενός απ' ό,τι νομίζεις (συχνά θέλει narrowing) |
+| `Object is possibly 'null' / 'undefined'` | Το `strictNullChecks` δουλεύει — χειρίσου το κενό |
+| `Parameter 'x' implicitly has an 'any' type` | Το `noImplicitAny` — βάλε τύπο στην παράμετρο |
+
+Κάθε error έχει και κωδικό (`TS2322`). Αν κολλήσεις, αυτός ο κωδικός + το μήνυμα είναι το καλύτερο search query.
+
+## Πώς σιωπάς έναν έλεγχο — σωστά
+
+Μερικές φορές ο compiler κάνει λάθος (ή περιμένεις fix από dependency). Υπάρχουν δύο σχόλια και **δεν** είναι ισοδύναμα:
+
+```ts
+// @ts-expect-error — περιμένουμε error εδώ· αν ΠΑΨΕΙ να υπάρχει, το σχόλιο γίνεται error
+const x: number = "still a string";
+
+// @ts-ignore — σβήνει το error σιωπηλά, για πάντα
+const y: number = "still a string";
+```
+
+Το **`@ts-expect-error` είναι πάντα η σωστή επιλογή**: αυτοκαθαρίζεται. Όταν διορθωθεί η αιτία, ο compiler σου λέει «αυτό το σχόλιο δεν χρειάζεται πια» — ενώ ένα `@ts-ignore` μένει και κρύβει πραγματικά bugs χρόνια μετά. Και τα δύο ισχύουν **μόνο για την επόμενη γραμμή**.
+
+<PredictOutput
+  title="Το dev server τρέχει — άρα ο κώδικας είναι σωστός;"
+  code={`// Next.js project, τρέχει npm run dev χωρίς παράπονο.
+// Στο src/lib/user.ts υπάρχει:
+
+function getName(user: { name: string }) {
+  return user.nmae;
+}
+
+// Τι συμβαίνει;`}
+  options={[
+    "Το dev server σκάει με compile error",
+    "Τρέχει κανονικά — ο bundler πετάει τους τύπους χωρίς να ελέγξει· το error το πιάνει ο editor / tsc --noEmit",
+    "Ο TypeScript διορθώνει αυτόματα το typo",
+    "Τυπώνεται undefined χωρίς κανένα error πουθενά"
+  ]}
+  correctOptionIndex={1}
+  answer="Τρέχει — το type checking είναι ξεχωριστό από το build"
+  explanation="Next.js/Vite/esbuild κάνουν type stripping, όχι type checking: πετάνε τους τύπους για ταχύτητα. Το σφάλμα υπάρχει και το βλέπεις στον editor (tsserver) ή τρέχοντας tsc --noEmit — γι' αυτό κάθε project χρειάζεται script typecheck στο CI."
+/>
+
+<Exercise
+  question="Χρειάζεσαι προσωρινά να παρακάμψεις ένα λανθασμένο error του compiler. Τι γράφεις;"
+  options={[
+    "// @ts-ignore — απλό και σίγουρο",
+    "// @ts-expect-error — αν πάψει να υπάρχει το error, το σχόλιο γίνεται error και το καθαρίζεις",
+    "Αλλάζεις τον τύπο σε any"
+  ]}
+  correctOptionIndex={1}
+  explanation="Το @ts-expect-error αυτοκαθαρίζεται: ο compiler σε ειδοποιεί όταν το underlying πρόβλημα λυθεί. Το @ts-ignore μένει για πάντα και κρύβει και μελλοντικά, πραγματικά bugs στην ίδια γραμμή. Το any είναι χειρότερο — μολύνει και όσα αγγίζει."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How does TypeScript actually run in a modern project?»
+
+> Two separate things: type checking and building. `tsc` does both, but modern tooling — Next.js, Vite, esbuild, swc — only strips the types for speed, it doesn't check them. So a dev server can be perfectly happy while the code has type errors. That's why I keep a `typecheck: tsc --noEmit` script and run it in CI; the editor shows the same errors live through tsserver, but only for open files. The config lives in `tsconfig.json` — the ones that matter day to day are `strict` (always on), `target`/`lib` for what JS and built-in APIs are assumed, `moduleResolution` matched to the runtime, `skipLibCheck` to avoid checking dependency type files, and `paths` for aliases. For imports I use `import type` for type-only imports so they're erased at build time, which `verbatimModuleSyntax` enforces. And when I genuinely need to silence the compiler I use `@ts-expect-error`, never `@ts-ignore`, because it errors once it's no longer needed.
+
+<Flashcards
+  title="Setup & compiler — interview drills"
+  cards={[
+    {
+      question: "Γιατί μπορεί το npm run dev να δουλεύει ενώ υπάρχουν type errors;",
+      answer: "Οι bundlers (esbuild/swc μέσα σε Next.js/Vite) κάνουν type STRIPPING, όχι type checking — πετάνε τους τύπους για ταχύτητα. Ο έλεγχος γίνεται ξεχωριστά: tsc --noEmit (script typecheck στο CI) και ζωντανά από τον tsserver στον editor."
+    },
+    {
+      question: "Τι κάνει το tsc --noEmit;",
+      answer: "Ελέγχει τύπους σε ΟΛΟ το project χωρίς να παράγει αρχεία. Είναι το standard CI script όταν το build το κάνει ο bundler. Άλλες σημαίες: --watch για συνεχή έλεγχο, --init για δημιουργία tsconfig."
+    },
+    {
+      question: "Τι κάνουν τα target, lib, moduleResolution;",
+      answer: "target: έκδοση JS που παράγεται (ES2022). lib: ποια built-in APIs υπάρχουν (χωρίς 'DOM' δεν υπάρχει document/window). moduleResolution: πώς βρίσκονται τα imports — 'bundler' για Next/Vite, 'NodeNext' για καθαρό Node."
+    },
+    {
+      question: "Τι κάνει το skipLibCheck και γιατί το θες;",
+      answer: "Παραλείπει τον type check μέσα στα .d.ts των dependencies. Πολύ ταχύτερο build και δεν σε μπλοκάρουν λάθη σε κώδικα που δεν ελέγχεις εσύ. Σχεδόν πάντα true."
+    },
+    {
+      question: "Γιατί import type;",
+      answer: "Δηλώνει type-only import ώστε να σβήνεται τελείως στο compile: δεν τραβάς module στο bundle για έναν τύπο και αποφεύγεις κυκλικά imports. Το verbatimModuleSyntax: true το επιβάλλει."
+    },
+    {
+      question: "@ts-expect-error vs @ts-ignore;",
+      answer: "Και τα δύο σιωπούν την ΕΠΟΜΕΝΗ γραμμή. Το @ts-expect-error γίνεται ΤΟ ΙΔΙΟ error αν το πρόβλημα λυθεί — άρα αυτοκαθαρίζεται. Το @ts-ignore μένει σιωπηλά και κρύβει μελλοντικά bugs. Πάντα expect-error."
+    },
+    {
+      question: "Πώς διαβάζεις ένα μεγάλο TS error;",
+      answer: "Από ΚΑΤΩ προς τα πάνω: η τελευταία, πιο εσωτερική γραμμή λέει την ακριβή ασυμβατότητα ('Type number is not assignable to type string'), οι από πάνω δίνουν το context (ποιο property, ποιος τύπος)."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Στήσε ένα TypeScript project από το μηδέν"
+  scenario="Φτιάξε ένα μικρό project με σκέτο tsc (χωρίς framework) ώστε να δεις τι κάνει ο compiler μόνος του, και μετά πρόσθεσε τα workflow scripts."
+  outcomes={[
+    "Να στήνεις TypeScript και να διαβάζεις/ρυθμίζεις tsconfig.",
+    "Να ξεχωρίζεις type checking από build.",
+    "Να διαβάζεις error messages και να τα λύνεις χωρίς any."
+  ]}
+  steps={[
+    "npm init -y και npm i -D typescript tsx· μετά npx tsc --init.",
+    "Άνοιξε το tsconfig και εξήγησε στον εαυτό σου κάθε ενεργό πεδίο.",
+    "Γράψε src/index.ts με ένα σκόπιμο λάθος και τρέξε npx tsc --noEmit.",
+    "Πρόσθεσε scripts: build (tsc), dev (tsx watch), typecheck (tsc --noEmit).",
+    "Βάλε path alias @/* στο tsconfig και χρησιμοποίησέ το σε ένα import.",
+    "Χώρισε ένα import σε import type + κανονικό import και δες το παραγόμενο JS.",
+    "Δοκίμασε ένα @ts-expect-error, μετά διόρθωσε το πρόβλημα και δες τον compiler να σου ζητά να το σβήσεις."
+  ]}
+  checkpoints={[
+    "Το npm run typecheck πιάνει λάθη που το build αγνοεί.",
+    "Ξέρεις τι κάνει κάθε πεδίο του tsconfig σου (όχι copy-paste).",
+    "Το παραγόμενο .js δεν έχει ίχνος από τα type-only imports.",
+    "Διαβάζεις ένα multi-line error και βρίσκεις την αιτία στην τελευταία γραμμή."
+  ]}
+  mistakes={[
+    "Global install του typescript αντί για dev dependency ανά project.",
+    "Να θεωρείς ότι 'τρέχει το dev server' σημαίνει 'δεν υπάρχουν type errors'.",
+    "Copy-paste tsconfig χωρίς να ξέρεις τι ενεργοποιείς (ή τι έσβησες).",
+    "@ts-ignore αντί για @ts-expect-error.",
+    "Να λύνεις errors με any/as αντί να διαβάσεις τι λέει το μήνυμα."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν στήνεις μόνος σου TS project, εξηγείς κάθε πεδίο του tsconfig, και ξέρεις πού ακριβώς γίνεται ο type check στο pipeline σου."
+/>

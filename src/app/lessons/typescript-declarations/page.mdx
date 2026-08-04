@@ -76,6 +76,37 @@ app.get("/me", (req, res) => {
 
 Αυτό είναι και η πρακτική απόδειξη γιατί τα **interfaces** (που κάνουν merging) προτιμώνται για public/library types έναντι των `type` aliases.
 
+## Πώς βρίσκει ο compiler τα declaration files
+
+Τρεις μηχανισμοί, με αυτή τη σειρά:
+
+1. **Το package δηλώνει τα δικά του** στο `package.json` του:
+   ```json
+   { "types": "./dist/index.d.ts" }
+   ```
+   Αν δημοσιεύεις δική σου βιβλιοθήκη, αυτό (μαζί με `"declaration": true` στο tsconfig) είναι όλη η δουλειά.
+2. **`node_modules/@types/*`** — μπαίνουν **αυτόματα** στο global scope, χωρίς import. Με το `"types": ["node", "jest"]` στο tsconfig περιορίζεις ποια θα φορτωθούν (χρήσιμο όταν ένα `@types/node` «μολύνει» ένα browser project).
+3. **Τα δικά σου `.d.ts`** μέσα στο `include` του tsconfig. Ένα `src/types/globals.d.ts` αρκεί — δεν χρειάζεται να το κάνεις import πουθενά, φτάνει να είναι μέσα στο project.
+
+> Ένα `.d.ts` **χωρίς** κανένα `import`/`export` θεωρείται **global script**: ό,τι δηλώνει είναι ορατό παντού. Μόλις βάλεις ένα `import`, γίνεται module και οι δηλώσεις γίνονται τοπικές — τότε χρειάζεσαι `declare global { ... }` για τα globals. Είναι η Νο1 αιτία του «γιατί δεν βλέπει τους τύπους μου;».
+
+Θα δεις επίσης παλιά triple-slash directives (`/// <reference types="node" />`) — προ-modules εποχή· σήμερα σπάνια τα γράφεις μόνος σου, αλλά τα συναντάς σε βιβλιοθήκες.
+
+## Types για assets & non-code imports
+
+Σε frontend projects κάνεις import αρχεία που δεν είναι JavaScript. Ο compiler δεν ξέρει τι είναι — του το λες με ένα module declaration:
+
+```ts
+// assets.d.ts
+declare module "*.svg" {
+  const content: string;
+  export default content;
+}
+declare module "*.css";
+```
+
+Στο Next.js αυτά έρχονται έτοιμα από το `next-env.d.ts` — γι' αυτό δεν το ακουμπάς (το ξαναγράφει το framework)· τους δικούς σου τύπους τους βάζεις σε ξεχωριστό αρχείο.
+
 <PredictOutput
   title="Από πού έρχονται οι τύποι;"
   code={`Εγκαθιστάς μια JS-only βιβλιοθήκη χωρίς δικά της types.
@@ -130,6 +161,18 @@ app.get("/me", (req, res) => {
     {
       question: "Γιατί interface (όχι type) για library/public types;",
       answer: "Τα interfaces κάνουν declaration merging — άλλοι μπορούν να τα επεκτείνουν (module augmentation). Τα type aliases όχι. Γι' αυτό public APIs/library types προτιμούν interfaces."
+    },
+    {
+      question: "Γιατί ένα .d.ts μου δεν 'φαίνεται' πουθενά;",
+      answer: "Ένα .d.ts χωρίς import/export είναι GLOBAL script — οι δηλώσεις του είναι παντού ορατές. Μόλις προσθέσεις ένα import, γίνεται module και οι δηλώσεις γίνονται τοπικές· τότε χρειάζεσαι declare global { ... }. Επίσης το αρχείο πρέπει να είναι μέσα στο include του tsconfig."
+    },
+    {
+      question: "Πώς βρίσκει ο compiler τους τύπους ενός package;",
+      answer: "1) Από το πεδίο types/typings στο package.json του (έτσι δημοσιεύεις και τη δική σου lib, με declaration: true). 2) Αυτόματα από node_modules/@types (το tsconfig 'types': [...] περιορίζει ποια). 3) Από δικά σου .d.ts μέσα στο include."
+    },
+    {
+      question: "Πώς τυπώνεις import από .svg/.css;",
+      answer: "Με wildcard module declaration: declare module '*.svg' { const content: string; export default content; }. Στο Next.js τα δίνει έτοιμα το next-env.d.ts — μην το επεξεργάζεσαι, ξαναγράφεται· βάλε τα δικά σου σε ξεχωριστό .d.ts."
     }
   ]}
 />

@@ -22,15 +22,112 @@ function describe(value: string | number | null) {
 }
 ```
 
-Τα εργαλεία narrowing: `typeof` (primitives), `instanceof` (classes), `in` (ύπαρξη property), ισότητα με literal, και **custom type guards** (παρακάτω).
+## Η εργαλειοθήκη του narrowing
+
+Ο compiler «καταλαβαίνει» συγκεκριμένα μοτίβα JavaScript. Αυτά είναι όλα:
+
+```ts
+typeof value === "string"        // primitives: string, number, boolean, symbol, bigint,
+                                 // undefined, object, function
+value instanceof Error           // classes (υπάρχουν στη runtime)
+Array.isArray(value)             // πίνακες — το typeof [] είναι "object"!
+"meow" in animal                 // ύπαρξη property
+value === "done"                 // ισότητα με literal (discriminated unions)
+value !== null                   // αποκλεισμός null/undefined
+if (value) { }                   // truthiness
+isCat(value)                     // custom type guard (παρακάτω)
+```
+
+Δύο παγίδες που κοστίζουν χρόνο:
+
+```ts
+function f(x: string | null) {
+  if (typeof x === "object") {
+    // εδώ ο τύπος είναι null — typeof null === "object" (ιστορικό bug της JS)
+  }
+}
+
+function g(count: number | undefined) {
+  if (count) {
+    // ❌ το 0 είναι falsy — μπαίνεις εδώ μόνο για count !== 0
+  }
+  if (count !== undefined) {
+    // ✅ ο σωστός έλεγχος
+  }
+}
+```
+
+Το **truthiness narrowing** είναι βολικό αλλά κόβει και το `0`, το `""`, το `NaN`. Για αριθμούς και strings, έλεγξε ρητά `!== undefined` / `!== null` (ή `!= null`, που πιάνει και τα δύο).
+
+### Χάνοντας το narrowing
+
+Το narrowing ισχύει μέσα σε ένα «κλειστό» κομμάτι κώδικα. Χάνεται όταν ο compiler δεν μπορεί να εγγυηθεί ότι η τιμή δεν άλλαξε:
+
+```ts
+let value: string | null = getValue();
+
+if (value !== null) {
+  doSomething(() => {
+    value.toUpperCase();  // ❌ σε callback: ο compiler δεν ξέρει πότε θα τρέξει
+  });
+}
+
+// Λύση: αντέγραψε σε const
+const v = value;
+if (v !== null) {
+  doSomething(() => v.toUpperCase()); // ✅ ένα const δεν αλλάζει
+}
+```
+
+Ίδιο πρόβλημα και με properties αντικειμένων (`obj.value` μπορεί να άλλαξε μεταξύ των γραμμών). Ο κανόνας: **narrow-άρεις μια `const` τοπική μεταβλητή**, όχι ένα mutable πεδίο.
+
+## `?.` και `??` — τα δύο τελεστές που θα γράφεις κάθε μέρα
+
+Δεν είναι TypeScript features (είναι JavaScript), αλλά ο compiler τα καταλαβαίνει ως narrowing και χωρίς αυτά δεν γράφεις καθαρό strict κώδικα:
+
+```ts
+const city = user.address?.city;         // αν το address είναι null/undefined → undefined
+const name = user.getName?.();           // κλήση μόνο αν υπάρχει η μέθοδος
+const first = list?.[0];                 // ασφαλής index access
+
+const port = config.port ?? 3000;        // αν είναι null/undefined → 3000
+const port2 = config.port || 3000;       // ❌ και το 0 γίνεται 3000!
+```
+
+Η διαφορά `??` vs `||` είναι κλασική ερώτηση: το `||` πέφτει πίσω σε **κάθε falsy** τιμή (`0`, `""`, `false`), το `??` **μόνο** σε `null`/`undefined`. Για defaults σε αριθμούς και booleans, το `??` είναι σχεδόν πάντα το σωστό.
+
+## Assertion functions — `asserts x is T`
+
+Μια παραλλαγή του type guard: αντί να επιστρέφει `boolean`, **πετάει** αν κάτι δεν ισχύει — και ο compiler θεωρεί τον τύπο στενεμένο για **όλη την υπόλοιπη** function:
+
+```ts
+function assertIsDefined<T>(value: T): asserts value is NonNullable<T> {
+  if (value === null || value === undefined) {
+    throw new Error("Expected value to be defined");
+  }
+}
+
+function process(user: User | null) {
+  assertIsDefined(user);
+  user.name;   // ✅ από εδώ και κάτω: User — χωρίς if, χωρίς !
+}
+```
+
+Χρήσιμο σε invariants που «ξέρεις» ότι ισχύουν (μετά από validation, σε tests, σε setup κώδικα). Προσοχή σε δύο πράγματα: η function **πρέπει** να έχει explicit return type annotation (αλλιώς δεν δουλεύει), και σε αντίθεση με το `!`, εδώ υπάρχει **πραγματικός runtime έλεγχος**.
 
 ## enum vs `as const` vs literal unions
 
-Το TypeScript έχει `enum`, αλλά στα modern codebases συχνά αποφεύγεται:
+Το TypeScript έχει `enum` — το μοναδικό feature του που **παράγει runtime κώδικα** αντί να εξαφανίζεται. Στα modern codebases συχνά αποφεύγεται:
 
 ```ts
-enum Status { Todo, Doing, Done }   // παράγει runtime object· number enums έχουν reverse mapping
+enum Status { Todo, Doing, Done }        // numeric enum: Todo = 0, Doing = 1, Done = 2
+Status.Todo;                             // 0
+Status[0];                               // "Todo" — reverse mapping (μόνο σε numeric)
+
+enum Role { Admin = "admin", User = "user" }  // string enum: πιο ασφαλές & αναγνώσιμο σε logs/DB
 ```
+
+Τα προβλήματα των numeric enums: η τιμή που αποθηκεύεις στη βάση είναι ένα `0` (και αν αναδιατάξεις τα μέλη, αλλάζει σιωπηλά η σημασία των παλιών δεδομένων), και ένα σκέτο `2` γίνεται δεκτό εκεί που περιμένει `Status`. Επιπλέον, ο compiler παράγει ένα ολόκληρο object με IIFE στο bundle. Το `const enum` το αποφεύγει (κάνει inline τις τιμές) αλλά **δεν δουλεύει** με τα σύγχρονα build tools που κάνουν type stripping ανά αρχείο (Next.js, Vite, `isolatedModules`) — γι' αυτό αποφεύγεται κι αυτό.
 
 Τα **literal unions** το αντικαθιστούν: σκέτα strings στη runtime, μηδενικό overhead, εύκολο JSON, καμία ανάγκη import. Όταν θες και τις **τιμές** ως object (όχι μόνο τον τύπο), το pattern είναι `as const`:
 
@@ -136,6 +233,21 @@ area({ kind: "circle", side: 5 });`}
   explanation="Το { kind: 'circle', side: 5 } δεν ταιριάζει σε κανένα μέλος: ο circle απαιτεί radius. Ο compiler το κόβει ΠΡΙΝ τρέξει — αυτή είναι η αξία των discriminated unions."
 />
 
+<PredictOutput
+  title="?? vs || — η παγίδα του μηδενός"
+  code={`type Settings = { retries?: number };
+
+function getRetries(s: Settings) {
+  return s.retries || 3;
+}
+
+console.log(getRetries({ retries: 0 }));`}
+  options={["0", "3", "undefined", "Compile error"]}
+  correctOptionIndex={1}
+  answer="3"
+  explanation="Το || πέφτει πίσω σε ΚΑΘΕ falsy τιμή — και το 0 είναι falsy, άρα το ρητό 'μηδέν retries' γίνεται σιωπηλά 3. Το ?? πέφτει πίσω μόνο σε null/undefined: s.retries ?? 3 επιστρέφει σωστά 0. Ίδια παγίδα με το if (count) σε narrowing."
+/>
+
 <Exercise
   question="Τι κάνει μια function με return type `value is User`;"
   options={[
@@ -175,6 +287,30 @@ area({ kind: "circle", side: 5 });`}
     {
       question: "Τι είναι custom type guard;",
       answer: "Function με return type 'param is Type' (type predicate). Αν επιστρέψει true, ο compiler κάνει narrow τον τύπο στο αντίστοιχο branch. Χρήσιμο όπου το typeof/in δεν αρκεί ή για επαναχρησιμοποιήσιμο narrowing."
+    },
+    {
+      question: "Ποια είναι όλα τα εργαλεία narrowing;",
+      answer: "typeof (primitives), instanceof (classes), Array.isArray (γιατί typeof [] === 'object'), in (ύπαρξη property), ισότητα με literal (discriminant), έλεγχος !== null/undefined, truthiness, και custom type guards / assertion functions."
+    },
+    {
+      question: "Ποια παγίδα έχει το truthiness narrowing;",
+      answer: "Κόβει ΟΛΕΣ τις falsy τιμές: 0, '', NaN, false. Το if (count) δεν μπαίνει για count === 0. Για αριθμούς/strings έλεγξε ρητά: count !== undefined (ή != null που πιάνει null+undefined μαζί). Ίδια λογική: typeof null === 'object'."
+    },
+    {
+      question: "?? vs ||;",
+      answer: "|| πέφτει πίσω σε κάθε falsy τιμή (0, '', false) — σιωπηλό bug σε defaults. ?? πέφτει πίσω ΜΟΝΟ σε null/undefined. Για default values σε αριθμούς/booleans: πάντα ??."
+    },
+    {
+      question: "Γιατί χάνεται το narrowing μέσα σε callback;",
+      answer: "Ο compiler δεν ξέρει πότε θα τρέξει το callback — η μεταβλητή (let ή property) μπορεί να έχει αλλάξει. Λύση: αντέγραψε σε τοπική const και narrow-άρε αυτήν· ένα const δεν αλλάζει, άρα το narrowing κρατάει."
+    },
+    {
+      question: "Τι είναι assertion function (asserts x is T);",
+      answer: "Type guard που ΠΕΤΑΕΙ αντί να επιστρέφει boolean: μετά την κλήση, ο τύπος είναι στενεμένος για όλη την υπόλοιπη function (χωρίς if). Απαιτεί explicit return type annotation. Σε αντίθεση με το !, κάνει πραγματικό runtime έλεγχο."
+    },
+    {
+      question: "Numeric vs string enum — και γιατί όχι const enum;",
+      answer: "Numeric: τιμές 0,1,2 + reverse mapping· επικίνδυνο σε DB (αναδιάταξη αλλάζει σημασία) και δέχεται σκέτο number. String enum: αναγνώσιμο σε logs/DB. const enum: κάνει inline τις τιμές αλλά σπάει με isolatedModules/type stripping (Next.js, Vite) — απόφυγέ το."
     }
   ]}
 />

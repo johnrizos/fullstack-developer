@@ -65,7 +65,7 @@ console.log(completed.map(formatTask));`;
 
 # TypeScript Foundations
 
-Το TypeScript είναι JavaScript με στατικό type checking — τα types εξαφανίζονται στο compile, άρα **δεν** αλλάζουν τη runtime συμπεριφορά. Η αξία του: πιάνει λάθη πριν τρέξει ο κώδικας, τεκμηριώνει contracts μεταξύ modules, και κάνει το refactoring ασφαλές (μετονομάζεις ένα πεδίο και βλέπεις αμέσως κάθε σπασμένη χρήση). Σε fullstack αγγελίες είναι πλέον σχεδόν υποχρεωτικό. Αυτό το πρώτο μάθημα του track χτίζει τη βάση: πώς σκέφτεται ο compiler, βασικοί τύποι & annotations, `type` vs `interface`, και η κρίσιμη ιδέα ότι **τα types εξαφανίζονται στη runtime**. Τα επόμενα μαθήματα μπαίνουν βαθιά σε unions/narrowing, functions, generics, utility/mapped types, safety/config και declarations.
+Το TypeScript είναι JavaScript με στατικό type checking — τα types εξαφανίζονται στο compile, άρα **δεν** αλλάζουν τη runtime συμπεριφορά. Η αξία του: πιάνει λάθη πριν τρέξει ο κώδικας, τεκμηριώνει contracts μεταξύ modules, και κάνει το refactoring ασφαλές (μετονομάζεις ένα πεδίο και βλέπεις αμέσως κάθε σπασμένη χρήση). Σε fullstack αγγελίες είναι πλέον σχεδόν υποχρεωτικό. Αυτό το πρώτο μάθημα του track χτίζει τη βάση: πώς σκέφτεται ο compiler, ο **πλήρης κατάλογος** των τύπων, arrays/tuples/objects, `type` vs `interface`, και η κρίσιμη ιδέα ότι **τα types εξαφανίζονται στη runtime**. Τα επόμενα μαθήματα μπαίνουν σε setup/compiler, unions/narrowing, functions, classes, generics, utility/mapped types, safety/config και declarations.
 
 ## Βασικοί τύποι & annotations
 
@@ -83,6 +83,142 @@ function greet(name: string): string {  // typed param + return
 ```
 
 Κανόνας: **άσε το inference να δουλέψει** για τοπικές μεταβλητές· βάλε explicit types στα **όρια** — function signatures, public APIs, exported types. Εκεί το type είναι το «συμβόλαιο».
+
+## Ο πλήρης κατάλογος των τύπων
+
+Πριν προχωρήσεις, να όλα όσα μπορείς να γράψεις δεξιά από το `:` — ώστε να μη συναντάς ποτέ έναν τύπο που δεν αναγνωρίζεις:
+
+| Τύπος | Τι είναι | Παράδειγμα |
+|---|---|---|
+| `string`, `number`, `boolean` | τα τρία primitives που χρησιμοποιείς κάθε μέρα | `let n: number = 3.14` |
+| `bigint`, `symbol` | σπάνιοι· τεράστιοι ακέραιοι, μοναδικά κλειδιά | `let big: bigint = 10n` |
+| `null`, `undefined` | οι δύο «κενές» τιμές — ξεχωριστοί τύποι με `strictNullChecks` | `let x: string \| null` |
+| `T[]` / `Array<T>` | πίνακας | `string[]` |
+| `[A, B]` | tuple — σταθερό μήκος & θέση | `[number, string]` |
+| `{ a: string }` | object type (inline) | `{ x: number; y: number }` |
+| `(a: number) => string` | function type | callbacks |
+| `"todo" \| "done"` | literal union — συγκεκριμένες τιμές | status fields |
+| `any` | **σβήνει** τον έλεγχο — απόφυγέ το | — |
+| `unknown` | «δεν ξέρω ακόμα» — type-safe εκδοχή του any | είσοδος από API |
+| `void` | δεν επιστρέφει χρήσιμη τιμή | `function log(): void` |
+| `never` | δεν συμβαίνει ποτέ (throw / αδύνατο) | exhaustiveness |
+| `object` | οτιδήποτε μη-primitive (σπάνια χρήσιμο) | — |
+
+Δύο διευκρινίσεις που μπερδεύουν αρχάριους: το `number` καλύπτει **και** ακέραιους και δεκαδικούς (δεν υπάρχει `int`/`float`), και το `String`/`Number` με κεφαλαίο είναι τα wrapper objects της JavaScript — **γράφεις πάντα πεζά** (`string`, `number`, `boolean`).
+
+## Arrays, tuples & readonly
+
+```ts
+const names: string[] = ["Ada", "Grace"];
+const scores: Array<number> = [1, 2];        // ίδιο πράγμα, άλλο συντακτικό
+const matrix: number[][] = [[1, 2], [3, 4]]; // πίνακας από πίνακες
+const mixed: (string | number)[] = [1, "a"]; // προσοχή στις παρενθέσεις!
+```
+
+Ένα **tuple** είναι πίνακας με σταθερό μήκος όπου **κάθε θέση έχει δικό της τύπο** — το χρησιμοποιείς για «ζευγάρια» και για επιστροφές πολλαπλών τιμών (το `useState` της React είναι tuple):
+
+```ts
+let pair: [string, number] = ["age", 30];
+pair = [30, "age"];                    // ❌ λάθος σειρά
+
+type Coords = [x: number, y: number];  // named members — μόνο για αναγνωσιμότητα
+type Result = [ok: boolean, ...errors: string[]]; // rest σε tuple
+const [value, setValue] = useState(0); // [number, (n: number) => void]
+```
+
+Το `readonly` απαγορεύει τη μετάλλαξη — σε πίνακες και σε properties:
+
+```ts
+const list: readonly string[] = ["a", "b"];
+list.push("c");                         // ❌ το push δεν υπάρχει σε readonly array
+
+interface User {
+  readonly id: string;   // ορίζεται μία φορά, δεν αλλάζει
+  name: string;
+}
+```
+
+Είναι **compile-time** έλεγχος (όχι `Object.freeze`) — αλλά ακριβώς αυτό θέλεις: δηλώνει πρόθεση και πιάνει κατά λάθος μεταλλάξεις πριν τρέξει ο κώδικας.
+
+## Object types: optional, nested, index signatures
+
+```ts
+interface Task {
+  id: string;
+  title: string;
+  estimateHours?: number;      // optional → τύπος: number | undefined
+  author: {                    // nested object
+    id: string;
+    name: string;
+  };
+  tags: string[];
+}
+```
+
+Ένα **optional property** (`?`) μπορεί να λείπει τελείως· ένα `x: number | undefined` πρέπει να **υπάρχει** αλλά μπορεί να είναι `undefined`. Λεπτή διαφορά που εμφανίζεται όταν φτιάχνεις objects.
+
+Όταν **δεν ξέρεις τα κλειδιά** εκ των προτέρων, χρησιμοποιείς **index signature**:
+
+```ts
+interface Translations {
+  [key: string]: string;         // οποιοδήποτε string κλειδί → string τιμή
+}
+
+const el: Translations = { hello: "Γεια", bye: "Αντίο" };
+el.anything;                     // τύπος: string (ο compiler δεν ξέρει αν υπάρχει!)
+
+// Το ίδιο, πιο σύγχρονα, με utility type:
+type Translations2 = Record<string, string>;
+
+// Περιορισμένα κλειδιά:
+type StatusLabels = Record<"todo" | "doing" | "done", string>; // ΟΛΑ υποχρεωτικά
+```
+
+> Παγίδα: με index signature ο compiler υπόσχεται `string` για **κάθε** κλειδί, ακόμα κι αν δεν υπάρχει — άρα `el.typo` περνά και σκάει στη runtime. Το flag `noUncheckedIndexedAccess` (μάθημα *Type Safety*) το διορθώνει προσθέτοντας `| undefined`.
+
+## Ενώνοντας types: `&` και `extends`
+
+Το **intersection** (`&`) συνδυάζει σχήματα — «και το ένα **και** το άλλο»:
+
+```ts
+type WithId = { id: string };
+type WithTimestamps = { createdAt: Date; updatedAt: Date };
+
+type Task = WithId & WithTimestamps & { title: string };
+// έχει: id, createdAt, updatedAt, title
+```
+
+Με interfaces το ίδιο γίνεται με `extends` (και δέχεται πολλά):
+
+```ts
+interface Entity { id: string }
+interface Timestamped { createdAt: Date }
+interface Task extends Entity, Timestamped { title: string }
+```
+
+Μην το μπερδεύεις με το union (`|`) που σημαίνει «**ένα από** τα δύο». Μνημονικός κανόνας: το `&` **προσθέτει πεδία**, το `|` **προσθέτει επιλογές** (και αφαιρεί ό,τι μπορείς να κάνεις με ασφάλεια, μέχρι να κάνεις narrowing).
+
+## Literal types & widening — γιατί `const` και `let` διαφέρουν
+
+Ο compiler **πλαταίνει** (widening) τον τύπο μιας μεταβλητής που μπορεί να αλλάξει:
+
+```ts
+let status = "todo";     // τύπος: string   — μπορείς να του δώσεις οτιδήποτε
+const status2 = "todo";  // τύπος: "todo"   — literal type, δεν πρόκειται να αλλάξει
+```
+
+Ένας **literal type** είναι μια *συγκεκριμένη τιμή* ως τύπος. Αυτό εξηγεί ένα από τα πιο συχνά μπερδέματα των αρχαρίων:
+
+```ts
+type Status = "todo" | "done";
+
+const obj = { status: "todo" };     // το status συμπεραίνεται ως string
+const s: Status = obj.status;       // ❌ string δεν είναι assignable σε "todo" | "done"
+
+const obj2 = { status: "todo" } as const;  // ✅ readonly + literal types
+```
+
+Το `as const` (αναλυτικά στο μάθημα *Unions & Narrowing*) λέει «κράτα τον **στενότερο** δυνατό τύπο». Ο κανόνας πίσω από όλα: **ό,τι μπορεί να αλλάξει, πλαταίνει**.
 
 ## Η βάση: structural typing
 
@@ -232,6 +368,26 @@ console.log(user.name.toUpperCase());`}
     {
       question: "Τι είναι το excess property check;",
       answer: "Όταν περνάς object literal ΑΠΕΥΘΕΙΑΣ, το TS ελέγχει αυστηρά για έξτρα properties (πιάνει typos). Μέσω μεταβλητής ισχύει το χαλαρό structural rule (αρκεί να καλύπτεται το σχήμα)."
+    },
+    {
+      question: "Array vs tuple;",
+      answer: "string[] = οσαδήποτε στοιχεία ίδιου τύπου. [string, number] = tuple: σταθερό μήκος, κάθε ΘΕΣΗ έχει δικό της τύπο. Το useState της React επιστρέφει tuple: [value, setValue]."
+    },
+    {
+      question: "Τι είναι index signature;",
+      answer: "{ [key: string]: T } — 'οποιοδήποτε string κλειδί δίνει T', όταν δεν ξέρεις τα κλειδιά εκ των προτέρων. Ισοδύναμο με Record<string, T>. Παγίδα: ο compiler υπόσχεται T ακόμα και για κλειδιά που δεν υπάρχουν (λύση: noUncheckedIndexedAccess)."
+    },
+    {
+      question: "Intersection (&) vs union (|);",
+      answer: "A & B: έχει ΚΑΙ τα πεδία του A ΚΑΙ του B (σύνθεση σχημάτων· με interfaces το κάνει το extends). A | B: είναι ΕΝΑ από τα δύο — μέχρι να κάνεις narrowing μπορείς να αγγίξεις μόνο ό,τι είναι κοινό."
+    },
+    {
+      question: "Γιατί let x = 'todo' είναι string ενώ const x = 'todo' είναι 'todo';",
+      answer: "Type widening: ό,τι μπορεί να αλλάξει, πλαταίνει σε γενικό τύπο. Το const δεν αλλάζει, άρα κρατά τον literal type. Γι' αυτό ένα { status: 'todo' } δεν ταιριάζει σε union τύπο — χρειάζεται as const ή explicit annotation."
+    },
+    {
+      question: "optional property (?) vs | undefined;",
+      answer: "estimateHours?: number → το κλειδί μπορεί να ΛΕΙΠΕΙ τελείως. estimateHours: number | undefined → πρέπει να υπάρχει, αλλά μπορεί να είναι undefined. Και τα δύο σε αναγκάζουν να χειριστείς το undefined πριν το χρησιμοποιήσεις."
     }
   ]}
 />
