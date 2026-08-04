@@ -9,7 +9,7 @@
 
 ```ts
 const response = await client.messages.create({
-  model: "claude-opus-4-8",
+  model: "claude-opus-5",
   max_tokens: 1024,
   system: "Είσαι βοηθός που απαντά πάντα στα Ελληνικά, σύντομα και χωρίς preamble.",
   messages: [{ role: "user", content: "Εξήγησε τι είναι το REST σε 2 προτάσεις." }],
@@ -34,7 +34,7 @@ const response = await client.messages.create({
 
 ```ts
 const response = await client.messages.create({
-  model: "claude-opus-4-8",
+  model: "claude-opus-5",
   max_tokens: 1024,
   messages: [{ role: "user", content: "Βγάλε όνομα και email: 'Γιάννης, g@x.com'" }],
   output_config: {

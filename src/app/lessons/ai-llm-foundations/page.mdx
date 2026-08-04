@@ -31,7 +31,7 @@ import Anthropic from "@anthropic-ai/sdk";
 const client = new Anthropic(); // key από env — ποτέ hardcoded
 
 const response = await client.messages.create({
-  model: "claude-opus-4-8",
+  model: "claude-opus-5",
   max_tokens: 1024,
   messages: [{ role: "user", content: "Σύνοψε σε μία πρόταση: ..." }],
 });
@@ -47,7 +47,7 @@ const text = response.content
 
 - **`messages`** — η συνομιλία ως λίστα `{ role: "user" | "assistant", content }`.
 - **`max_tokens`** — ανώτατο όριο μήκους **απάντησης** (κόβει αν το ξεπεράσει· δεν είναι το ίδιο με το context window).
-- **`model`** — ποιο μοντέλο. Διάλεγε το πιο ικανό (`claude-opus-4-8`) εκτός αν θες φθηνότερο/ταχύτερο για απλά tasks.
+- **`model`** — ποιο μοντέλο. Διάλεγε το πιο ικανό (`claude-opus-5`) εκτός αν θες φθηνότερο/ταχύτερο για απλά tasks.
 
 > Πρόσεξε ότι το `content` της απάντησης είναι **λίστα από blocks**, όχι σκέτο string. Αυτό γιατί μια απάντηση μπορεί να περιέχει text, tool calls ή thinking — γι' αυτό φιλτράρεις τα `type === "text"`.
 
@@ -63,7 +63,7 @@ const messages = [
 ];
 
 const response = await client.messages.create({
-  model: "claude-opus-4-8",
+  model: "claude-opus-5",
   max_tokens: 1024,
   messages,
 });
@@ -90,7 +90,7 @@ const response = await client.messages.create({
 
 Δεν χρειάζεσαι πάντα το πιο ικανό (και ακριβό) μοντέλο. Σκέψου το σαν επιλογή instance type:
 
-- **Μεγάλο/ικανό** (π.χ. `claude-opus-4-8`) — σύνθετο reasoning, agentic workflows, δύσκολο coding.
+- **Μεγάλο/ικανό** (π.χ. `claude-opus-5`) — σύνθετο reasoning, agentic workflows, δύσκολο coding.
 - **Ισορροπημένο** (Sonnet) — οι περισσότερες εφαρμογές: chat, content generation.
 - **Μικρό/γρήγορο** (Haiku) — απλά, μεγάλου όγκου tasks: classification, extraction, routing.
 

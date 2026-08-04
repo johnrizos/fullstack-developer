@@ -196,6 +196,8 @@ export const lessonDurationsMinutes: Record<string, number> = {
   "ai-llm-streaming": 50,
   "ai-llm-prompting": 55,
   "ai-llm-tool-use": 60,
+  "ai-llm-mcp": 60,
+  "ai-llm-agents": 75,
   "ai-llm-rag": 65,
   "ai-llm-evaluation": 55,
   "ai-llm-production": 65,
@@ -1971,7 +1973,7 @@ export const curriculum: CurriculumSection[] = [
         id: "ai-llm",
         title: "AI & LLM Integration",
         description:
-          "Πλήρης διαδρομή για production AI features σε fullstack app: από την πρώτη ασφαλή κλήση μέχρι streaming, prompting, tool use/agents, RAG, evaluation και production (cost/observability/security).",
+          "Πλήρης διαδρομή για production AI features σε fullstack app: από την πρώτη ασφαλή κλήση μέχρι streaming, prompting, tool use, MCP, agents σε βάθος, RAG, evaluation και production (cost/observability/security).",
         lessons: [
           {
             id: "ai-llm-foundations",
@@ -2008,6 +2010,24 @@ export const curriculum: CurriculumSection[] = [
             project: "Agent loop με ένα ασφαλές tool και confirmation σε επικίνδυνη ενέργεια.",
             skills: ["tool use", "agents", "function calling"],
             href: "/lessons/ai-llm-tool-use",
+          },
+          {
+            id: "ai-llm-mcp",
+            title: "MCP: Model Context Protocol",
+            description:
+              "Το πρόβλημα M×N, host/client/server, τα primitives (tools/resources/prompts), transports (stdio vs HTTP), σύνδεση από κώδικα, auth και prompt injection.",
+            project: "Σύνδεση έτοιμου MCP server + δικός σου server με ένα tool και approval gate.",
+            skills: ["MCP", "protocols", "integrations"],
+            href: "/lessons/ai-llm-mcp",
+          },
+          {
+            id: "ai-llm-agents",
+            title: "Agents σε βάθος",
+            description:
+              "Πότε ΔΕΝ θέλεις agent, σχεδιασμός επιφάνειας εργαλείων, context management (editing/compaction/memory), caching, subagents, approval gates και τα σημεία αστοχίας.",
+            project: "Σκλήρυνση agent loop: όρια, cache, compaction, memory, observability.",
+            skills: ["agent harness", "context management", "guardrails"],
+            href: "/lessons/ai-llm-agents",
           },
           {
             id: "ai-llm-rag",

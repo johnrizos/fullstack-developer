@@ -1,0 +1,209 @@
+# MCP: Model Context Protocol
+
+Στο προηγούμενο μάθημα έγραψες tools με το χέρι: όνομα, JSON schema, δική σου συνάρτηση. Δουλεύει — μέχρι να θελήσεις τα ίδια εργαλεία σε δεύτερη εφαρμογή, ή να προσθέσεις GitHub, Linear, Slack, τη βάση σου και το filesystem. Τότε γράφεις τα ίδια integrations ξανά και ξανά. Το **MCP (Model Context Protocol)** είναι το ανοιχτό πρωτόκολλο που λύνει ακριβώς αυτό: μια τυποποιημένη πρίζα ανάμεσα σε **μοντέλα** και **εργαλεία/δεδομένα**.
+
+## Το πρόβλημα M×N
+
+Έχεις **N** εφαρμογές που χρησιμοποιούν LLM (το app σου, το Claude Desktop, το IDE, ένα CLI) και **M** συστήματα να συνδέσεις (GitHub, Postgres, Jira, filesystem, Sentry). Χωρίς πρωτόκολλο, χρειάζεσαι **N × M** integrations — κάθε app γράφει το δικό του connector για κάθε σύστημα.
+
+```txt
+Χωρίς MCP:  4 apps × 5 συστήματα = 20 custom integrations
+Με MCP:     4 MCP clients + 5 MCP servers = 9 κομμάτια
+```
+
+Το MCP το κάνει **N + M**: κάθε σύστημα γράφει **έναν** server μία φορά, κάθε app μιλά το πρωτόκολλο μία φορά, και όλα δουλεύουν μεταξύ τους. Είναι η ίδια ιδέα με το **LSP** (Language Server Protocol) στους editors: ένας language server για Python, και τον χρησιμοποιούν VS Code, Neovim και JetBrains χωρίς να ξέρουν τίποτα ο ένας για τον άλλον. Το MCP δημιουργήθηκε από την Anthropic και δόθηκε ως **ανοιχτό πρότυπο** — δεν είναι δεμένο με ένα μοντέλο ή έναν προμηθευτή.
+
+## Τα τρία ρόλοι: host, client, server
+
+```txt
+┌─────────────────── HOST (η εφαρμογή) ───────────────────┐
+│  Claude Desktop / Claude Code / το δικό σου app         │
+│                                                          │
+│   MCP client ──────┐   MCP client ──────┐               │
+└────────────────────┼──────────────────┼─────────────────┘
+                     │                  │
+              MCP SERVER          MCP SERVER
+             (github)             (postgres)
+                     │                  │
+              GitHub API          η βάση σου
+```
+
+- **Host** — η εφαρμογή που «κρατά» τη συνομιλία με το μοντέλο. Αυτή αποφασίζει τι επιτρέπεται.
+- **Client** — ένας ανά server, μέσα στον host. Κρατά τη σύνδεση και μεταφράζει.
+- **Server** — ένα πρόγραμμα που **εκθέτει δυνατότητες**: εργαλεία, δεδομένα, έτοιμα prompts.
+
+Κρίσιμο: ο MCP server **δεν μιλά ποτέ στο μοντέλο**. Ο host παίρνει τη λίστα των εργαλείων από τον server, τη δίνει στο μοντέλο ως tool definitions, και όταν το μοντέλο ζητήσει κλήση, **ο host** τη στέλνει στον server. Δηλαδή είναι ο ίδιος κύκλος tool use που έμαθες — απλώς η *πηγή* των εργαλείων είναι ένα ξεχωριστό, επαναχρησιμοποιήσιμο πρόγραμμα.
+
+## Τι εκθέτει ένας server: τρία primitives
+
+| Primitive | Τι είναι | Ποιος το ελέγχει |
+|---|---|---|
+| **Tools** | Ενέργειες που εκτελούνται (`create_issue`, `run_query`) | **Το μοντέλο** — αποφασίζει πότε να τα καλέσει |
+| **Resources** | Δεδομένα προς ανάγνωση (ένα αρχείο, ένα schema, ένα doc) | **Η εφαρμογή** — τα βάζει στο context |
+| **Prompts** | Έτοιμα templates εργασιών («review this PR») | **Ο χρήστης** — τα διαλέγει ρητά, π.χ. slash command |
+
+Η διάκριση δεν είναι ακαδημαϊκή — είναι **ποιος έχει την πρωτοβουλία**. Ένα tool μπορεί να κληθεί χωρίς ο χρήστης να το ζητήσει, άρα χρειάζεται όρια. Ένα resource είναι παθητικό. Ένα prompt ενεργοποιείται μόνο από άνθρωπο. Στην πράξη τα **tools** είναι το 90% της χρήσης.
+
+## Transports: πού τρέχει ο server
+
+```txt
+stdio            → ο server τρέχει ΤΟΠΙΚΑ ως child process,
+                   επικοινωνία μέσω stdin/stdout
+                   (filesystem, τοπική βάση, git — χωρίς δίκτυο)
+
+Streamable HTTP  → ο server τρέχει ΑΠΟΜΑΚΡΥΣΜΕΝΑ πίσω από URL
+                   (hosted services: GitHub, Linear, Notion)
+```
+
+Το **stdio** είναι το απλό μονοπάτι για τοπικά εργαλεία: μηδέν δίκτυο, μηδέν auth, το process κληρονομεί τα δικαιώματα του χρήστη. Το **Streamable HTTP** είναι για hosted servers που χρειάζονται authentication και εξυπηρετούν πολλούς χρήστες. Και τα δύο μεταφέρουν από κάτω **JSON-RPC 2.0** μηνύματα — το πρωτόκολλο είναι το ίδιο, μόνο ο σωλήνας αλλάζει.
+
+## Πώς το καταναλώνεις από τον κώδικά σου
+
+Στο Claude API, ο **MCP connector** συνδέεται σε remote servers χωρίς να στήσεις εσύ MCP client. Χρειάζονται **δύο** πράγματα μαζί — μόνο το ένα απορρίπτεται:
+
+```ts
+const response = await client.beta.messages.create({
+  model: "claude-opus-5",
+  max_tokens: 4096,
+  betas: ["mcp-client-2025-11-20"],
+  mcp_servers: [
+    { type: "url", name: "linear", url: "https://mcp.linear.app/mcp" },
+  ],
+  tools: [
+    { type: "mcp_toolset", mcp_server_name: "linear" },  // ΥΠΟΧΡΕΩΤΙΚΟ
+  ],
+  messages: [{ role: "user", content: "Ποια issues μου έχουν ανατεθεί;" }],
+});
+```
+
+Το `mcp_server_name` πρέπει να ταιριάζει με ένα `name` από το `mcp_servers`. Κάθε server πρέπει να αναφέρεται από ακριβώς ένα toolset — αλλιώς ο compiler του API το κόβει ως validation error.
+
+> **Η παγίδα του authentication:** οι hosted MCP servers θέλουν συνήθως **OAuth bearer token**, όχι το native API key της υπηρεσίας. Ένα Notion integration token (`ntn_...`) δουλεύει στο Notion REST API και **δεν** δουλεύει ως MCP credential. Είναι δύο διαφορετικά συστήματα auth — αν παίρνεις 401 ενώ «το key δουλεύει», αυτό είναι.
+
+## Πότε γράφεις MCP server και πότε σκέτα tools
+
+| Γράψε σκέτο tool | Γράψε MCP server |
+|---|---|
+| Ένα app, δικός σου κώδικας | Πολλά apps ή πολλοί καταναλωτές |
+| Λογική βαθιά δεμένη με το domain σου | Επαναχρησιμοποιήσιμη δυνατότητα |
+| Λίγα εργαλεία, σταθερά | Θες να το χρησιμοποιείς και στο Claude Code / IDE |
+| Θες τον απόλυτο έλεγχο του schema | Θες να το μοιραστείς με την ομάδα ή δημόσια |
+
+Ο πρακτικός κανόνας: **μην ξεκινάς με MCP**. Γράψε το tool κατευθείαν· μετέτρεψέ το σε MCP server όταν εμφανιστεί ο **δεύτερος** καταναλωτής. Το MCP προσθέτει ένα επίπεδο (process, transport, auth) που αξίζει μόνο όταν το πληρώνεις για λόγο.
+
+## Ασφάλεια: τα tool definitions είναι κείμενο τρίτου
+
+Ένας MCP server που δεν έγραψες εσύ **βάζει δικά του κείμενα μέσα στο context του μοντέλου** — ονόματα εργαλείων, περιγραφές, και τα αποτελέσματα των κλήσεων. Αυτό είναι επιφάνεια **prompt injection**: μια περιγραφή εργαλείου ή ένα tool result μπορεί να περιέχει οδηγίες που το μοντέλο θα διαβάσει ως εντολές.
+
+Πρακτικά μέτρα:
+
+- **Trust boundary**: τρέξε μόνο servers που εμπιστεύεσαι· διάβασε τι εργαλεία εκθέτουν πριν τα ενεργοποιήσεις.
+- **Approval σε επικίνδυνες κλήσεις** — ο host είναι αυτός που εκτελεί, άρα εκεί μπαίνει το «ρώτα πρώτα» (delete, push, πληρωμή, αποστολή).
+- **Least privilege στα credentials**: ένα token με πρόσβαση μόνο σε ό,τι χρειάζεται το task.
+- **Τα credentials μένουν έξω από το sandbox** — στα hosted setups το token μπαίνει στο αίτημα *αφού* φύγει από το περιβάλλον εκτέλεσης, ώστε κώδικας που γράφει ο agent να μην μπορεί να το διαβάσει.
+- **Μην βάζεις ποτέ κλειδιά στο system prompt ή σε μήνυμα** — μένουν μόνιμα στο ιστορικό της συνομιλίας.
+
+## Πού το έχεις ήδη συναντήσει
+
+Το Claude Desktop, το **Claude Code**, τα IDE extensions και άλλοι AI editors φορτώνουν MCP servers από ένα config αρχείο. Όταν προσθέτεις έναν «GitHub MCP server» στο Claude Code και μετά του λες «κάνε μου ένα PR», αυτό ακριβώς συμβαίνει: ο host ζητά τη λίστα εργαλείων, τη δίνει στο μοντέλο, το μοντέλο ζητά `create_pull_request`, και ο host το προωθεί στον server. Το ότι μπορείς να γράψεις **έναν** server και να τον χρησιμοποιήσουν και ο editor σου και το production app σου είναι όλη η αξία του πρωτοκόλλου.
+
+<PredictOutput
+  title="Ποιος μιλά σε ποιον;"
+  code={`Έχεις MCP server για GitHub συνδεδεμένο στο app σου.
+Ο χρήστης ζητά «κλείσε το issue #42».
+
+Ποια είναι η σωστή ροή;`}
+  options={[
+    "Το μοντέλο συνδέεται απευθείας στον MCP server και τρέχει το εργαλείο",
+    "Ο host παίρνει τα tools από τον server → τα δίνει στο μοντέλο → το μοντέλο ΖΗΤΑ κλήση → ο host την προωθεί στον server",
+    "Ο MCP server καλεί το LLM API με το αίτημα του χρήστη",
+    "Ο χρήστης μιλά κατευθείαν στον MCP server"
+  ]}
+  correctOptionIndex={1}
+  answer="Ο host είναι πάντα στη μέση"
+  explanation="Ο MCP server δεν μιλά ποτέ στο μοντέλο. Ο host (η εφαρμογή) διαβάζει τα tool definitions από τον server, τα περνά στο μοντέλο ως tools, και όταν το μοντέλο ζητήσει κλήση, ο host την εκτελεί μέσω του client. Γι' αυτό τα approval gates και τα credentials ζουν στον host — είναι ο μόνος που εκτελεί."
+/>
+
+<Exercise
+  question="Πότε αξίζει να γράψεις MCP server αντί για σκέτο tool;"
+  options={[
+    "Πάντα — είναι το σύγχρονο standard για κάθε tool.",
+    "Όταν η ίδια δυνατότητα χρειάζεται σε πολλούς καταναλωτές (app + Claude Code + IDE) ή θες να τη μοιραστείς.",
+    "Μόνο όταν το tool χρειάζεται πρόσβαση στο internet."
+  ]}
+  correctOptionIndex={1}
+  explanation="Το MCP λύνει το M×N πρόβλημα: ένας server, πολλοί καταναλωτές. Για ένα μοναδικό app με δικά σου tools προσθέτει επίπεδο (process, transport, auth) χωρίς όφελος. Ο κανόνας: σκέτο tool πρώτα, MCP server όταν εμφανιστεί ο δεύτερος καταναλωτής."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «What is MCP and why does it exist?»
+
+> MCP is an open protocol that standardises how models connect to tools and data — it turns an N×M integration problem into N+M. Without it, every LLM app writes its own connector for every system; with it, each system ships one server and each app speaks the protocol once. It's the same idea as LSP for editors. Architecturally there are three roles: the host application, which owns the conversation and does the executing; a client per connection inside it; and the server, which exposes capabilities. The key thing people get wrong is thinking the server talks to the model — it doesn't. The host pulls the tool definitions from the server, passes them to the model as ordinary tools, and when the model asks for a call the host routes it back. Servers expose three primitives: tools, which the model decides to invoke; resources, which the application pulls into context; and prompts, which the user triggers explicitly. Transport is either stdio for local servers or streamable HTTP for hosted ones, both over JSON-RPC. Security-wise, a third-party server injects its own text into my context, so tool descriptions and results are a prompt-injection surface — I run only servers I trust, gate irreversible calls behind approval, and keep credentials scoped and out of the sandbox. And I don't reach for MCP by default: I write a plain tool first and promote it to a server when a second consumer shows up.
+
+<Flashcards
+  title="MCP — interview drills"
+  cards={[
+    {
+      question: "Τι πρόβλημα λύνει το MCP;",
+      answer: "Το M×N: N εφαρμογές × M συστήματα = N×M custom integrations. Με MCP γίνεται N+M — κάθε σύστημα γράφει έναν server, κάθε app μιλά το πρωτόκολλο μία φορά. Ίδια ιδέα με το LSP στους editors. Ανοιχτό πρότυπο, όχι δεμένο σε έναν προμηθευτή."
+    },
+    {
+      question: "Host, client, server — ποιος κάνει τι;",
+      answer: "Host = η εφαρμογή που κρατά τη συνομιλία και ΕΚΤΕΛΕΙ. Client = ένας ανά server, μέσα στον host. Server = εκθέτει δυνατότητες. Ο server ΔΕΝ μιλά ποτέ στο μοντέλο: ο host παίρνει τα tool definitions, τα δίνει στο μοντέλο, και προωθεί τις κλήσεις."
+    },
+    {
+      question: "Ποια είναι τα τρία primitives ενός MCP server;",
+      answer: "Tools (ενέργειες — τα ελέγχει ΤΟ ΜΟΝΤΕΛΟ, αποφασίζει πότε να τα καλέσει), Resources (δεδομένα προς ανάγνωση — τα ελέγχει Η ΕΦΑΡΜΟΓΗ), Prompts (έτοιμα templates — τα ενεργοποιεί Ο ΧΡΗΣΤΗΣ). Η διάκριση είναι 'ποιος έχει την πρωτοβουλία'."
+    },
+    {
+      question: "stdio vs Streamable HTTP;",
+      answer: "stdio: ο server τρέχει τοπικά ως child process, επικοινωνία μέσω stdin/stdout — για filesystem/git/τοπική βάση, χωρίς δίκτυο ή auth. Streamable HTTP: remote server πίσω από URL, με authentication, για hosted υπηρεσίες. Από κάτω και τα δύο μεταφέρουν JSON-RPC 2.0."
+    },
+    {
+      question: "Ποιο είναι το κλασικό λάθος στο MCP authentication;",
+      answer: "Οι hosted MCP servers θέλουν OAuth bearer token, ΟΧΙ το native API key της υπηρεσίας. Ένα Notion integration token δουλεύει στο REST API τους αλλά όχι ως MCP credential — είναι διαφορετικά συστήματα auth. Σύμπτωμα: 401 ενώ 'το key δουλεύει'."
+    },
+    {
+      question: "Γιατί είναι ένας ξένος MCP server επιφάνεια ασφαλείας;",
+      answer: "Βάζει δικά του κείμενα στο context σου: ονόματα/περιγραφές εργαλείων και tool results. Όλα αυτά μπορούν να περιέχουν prompt injection. Μέτρα: μόνο servers που εμπιστεύεσαι, approval σε μη αναστρέψιμες κλήσεις, least-privilege credentials, credentials έξω από το sandbox, ποτέ κλειδιά σε prompt/μήνυμα."
+    },
+    {
+      question: "Πότε ΔΕΝ θέλεις MCP;",
+      answer: "Όταν έχεις έναν μόνο καταναλωτή και δικό σου κώδικα — το σκέτο tool είναι απλούστερο. Το MCP προσθέτει process, transport και auth. Κανόνας: tool πρώτα, MCP server όταν εμφανιστεί ο δεύτερος καταναλωτής (π.χ. θες το ίδιο και στο Claude Code)."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Σύνδεσε και μετά γράψε έναν MCP server"
+  scenario="Πρώτα κατανάλωσε έναν έτοιμο MCP server, μετά γράψε έναν δικό σου με ένα-δύο εργαλεία — ώστε να δεις και τις δύο πλευρές του πρωτοκόλλου."
+  outcomes={[
+    "Να συνδέεις MCP server σε host και σε δικό σου κώδικα.",
+    "Να ξεχωρίζεις tools / resources / prompts και τα δύο transports.",
+    "Να κρίνεις πότε αξίζει MCP και πού μπαίνουν τα όρια ασφαλείας."
+  ]}
+  steps={[
+    "Πρόσθεσε έναν έτοιμο MCP server (π.χ. filesystem ή GitHub) στο Claude Code και δες ποια εργαλεία εμφανίζονται.",
+    "Παρακολούθησε μια πραγματική κλήση: ποιο εργαλείο διάλεξε το μοντέλο και με τι ορίσματα.",
+    "Σύνδεσε έναν remote server από κώδικα με mcp_servers + mcp_toolset — και δες τι error παίρνεις αν παραλείψεις το toolset.",
+    "Γράψε δικό σου stdio server με ΕΝΑ tool πάνω από δικά σου δεδομένα (π.χ. search_orders).",
+    "Πρόσθεσε ένα resource (π.χ. το schema της βάσης) και δες τη διαφορά από το tool.",
+    "Βάλε ένα δεύτερο, μη αναστρέψιμο tool και υλοποίησε approval gate στον host πριν εκτελεστεί.",
+    "Γράψε σε δύο γραμμές γιατί αυτό αξίζει (ή δεν αξίζει) ως MCP server αντί για σκέτο tool."
+  ]}
+  checkpoints={[
+    "Μπορείς να δείξεις τη διαδρομή host → μοντέλο → host → server σε μια πραγματική κλήση.",
+    "Ο δικός σου server δουλεύει από ΔΥΟ διαφορετικούς hosts χωρίς αλλαγή κώδικα.",
+    "Τα credentials δεν βρίσκονται ούτε στο prompt ούτε μέσα στο περιβάλλον εκτέλεσης.",
+    "Η επικίνδυνη κλήση σταματά και ζητά επιβεβαίωση."
+  ]}
+  mistakes={[
+    "Να νομίζεις ότι ο MCP server μιλά απευθείας στο μοντέλο.",
+    "Native API key αντί για OAuth token σε hosted MCP server.",
+    "Να ενεργοποιείς άγνωστους servers χωρίς να διαβάσεις τι εργαλεία εκθέτουν.",
+    "MCP για ένα μοναδικό app — επιπλέον επίπεδο χωρίς όφελος.",
+    "Να εμπιστεύεσαι tool descriptions/results ως ασφαλές κείμενο (prompt injection)."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν εξηγείς το M×N, δείχνεις τη ροή host/client/server σε πραγματική κλήση, και κρίνεις τεκμηριωμένα πότε γράφεις server αντί για tool."
+/>

@@ -1,0 +1,248 @@
+# Agents σε βάθος: loop, context & όρια
+
+Στο μάθημα tool use είδες τον βασικό κύκλο: το μοντέλο ζητά εργαλείο, εσύ εκτελείς, επαναλαμβάνεις. Αυτό είναι ο **σκελετός** ενός agent. Ό,τι κάνει τη διαφορά ανάμεσα σε ένα demo και σε κάτι που δουλεύει σε production είναι **τα υπόλοιπα**: πότε *δεν* θέλεις agent, πώς σχεδιάζεις την επιφάνεια των εργαλείων, πώς διαχειρίζεσαι το context όταν το task τρέχει επί ώρες, και πού βάζεις τους ανθρώπους στη μέση. Αυτό το μάθημα καλύπτει αυτά.
+
+## Πρώτα: μήπως δεν χρειάζεσαι agent;
+
+Το πιο συχνό λάθος είναι να ξεκινάς από τον agent. Υπάρχουν **τρία επίπεδα**, και θέλεις το απλούστερο που λύνει το πρόβλημα:
+
+| Επίπεδο | Τι είναι | Πότε |
+|---|---|---|
+| **Single call** | Ένα request, μία απάντηση | Classification, summarization, extraction, Q&A |
+| **Workflow** | Πολλά βήματα, αλλά **ο κώδικάς σου** ορίζει τη σειρά | Pipeline με γνωστά στάδια |
+| **Agent** | Το **μοντέλο** αποφασίζει τη διαδρομή του | Ανοιχτό task, μη προβλέψιμα βήματα |
+
+Πριν πας στο τρίτο επίπεδο, έλεγξε **τέσσερα** κριτήρια — αν κάποιο πέφτει, μείνε πιο χαμηλά:
+
+- **Πολυπλοκότητα** — είναι το task πολυβηματικό και δύσκολο να το προδιαγράψεις πλήρως εκ των προτέρων; («κάνε αυτό το design doc PR» ναι· «βγάλε τον τίτλο από αυτό το PDF» όχι.)
+- **Αξία** — δικαιολογεί το αποτέλεσμα το κόστος και το latency; Ένας agent κάνει πολλαπλάσιες κλήσεις.
+- **Εφικτότητα** — τα πάει καλά το μοντέλο σε αυτό το είδος εργασίας;
+- **Κόστος λάθους** — μπορείς να **πιάσεις** και να **αναιρέσεις** τα λάθη; (tests, review, rollback)
+
+> Αν ένα workflow με σταθερά βήματα δίνει το ίδιο αποτέλεσμα, ο agent είναι απλώς πιο ακριβός και πιο απρόβλεπτος τρόπος να το πετύχεις.
+
+## Τι ακριβώς είναι το harness
+
+Ο **agent loop** είναι δέκα γραμμές κώδικα. Το **harness** είναι όλα τα υπόλοιπα γύρω του:
+
+```txt
+harness = ο loop
+        + η επιφάνεια των εργαλείων (ποια tools, με τι schema)
+        + η διαχείριση του context (τι μένει, τι φεύγει, τι θυμάται)
+        + τα permissions (τι εκτελείται αυτόματα, τι θέλει έγκριση)
+        + το sandbox (πού τρέχει, τι μπορεί να αγγίξει)
+        + observability (τι λογάρεις, πώς κάνεις debug)
+```
+
+Όταν διαλέγεις πώς θα χτίσεις, στην ουσία απαντάς σε **δύο ανεξάρτητες ερωτήσεις**: ποιος δίνει το harness, και ποιος τρέχει την υποδομή.
+
+| Προσέγγιση | Γράφεις | Harness / Υποδομή |
+|---|---|---|
+| **Χειροκίνητος loop** | τον loop και τα tools | δικά σου και τα δύο |
+| **Tool runner** (SDK helper) | μόνο τις συναρτήσεις των tools | harness από το SDK· υποδομή δική σου |
+| **Managed agents** | config + τα δικά σου tool results | harness **και** υποδομή από τον provider |
+| **Έτοιμο agent SDK** | ένα prompt + options | έτοιμο harness με built-in tools· υποδομή δική σου |
+
+Ο χειροκίνητος loop **δεν** είναι απαραίτητος για approval gates ή logging — τα σύγχρονα tool runners δίνουν hooks ανά γύρο για ακριβώς αυτό. Κράτα τον χειροκίνητο loop για όταν θες να ελέγχεις **ολόκληρη** τη ροή.
+
+## Σχεδιάζοντας την επιφάνεια των εργαλείων
+
+Εδώ κρίνεται η ποιότητα ενός agent. Η βασική επιλογή: **ένα γενικό `bash` tool** ή **πολλά εξειδικευμένα tools**;
+
+Το `bash` δίνει τεράστια ευελιξία — ο agent κάνει σχεδόν οτιδήποτε. Αλλά δίνει στο harness σου **ένα αδιαφανές string**, ίδιο για κάθε ενέργεια. Δεν μπορείς να ξεχωρίσεις ένα ακίνδυνο `grep` από ένα `git push`.
+
+Προάγεις μια ενέργεια σε **δικό της tool** όταν θες:
+
+- **Όριο ασφαλείας** — μη αναστρέψιμες ενέργειες (αποστολή email, διαγραφή, πληρωμή) θέλουν gate. Ένα `send_email` tool μπλοκάρεται εύκολα· ένα `bash -c "curl -X POST ..."` όχι.
+- **Έλεγχο συνέπειας** — ένα `edit` tool μπορεί να **απορρίψει** εγγραφή αν το αρχείο άλλαξε από την τελευταία ανάγνωση. Το bash δεν μπορεί να εγγυηθεί τίποτα τέτοιο.
+- **Ειδικό rendering** — μια «ερώτηση προς τον χρήστη» ως tool μπορεί να γίνει modal με κουμπιά.
+- **Παραλληλισμό** — μπορείς να σημάνεις τα read-only tools ως ασφαλή για παράλληλη εκτέλεση. Μέσα από bash, το harness δεν ξεχωρίζει το `grep` από το `git push`, οπότε πρέπει να τα σειριοποιήσει όλα.
+
+Πρακτικός κανόνας: **ξεκίνα με bash για εύρος· προάγαγε σε ειδικό tool όταν χρειάζεσαι gate, rendering, audit ή παραλληλισμό.** Και σε κάθε περίπτωση, γράψε το description **πότε** να καλείται, όχι μόνο τι κάνει — αυτό είναι ο μεγαλύτερος μοχλός στο αν το tool θα κληθεί σωστά.
+
+## Context management: ο πραγματικός περιοριστικός πόρος
+
+Ένας agent που τρέχει επί ώρες γεμίζει το context window με παλιά tool results. Υπάρχουν **τρία διαφορετικά** εργαλεία, και συχνά τα χρειάζεσαι και τα τρία:
+
+| Τεχνική | Τι κάνει | Πότε |
+|---|---|---|
+| **Context editing** | **Σβήνει** παλιά tool results / thinking blocks | Το ιστορικό μπαγιατεύει μέσα στο ίδιο session |
+| **Compaction** | **Συνοψίζει** το παλιό ιστορικό σε περίληψη | Πλησιάζεις το όριο του context window |
+| **Memory** | Γράφει σε **αρχεία** που επιβιώνουν | Πρέπει να θυμάται **μεταξύ** sessions |
+
+Η διαφορά editing/compaction είναι «κόβω» vs «περιλαμβάνω». Το πρώτο κρατά τη δομή της συνομιλίας και πετά ό,τι δεν χρειάζεται πια· το δεύτερο συμπυκνώνει. Το memory είναι άλλη κατηγορία: επιμονή **πέρα** από τη συνομιλία, σε filesystem που ο agent διαβάζει και γράφει.
+
+> **Κρίσιμη λεπτομέρεια στο compaction:** πρέπει να προσθέτεις **ολόκληρο** το `response.content` πίσω στο ιστορικό, όχι μόνο το κείμενο. Τα compaction blocks είναι μέρος του content και το API τα χρειάζεται για να αντικαταστήσει το συμπυκνωμένο ιστορικό στο επόμενο request. Αν κρατάς μόνο το `.text`, χάνεις σιωπηλά την κατάσταση.
+
+Παράλληλα, όταν τα tools είναι δεκάδες, μη τα φορτώνεις όλα: με **tool search** ο agent ανακαλύπτει μόνο τα σχετικά schemas. Και επειδή τα schemas *προστίθενται* αντί να αντικαθίστανται, δεν σπάει το cache — δες αμέσως παρακάτω γιατί έχει σημασία.
+
+## Caching: γιατί ένας agent χωρίς αυτό κοστίζει πολλαπλάσια
+
+Κάθε γύρος του loop ξαναστέλνει **όλο** το ιστορικό. Χωρίς prompt caching πληρώνεις το ίδιο prefix ξανά και ξανά. Το caching είναι **prefix match**: οτιδήποτε αλλάξει σε ένα byte ακυρώνει ό,τι είναι από εκεί και κάτω. Η σειρά είναι `tools` → `system` → `messages`.
+
+Οι τρεις κανόνες που καθορίζουν αν ένας agent είναι φθηνός ή ακριβός:
+
+- **Μην αλλάζεις τα tools στη μέση.** Τα tools είναι στη θέση 0 — προσθήκη, αφαίρεση ή αναδιάταξη ακυρώνει **τα πάντα**. Σειριοποίησέ τα ντετερμινιστικά (ταξινομημένα κατά όνομα).
+- **Μην αλλάζεις μοντέλο στη μέση.** Τα caches είναι ανά μοντέλο. Θες φθηνότερο μοντέλο για ένα υπο-task; Κάνε **subagent**, κράτα τον κύριο loop σε ένα μοντέλο.
+- **Πάγωσε το system prompt.** Ένα `new Date()` ή ένα user id μέσα στο system prompt ακυρώνει ό,τι έρχεται μετά — δηλαδή τα πάντα. Δυναμικό context μπαίνει **αργότερα**, στα `messages`.
+
+Έλεγχος: αν το `usage.cache_read_input_tokens` είναι μηδέν σε επαναλαμβανόμενα requests, κάτι ακυρώνει σιωπηλά το cache.
+
+## Subagents: πότε βοηθούν και πότε καίνε λεφτά
+
+Ένας subagent είναι ένας δεύτερος agent loop για ένα υπο-task, με **δικό του** context. Η αξία: το κύριο context μένει καθαρό — παίρνεις πίσω μόνο το συμπέρασμα, όχι τα 40 tool results που το παρήγαγαν.
+
+Το κόστος όμως είναι πραγματικό: κάθε subagent **ξαναχτίζει το context του από την αρχή**, ξανα-εξερευνά, γράφει αναφορά, και μετά ο συντονιστής τη διαβάζει. Αξίζει όταν:
+
+- Τα υπο-tasks είναι **πραγματικά ανεξάρτητα** και τρέχουν παράλληλα (π.χ. ψάξιμο σε πολλά αρχεία ταυτόχρονα).
+- Το υπο-task παράγει **πολύ θόρυβο** και λίγο σήμα.
+
+Δεν αξίζει για δουλειά που ο κύριος agent τελειώνει σε λίγες κλήσεις, ούτε για επαλήθευση — ο έλεγχος ανήκει στον κύριο loop. Πρακτικά: βάλε **ρητό όριο** στον αριθμό των subagents.
+
+## Άνθρωποι στη μέση & blast radius
+
+Ο δικός σου κώδικας εκτελεί — άρα ο δικός σου κώδικας αποφασίζει. Τα τρία επίπεδα ελέγχου:
+
+```txt
+1. Permissions ανά tool:  always_allow | ask | deny
+2. Sandbox:               πού τρέχει (container, VM, περιορισμένος χρήστης)
+3. Credentials:           least privilege, ποτέ μέσα στο περιβάλλον εκτέλεσης
+```
+
+Το κριτήριο για το «ask» είναι η **αναστρεψιμότητα**: μια εγγραφή σε temp αρχείο είναι αναστρέψιμη, ένα email που έφυγε δεν είναι. Και αν ο agent τρέχει shell εντολές, θεώρησέ τες **μη έμπιστο input**: allowlist εκτελέσιμων, απόρριψη shell operators (`&&`, `|`, `;`), timeouts, logging. Ένα blocklist δεν αρκεί.
+
+## Πού σπάνε οι agents στην πράξη
+
+| Αστοχία | Τι βλέπεις | Αντίμετρο |
+|---|---|---|
+| Ατέρμονος loop | Ίδιες κλήσεις ξανά και ξανά | `max_iterations`, ανίχνευση επανάληψης |
+| Σιωπηλό σφάλμα tool | Ο agent «συνεχίζει» με λάθος δεδομένα | Επίστρεψε `is_error: true` με μήνυμα — μην πετάς το αποτέλεσμα |
+| Σπασμένα parallel results | Το μοντέλο σταματά να κάνει παράλληλες κλήσεις | Όλα τα `tool_result` σε **ένα** user message |
+| Χαμένο cache | Το κόστος εκτοξεύεται χωρίς λόγο | Έλεγξε `cache_read_input_tokens`· ψάξε timestamps/UUID στο prefix |
+| Context overflow | Κόβεται στη μέση, `max_tokens` | Compaction + context editing· μεγαλύτερο `max_tokens` |
+| Παύση σε server-side tool | `stop_reason: "pause_turn"` | Ξαναστείλε το ιστορικό ως έχει — **χωρίς** νέο «Continue» μήνυμα |
+| Αόρατη αποτυχία | Δεν ξέρεις τι έκανε | Λογάρισε κάθε tool call, input, result και το usage ανά γύρο |
+
+> Το `pause_turn` μπερδεύει: δεν είναι λάθος. Σημαίνει ότι ο server-side κύκλος έφτασε το όριο επαναλήψεων. Ξαναστέλνεις το μήνυμα και το assistant content ως έχουν — το API καταλαβαίνει μόνο του ότι συνεχίζει.
+
+<PredictOutput
+  title="Γιατί τετραπλασιάστηκε το κόστος;"
+  code={`Ένας agent loop δουλεύει σωστά αλλά κοστίζει τεράστια.
+Στο system prompt υπάρχει:
+
+  system: \`Είσαι βοηθός. Ώρα: \${new Date().toISOString()}\`
+
+Τι συμβαίνει;`}
+  options={[
+    "Τίποτα — το timestamp είναι λίγα tokens",
+    "Το prompt cache ακυρώνεται σε ΚΑΘΕ κλήση, άρα όλο το ιστορικό ξαναχρεώνεται πλήρως",
+    "Το μοντέλο μπερδεύεται με την ώρα και κάνει περισσότερες κλήσεις",
+    "Ξεπερνιέται το context window"
+  ]}
+  correctOptionIndex={1}
+  answer="Ακυρώνεται το cache σε κάθε κλήση"
+  explanation="Το caching είναι prefix match και το system prompt είναι σχεδόν στην αρχή του prefix. Ένα timestamp που αλλάζει κάθε request αλλάζει τα bytes εκεί, άρα ΤΙΠΟΤΑ μετά από αυτό δεν διαβάζεται από cache — σε έναν agent που ξαναστέλνει όλο το ιστορικό κάθε γύρο, αυτό είναι πολλαπλάσιο κόστος. Το δυναμικό context μπαίνει αργότερα, στα messages. Έλεγχος: usage.cache_read_input_tokens = 0."
+/>
+
+<Exercise
+  question="Ποιο είναι το σωστό εργαλείο όταν ο agent πρέπει να θυμάται πράγματα ΜΕΤΑΞΥ διαφορετικών sessions;"
+  options={[
+    "Compaction — συνοψίζει το ιστορικό ώστε να χωρέσει.",
+    "Memory — γράφει σε αρχεία που επιβιώνουν μετά το τέλος του session.",
+    "Context editing — σβήνει τα παλιά tool results."
+  ]}
+  correctOptionIndex={1}
+  explanation="Compaction και context editing δουλεύουν ΜΕΣΑ σε ένα session: το πρώτο συνοψίζει όταν πλησιάζεις το όριο, το δεύτερο σβήνει μπαγιάτικα tool results. Και τα δύο χάνονται όταν τελειώσει το session. Για επιμονή μεταξύ sessions χρειάζεσαι memory — αρχεία που ο agent διαβάζει και γράφει και επιβιώνουν από restart."
+/>
+
+## Πώς απαντάς στη συνέντευξη
+
+> «How do you build an agent that actually works in production?»
+
+> First, I check whether it should be an agent at all. There are three tiers — single call, workflow where my code owns the sequence, and agent where the model owns it — and I take the simplest one that works. An agent is justified when the task is genuinely open-ended, the value covers the extra cost and latency, the model is capable at it, and errors are catchable and reversible. The loop itself is trivial; the harness is the work. Tool surface first: bash gives breadth but hands the harness an opaque string, so I promote an action to a dedicated tool when I need to gate it, render it, audit it, or run it in parallel — and every description says *when* to call it, not just what it does. Then context, which is the real limiting resource: context editing clears stale tool results, compaction summarises when I'm near the window, and memory is files that survive across sessions — different tools, often all three. Caching is what makes the economics work, and it's a prefix match, so the rules are: don't change tools or the model mid-session, and never interpolate a timestamp into the system prompt — I verify with `cache_read_input_tokens`. Subagents keep the main context clean but each one rebuilds context from scratch, so I cap them and never use them for verification. Safety lives in my executor: per-tool permissions with approval on anything irreversible, a sandbox, and least-privilege credentials that never enter the execution environment. And I cap iterations, return `is_error` instead of swallowing tool failures, and log every call — an agent you can't inspect is one you can't debug.
+
+<Flashcards
+  title="Agents σε βάθος — interview drills"
+  cards={[
+    {
+      question: "Πότε ΔΕΝ πρέπει να χτίσεις agent;",
+      answer: "Όταν αρκεί single call ή workflow με σταθερά βήματα. Τέσσερα κριτήρια πριν πας σε agent: πολυπλοκότητα (δεν προδιαγράφεται πλήρως), αξία (καλύπτει κόστος+latency), εφικτότητα (το μοντέλο τα πάει καλά), κόστος λάθους (πιάνεται και αναιρείται). Αν κάποιο πέφτει, μείνε χαμηλότερα."
+    },
+    {
+      question: "Τι είναι το harness ενός agent;",
+      answer: "Ό,τι περιβάλλει τον loop: επιφάνεια εργαλείων, context management, permissions, sandbox, observability. Ο loop είναι δέκα γραμμές — το harness είναι η δουλειά. Δύο ανεξάρτητες επιλογές: ποιος δίνει το harness και ποιος τρέχει την υποδομή."
+    },
+    {
+      question: "bash tool ή ειδικά tools;",
+      answer: "Το bash δίνει εύρος αλλά στο harness φτάνει αδιαφανές string — δεν ξεχωρίζεις grep από git push. Προάγεις σε ειδικό tool για: όριο ασφαλείας (μη αναστρέψιμα), έλεγχο συνέπειας (stale file), rendering (modal), παραλληλισμό (read-only = ασφαλή παράλληλα). Κανόνας: bash για εύρος, προαγωγή όπου χρειάζεται έλεγχος."
+    },
+    {
+      question: "Context editing vs compaction vs memory;",
+      answer: "Context editing: ΣΒΗΝΕΙ παλιά tool results/thinking μέσα στο session. Compaction: ΣΥΝΟΨΙΖΕΙ το ιστορικό όταν πλησιάζεις το όριο. Memory: αρχεία που ΕΠΙΒΙΩΝΟΥΝ μεταξύ sessions. Τα δύο πρώτα είναι εντός session, το τρίτο διασυνεδριακό — συχνά τα θες και τα τρία."
+    },
+    {
+      question: "Ποια είναι η παγίδα του compaction;",
+      answer: "Πρέπει να προσθέτεις ΟΛΟΚΛΗΡΟ το response.content πίσω στο ιστορικό, όχι μόνο το κείμενο. Τα compaction blocks είναι μέρος του content και το API τα χρειάζεται για να αντικαταστήσει το συμπυκνωμένο ιστορικό. Αν κρατάς μόνο το .text, χάνεις σιωπηλά την κατάσταση."
+    },
+    {
+      question: "Τι σπάει το prompt cache σε έναν agent;",
+      answer: "Είναι prefix match (σειρά: tools → system → messages). Σπάνε: αλλαγή tools στη μέση (θέση 0 — ακυρώνει τα πάντα), αλλαγή μοντέλου (caches ανά μοντέλο), timestamp/UUID/user id μέσα στο system prompt. Έλεγχος: usage.cache_read_input_tokens = 0 σημαίνει σιωπηλός invalidator."
+    },
+    {
+      question: "Πότε αξίζει subagent;",
+      answer: "Όταν τα υπο-tasks είναι πραγματικά ανεξάρτητα/παράλληλα ή παράγουν πολύ θόρυβο και λίγο σήμα — το κύριο context μένει καθαρό. ΔΕΝ αξίζει για δουλειά λίγων κλήσεων ούτε για επαλήθευση (ανήκει στον κύριο loop). Βάλε ρητό όριο στον αριθμό τους."
+    },
+    {
+      question: "Πώς αποφασίζεις τι θέλει ανθρώπινη έγκριση;",
+      answer: "Κριτήριο η αναστρεψιμότητα: temp αρχείο ναι, απεσταλμένο email όχι. Τρία επίπεδα ελέγχου: permissions ανά tool (allow/ask/deny), sandbox, least-privilege credentials έξω από το περιβάλλον εκτέλεσης. Shell εντολές = μη έμπιστο input (allowlist, όχι blocklist)."
+    },
+    {
+      question: "Τι σημαίνει stop_reason: 'pause_turn';",
+      answer: "ΟΧΙ σφάλμα: ο server-side κύκλος (π.χ. web search) έφτασε το όριο επαναλήψεων. Ξαναστέλνεις το user message + το assistant content ως έχουν και συνεχίζει μόνο του — ΜΗΝ προσθέσεις μήνυμα 'Continue'. Βάλε όριο συνεχίσεων για ασφάλεια."
+    },
+    {
+      question: "Τι κάνεις όταν αποτυγχάνει ένα tool;",
+      answer: "Επιστρέφεις tool_result με is_error: true και κατατοπιστικό μήνυμα — ΔΕΝ το παραλείπεις. Το μοντέλο αναγνωρίζει το σφάλμα και είτε δοκιμάζει άλλη προσέγγιση είτε ρωτά. Παράλειψη του result σπάει το context· σιωπηλή αποτυχία οδηγεί σε λάθος συμπεράσματα."
+    }
+  ]}
+/>
+
+<TrainingLab
+  title="Σκλήρυνε έναν agent για production"
+  scenario="Πάρε τον απλό agent loop του προηγούμενου μαθήματος και πρόσθεσέ του τα κομμάτια που τον κάνουν να αντέχει: όρια, context management, caching, observability."
+  outcomes={[
+    "Να κρίνεις αν το task δικαιολογεί agent.",
+    "Να σχεδιάζεις επιφάνεια εργαλείων με συνειδητά όρια.",
+    "Να διαχειρίζεσαι context και cache σε μακρύ loop.",
+    "Να βάζεις approval gates και observability."
+  ]}
+  steps={[
+    "Γράψε σε τρεις γραμμές γιατί αυτό το task χρειάζεται agent και όχι workflow — με τα τέσσερα κριτήρια.",
+    "Δώσε στον agent ένα γενικό tool (π.χ. shell ή query) και δες πόσο δύσκολο είναι να μπλοκάρεις μια συγκεκριμένη ενέργεια.",
+    "Προάγαγε τη μία επικίνδυνη ενέργεια σε δικό της tool και βάλε approval gate σε αυτήν μόνο.",
+    "Λόγαρε ανά γύρο: tool name, input, διάρκεια, usage — και δες πού πάει ο χρόνος και το κόστος.",
+    "Πρόσθεσε cache_control στο σταθερό prefix και επιβεβαίωσε cache_read_input_tokens > 0 στον δεύτερο γύρο.",
+    "Βάλε επίτηδες ένα new Date() στο system prompt και δες το cache να μηδενίζει — μετά βγάλ' το.",
+    "Άσε τον agent να τρέξει αρκετά ώστε να φουσκώσει το ιστορικό· πρόσθεσε compaction ή context editing.",
+    "Πρόσθεσε ένα αρχείο memory που ο agent διαβάζει στην αρχή και γράφει στο τέλος· ξεκίνα νέο session και δες αν το χρησιμοποιεί.",
+    "Κάνε ένα tool να αποτυγχάνει επίτηδες και επίστρεψε is_error — δες πώς ανακάμπτει."
+  ]}
+  checkpoints={[
+    "Ο loop τερματίζει πάντα: max iterations και ανίχνευση επανάληψης.",
+    "Η μη αναστρέψιμη ενέργεια δεν εκτελείται ποτέ χωρίς ρητή έγκριση.",
+    "Το cache_read_input_tokens ανεβαίνει σε κάθε γύρο αντί να μένει μηδέν.",
+    "Το ιστορικό δεν μεγαλώνει ανεξέλεγκτα σε μακρύ τρέξιμο.",
+    "Από τα logs μπορείς να ανασυνθέσεις ακριβώς τι έκανε ο agent και γιατί."
+  ]}
+  mistakes={[
+    "Agent εκεί που αρκούσε workflow ή ένα request.",
+    "Timestamp/user id μέσα στο system prompt — σιωπηλή ακύρωση cache.",
+    "Αλλαγή tools ή μοντέλου στη μέση του session.",
+    "Παράλειψη του tool_result σε αποτυχία αντί για is_error.",
+    "Παράλληλα tool_results σπασμένα σε πολλά messages.",
+    "Subagent για κάθε μικρή δουλειά — πολλαπλασιάζει κόστος και χρόνο.",
+    "Κρατάς μόνο το .text αντί για όλο το response.content με compaction.",
+    "Credentials μέσα στο περιβάλλον εκτέλεσης ή στο prompt."
+  ]}
+  mastery="Το μάθημα πέτυχε όταν ο agent σου τερματίζει πάντα, κοστίζει προβλέψιμα, ζητά έγκριση εκεί που πρέπει, και μπορείς από τα logs να εξηγήσεις κάθε του κίνηση."
+/>
