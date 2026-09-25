@@ -41,7 +41,7 @@ export function TrainingLab({
         <p className="mt-3 text-base leading-7 text-blue-950 dark:text-blue-200">{scenario}</p>
       </div>
 
-      <div className="grid gap-5 md:grid-cols-2">
+      <div className="grid gap-5 md:grid-cols-2 print:grid-cols-2 print:gap-3">
         <div className="rounded-lg bg-white p-4 dark:bg-gray-900">
           <SectionList title="Στόχοι" items={outcomes} />
         </div>

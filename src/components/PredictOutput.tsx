@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+const LETTERS = "αβγδεζηθικλμ";
+
 interface PredictOutputProps {
   title?: string;
   code: string;
@@ -26,7 +28,7 @@ export function PredictOutput({
   const isCorrect = hasOptions && selected === correctOptionIndex;
 
   return (
-    <div className="my-8 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+    <div className="print-block my-8 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
       <div className="flex items-center gap-2 border-b border-gray-200 bg-gray-50 px-5 py-3 dark:border-gray-800 dark:bg-gray-900/50">
         <span className="rounded bg-purple-100 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-purple-700 dark:bg-purple-950 dark:text-purple-300">
           Predict the output
@@ -34,13 +36,27 @@ export function PredictOutput({
         <h4 className="font-bold text-gray-900 dark:text-gray-100">{title}</h4>
       </div>
 
-      <pre className="overflow-x-auto bg-gray-950 p-5 font-mono text-sm leading-7 text-gray-100">
+      <pre className="print-code overflow-x-auto bg-gray-950 p-5 font-mono text-sm leading-7 text-gray-100">
         <code>{code}</code>
       </pre>
 
       <div className="p-5">
         {hasOptions && (
-          <div className="mb-4 flex flex-col gap-2">
+          <ol className="print-only space-y-1 font-mono text-sm">
+            {options.map((option, index) => (
+              <li key={option}>
+                {LETTERS[index]}) {option}
+              </li>
+            ))}
+          </ol>
+        )}
+        <div className="print-answer mt-3 border-t border-dashed border-gray-300 pt-2 text-sm">
+          <p className="font-mono font-semibold">Output: {answer}</p>
+          <p className="mt-1">{explanation}</p>
+        </div>
+
+        {hasOptions && (
+          <div className="mb-4 flex flex-col gap-2 print:hidden">
             {options.map((option, index) => {
               let cls = "rounded-lg border px-4 py-2.5 text-left font-mono text-sm transition-colors ";
               if (!revealed) {
@@ -73,7 +89,7 @@ export function PredictOutput({
           <button
             onClick={() => setRevealed(true)}
             disabled={hasOptions && selected === null}
-            className={`rounded-lg px-5 py-2.5 font-medium transition-colors ${
+            className={`rounded-lg px-5 py-2.5 font-medium transition-colors print:hidden ${
               hasOptions && selected === null
                 ? "cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600"
                 : "bg-purple-600 text-white hover:bg-purple-700"
@@ -83,7 +99,7 @@ export function PredictOutput({
           </button>
         ) : (
           <div
-            className={`rounded-lg border p-4 ${
+            className={`rounded-lg border p-4 print:hidden ${
               !hasOptions || isCorrect
                 ? "border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/40"
                 : "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/40"

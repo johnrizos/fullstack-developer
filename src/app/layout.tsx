@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { SiteHeader } from "@/components/SiteHeader";
 import { InlineScript } from "@/components/InlineScript";
 import "./globals.css";
+import "./print.css";
 
 export const metadata: Metadata = {
   title: "Roadmap: Γίνε Fullstack Developer",
@@ -37,7 +38,7 @@ export default function RootLayout({
 
         <main className="w-full flex-1">{children}</main>
 
-        <footer className="mt-auto border-t border-gray-200 bg-white py-6 dark:border-gray-800 dark:bg-gray-950">
+        <footer className="mt-auto border-t print:hidden border-gray-200 bg-white py-6 dark:border-gray-800 dark:bg-gray-950">
           <div className="mx-auto max-w-7xl px-4 text-center text-sm text-gray-500 dark:text-gray-400">
             <p>Φτιάχτηκε για ανθρώπους που θέλουν να μάθουν με πράξη, όχι μόνο με θεωρία.</p>
           </div>

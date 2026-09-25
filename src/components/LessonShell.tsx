@@ -15,6 +15,7 @@ import {
 } from "@/lib/curriculum";
 import { useProgress } from "@/hooks/useProgress";
 import { CompleteLessonButton } from "./CompleteLessonButton";
+import { PrintBar } from "./PrintBar";
 
 const SIDEBAR_STORAGE_KEY = "lessons-sidebar-collapsed";
 const SIDEBAR_CHANGE_EVENT = "lessons-sidebar-collapsed-change";
@@ -154,19 +155,19 @@ export function LessonShell({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl gap-8 px-4 py-6 md:py-8">
+    <div className="mx-auto flex w-full max-w-7xl gap-8 px-4 py-6 md:py-8 print:block print:max-w-none print:p-0">
       {collapsed ? (
         <button
           type="button"
           onClick={toggleCollapsed}
           aria-label="Άνοιγμα περιεχομένων"
           title="Άνοιγμα περιεχομένων"
-          className="sticky top-[65px] hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 lg:flex dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+          className="sticky top-[65px] hidden h-9 w-9 shrink-0 print:hidden items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 lg:flex dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
         >
           <span aria-hidden className="text-lg leading-none">»</span>
         </button>
       ) : (
-        <aside className="sticky top-[65px] hidden max-h-[calc(100vh-81px)] w-72 shrink-0 overflow-y-auto pb-8 pr-2 lg:block">
+        <aside className="sticky top-[65px] hidden max-h-[calc(100vh-81px)] w-72 shrink-0 overflow-y-auto pb-8 pr-2 lg:block print:hidden">
           <div className="mb-3 flex items-center justify-between px-2">
             <p className="text-xs font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">
               Περιεχόμενα
@@ -186,7 +187,7 @@ export function LessonShell({ children }: { children: React.ReactNode }) {
       )}
 
       <div className="min-w-0 flex-1">
-        <details className="mb-4 rounded-lg border border-gray-200 bg-white lg:hidden dark:border-gray-800 dark:bg-gray-900">
+        <details className="mb-4 rounded-lg border border-gray-200 bg-white lg:hidden print:hidden dark:border-gray-800 dark:bg-gray-900">
           <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-gray-700 dark:text-gray-300">
             Περιεχόμενα μαθημάτων
           </summary>
@@ -203,9 +204,22 @@ export function LessonShell({ children }: { children: React.ReactNode }) {
           </div>
         )}
 
+        <PrintBar
+          links={
+            lesson
+              ? [
+                  ...(lesson.groupId && lesson.groupTitle
+                    ? [{ href: `/print/${lesson.groupId}`, label: `🖨 Όλο το «${lesson.groupTitle}»` }]
+                    : []),
+                  { href: `/print/${lesson.sectionId}`, label: `🖨 Όλη η ενότητα «${lesson.sectionTitle}»` },
+                ]
+              : []
+          }
+        />
+
         <article className="min-w-0">{children}</article>
 
-        <div className="mt-12 border-t border-gray-200 pt-6 dark:border-gray-800">
+        <div className="mt-12 border-t border-gray-200 pt-6 print:hidden dark:border-gray-800">
           {lesson && (
             <div className="mb-6 flex justify-center">
               <CompleteLessonButton lessonId={lesson.id} />

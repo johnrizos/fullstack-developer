@@ -2461,6 +2461,7 @@ export type LessonWithSection = Lesson & {
   sectionId: string;
   sectionTitle: string;
   sectionIndex: number;
+  groupId?: string;
   groupTitle?: string;
   estimatedMinutes: number;
 };
@@ -2472,6 +2473,7 @@ export const allLessons: LessonWithSection[] = curriculum.flatMap((section, sect
       return item.lessons.map((lesson) => ({
         ...lesson,
         ...base,
+        groupId: item.id,
         groupTitle: item.title,
         estimatedMinutes: lessonDurationsMinutes[lesson.id] ?? 60,
       }));
@@ -2495,6 +2497,35 @@ export function formatDuration(minutes: number) {
 
   if (remainingMinutes === 0) return `${hours} ${hourLabel}`;
   return `${hours} ${hourLabel} ${remainingMinutes} λεπτά`;
+}
+
+// Ό,τι μπορεί να τυπωθεί ολόκληρο στο /print/[id]: κάθε ενότητα και κάθε group της.
+export type PrintableUnit = {
+  id: string;
+  title: string;
+  description: string;
+  sectionTitle?: string;
+  lessons: LessonWithSection[];
+};
+
+export const printableUnits: PrintableUnit[] = curriculum.flatMap((section) => [
+  {
+    id: section.id,
+    title: section.title,
+    description: section.description,
+    lessons: allLessons.filter((lesson) => lesson.sectionId === section.id),
+  },
+  ...section.lessons.filter(isLessonGroup).map((group) => ({
+    id: group.id,
+    title: group.title,
+    description: group.description,
+    sectionTitle: section.title,
+    lessons: allLessons.filter((lesson) => lesson.groupId === group.id),
+  })),
+]);
+
+export function getPrintableUnit(id: string): PrintableUnit | undefined {
+  return printableUnits.find((unit) => unit.id === id);
 }
 
 export function getLessonBySlug(slug: string): LessonWithSection | undefined {

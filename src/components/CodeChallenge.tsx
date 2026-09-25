@@ -164,7 +164,7 @@ export function CodeChallenge({
 </html>`;
 
   return (
-    <section className="my-8 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+    <section className="print-block my-8 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
       <div className="border-b border-gray-200 p-5 dark:border-gray-800">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -172,7 +172,7 @@ export function CodeChallenge({
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{description}</p>
           </div>
           <span
-            className={`w-fit rounded-full px-3 py-1 text-sm font-semibold ${
+            className={`w-fit rounded-full px-3 py-1 text-sm font-semibold print:hidden ${
               isComplete ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300" : "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
             }`}
           >
@@ -180,7 +180,7 @@ export function CodeChallenge({
           </span>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-4 flex flex-wrap gap-2 print:hidden">
           {hasSolution && (
             <button
               type="button"
@@ -200,7 +200,50 @@ export function CodeChallenge({
         </div>
       </div>
 
-      <div className="grid gap-0 lg:grid-cols-2">
+      <div className="print-only space-y-3 p-5">
+        {[
+          ["HTML", initialHtml],
+          ["CSS", initialCss],
+          ["JavaScript", initialJs],
+          ["TypeScript", initialTs],
+        ]
+          .filter(([, code]) => code.trim() !== "")
+          .map(([label, code]) => (
+            <div key={label}>
+              <p className="text-sm font-semibold">{label} — αρχικός κώδικας</p>
+              <pre className="print-code font-mono text-sm">{code}</pre>
+            </div>
+          ))}
+
+        <div>
+          <p className="text-sm font-semibold">Κριτήρια</p>
+          <ul className="mt-1 space-y-1 text-sm">
+            {checks.map((check) => (
+              <li key={check.id}>☐ {check.label}</li>
+            ))}
+          </ul>
+        </div>
+
+        {hasSolution && (
+          <div className="print-answer space-y-3">
+            {[
+              ["HTML", solutionHtml],
+              ["CSS", solutionCss],
+              ["JavaScript", solutionJs],
+              ["TypeScript", solutionTs],
+            ]
+              .filter(([, code]) => code !== undefined && code.trim() !== "")
+              .map(([label, code]) => (
+                <div key={label}>
+                  <p className="text-sm font-semibold">{label} — λύση</p>
+                  <pre className="print-code font-mono text-sm">{code}</pre>
+                </div>
+              ))}
+          </div>
+        )}
+      </div>
+
+      <div className="grid gap-0 lg:grid-cols-2 print:hidden">
         <div className="border-b border-gray-200 lg:border-b-0 lg:border-r dark:border-gray-800">
           <div className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700 dark:border-gray-800 dark:bg-gray-950/60 dark:text-gray-300">
             HTML

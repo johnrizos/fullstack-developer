@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+const LETTERS = "αβγδεζηθικλμ";
+
 interface ExerciseProps {
   question: string;
   options: string[];
@@ -22,7 +24,7 @@ export function Exercise({ question, options, correctOptionIndex, explanation }:
   const isCorrect = selectedOption === correctOptionIndex;
 
   return (
-    <div className="my-8 rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+    <div className="print-block my-8 rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
       <div className="mb-4 flex items-center gap-2">
         <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-blue-700 dark:bg-blue-950 dark:text-blue-300">
           Quiz
@@ -31,7 +33,22 @@ export function Exercise({ question, options, correctOptionIndex, explanation }:
       </div>
       <p className="mb-6 font-medium text-gray-800 dark:text-gray-200">{question}</p>
 
-      <div className="mb-6 flex flex-col gap-3">
+      <ol className="print-only mb-2 space-y-1">
+        {options.map((option, index) => (
+          <li key={option} className="flex gap-2">
+            <span className="font-semibold">{LETTERS[index]})</span>
+            <span>{option}</span>
+          </li>
+        ))}
+      </ol>
+      <div className="print-answer mt-3 border-t border-dashed border-gray-300 pt-2 text-sm">
+        <p>
+          <strong>Απάντηση:</strong> {LETTERS[correctOptionIndex]}) {options[correctOptionIndex]}
+        </p>
+        {explanation && <p className="mt-1">{explanation}</p>}
+      </div>
+
+      <div className="mb-6 flex flex-col gap-3 print:hidden">
         {options.map((option, index) => {
           let buttonClass = "p-4 text-left rounded-lg border transition-all text-gray-800 dark:text-gray-200 ";
 
@@ -74,7 +91,7 @@ export function Exercise({ question, options, correctOptionIndex, explanation }:
         <button
           onClick={handleSubmit}
           disabled={selectedOption === null}
-          className={`rounded-lg px-6 py-2.5 font-medium transition-colors ${
+          className={`rounded-lg px-6 py-2.5 font-medium transition-colors print:hidden ${
             selectedOption !== null
               ? "bg-blue-600 text-white hover:bg-blue-700"
               : "cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600"
@@ -84,7 +101,7 @@ export function Exercise({ question, options, correctOptionIndex, explanation }:
         </button>
       ) : (
         <div
-          className={`mt-4 rounded-lg p-4 ${
+          className={`mt-4 rounded-lg p-4 print:hidden ${
             isCorrect
               ? "border border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/40"
               : "border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/40"

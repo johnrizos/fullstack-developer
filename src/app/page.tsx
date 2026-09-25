@@ -194,6 +194,12 @@ export default function Home() {
                     <div className="mt-2 h-2 w-32 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800">
                       <div className="h-full rounded-full bg-green-500 transition-all" style={{ width: `${sectionPercent}%` }} />
                     </div>
+                    <Link
+                      href={`/print/${section.id}`}
+                      className="mt-3 inline-block text-xs font-semibold text-blue-600 hover:underline dark:text-blue-400"
+                    >
+                      🖨 Εκτύπωση ενότητας
+                    </Link>
                   </div>
                 </div>
               </div>
@@ -240,6 +246,14 @@ export default function Home() {
                             </span>
                           </summary>
                           <div className="divide-y divide-gray-100 border-l-4 border-blue-500/40 dark:divide-gray-800">
+                            <div className="px-5 py-2 text-right">
+                              <Link
+                                href={`/print/${item.id}`}
+                                className="text-xs font-semibold text-blue-600 hover:underline dark:text-blue-400"
+                              >
+                                🖨 Εκτύπωση «{item.title}»
+                              </Link>
+                            </div>
                             {item.lessons.map((lesson, lessonIndex) => (
                               <LessonCard
                                 key={lesson.id}

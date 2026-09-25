@@ -26,7 +26,7 @@ export function Flashcards({ title = "Interview flashcards", cards }: { title?: 
   };
 
   return (
-    <div className="my-8 rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+    <div className="print-block my-8 rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-amber-700 dark:bg-amber-950 dark:text-amber-300">
@@ -34,14 +34,23 @@ export function Flashcards({ title = "Interview flashcards", cards }: { title?: 
           </span>
           <h4 className="font-bold text-gray-900 dark:text-gray-100">{title}</h4>
         </div>
-        <span className="text-sm font-semibold text-gray-500 dark:text-gray-400">
+        <span className="text-sm font-semibold text-gray-500 print:hidden dark:text-gray-400">
           {index + 1}/{cards.length} · ✓ {known.size}
         </span>
       </div>
 
+      <ol className="print-only list-decimal space-y-2 pl-5">
+        {cards.map((c) => (
+          <li key={c.question}>
+            <p className="font-semibold">{c.question}</p>
+            <p className="print-answer mt-0.5">{c.answer}</p>
+          </li>
+        ))}
+      </ol>
+
       <button
         onClick={() => setFlipped((value) => !value)}
-        className="flex min-h-44 w-full flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-gray-300 p-6 text-center transition-colors hover:border-blue-400 dark:border-gray-700 dark:hover:border-blue-600"
+        className="flex min-h-44 w-full flex-col print:hidden items-center justify-center gap-3 rounded-xl border-2 border-dashed border-gray-300 p-6 text-center transition-colors hover:border-blue-400 dark:border-gray-700 dark:hover:border-blue-600"
       >
         <span className="text-xs font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">
           {flipped ? "Απάντηση" : "Ερώτηση συνέντευξης — πάτησε για απάντηση"}
@@ -51,7 +60,7 @@ export function Flashcards({ title = "Interview flashcards", cards }: { title?: 
         </span>
       </button>
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 print:hidden">
         <button
           onClick={() => go(index - 1)}
           className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"

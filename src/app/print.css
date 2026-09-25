@@ -1,0 +1,146 @@
+/* ─────────────────────────────────────────────────────────────
+   Εκτύπωση μαθήματος σε A4. Φορτώνεται μετά το globals.css.
+   Ρυθμίσεις Chrome: A4, Portrait, περιθώρια «Προεπιλογή», κλίμακα 100%,
+   «Γραφικά φόντου» ΕΝΕΡΓΑ.
+   Το dark θέμα αφαιρείται στο beforeprint (PrintBar), άρα εδώ ισχύουν τα light χρώματα.
+   ───────────────────────────────────────────────────────────── */
+
+/* Στατικές εκδοχές των διαδραστικών blocks: κρυφές στην οθόνη */
+.print-only,
+.print-answer {
+  display: none;
+}
+
+@page {
+  size: A4 portrait;
+  margin: 15mm 15mm 17mm 16mm;
+  @bottom-right {
+    content: counter(page) " / " counter(pages);
+    font: 8pt "Segoe UI", Arial, sans-serif;
+    color: #6a7380;
+  }
+  @bottom-left {
+    content: "Fullstack Roadmap";
+    font: 8pt "Segoe UI", Arial, sans-serif;
+    color: #6a7380;
+  }
+}
+
+@media print {
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* !important: νικά το inline font-size της ρύθμισης μεγέθους γραμμάτων */
+  html {
+    font-size: 10pt !important;
+    color-scheme: light;
+  }
+  body {
+    background: #fff !important;
+  }
+
+  .print-only {
+    display: block;
+  }
+  .print-answer {
+    display: none !important;
+  }
+  body:has(#print-answers:checked) .print-answer {
+    display: block !important;
+  }
+
+  a {
+    color: inherit !important;
+    text-decoration: none !important;
+  }
+
+  h1 {
+    font-size: 20pt !important;
+    margin-top: 0 !important;
+  }
+  h2 {
+    font-size: 14pt !important;
+    margin-top: 1.4rem !important;
+  }
+  h3 {
+    font-size: 12pt !important;
+  }
+  h1, h2, h3, h4, figcaption {
+    break-after: avoid;
+  }
+  p, li {
+    orphans: 3;
+    widows: 3;
+  }
+  article p,
+  article ul,
+  article ol {
+    font-size: 10pt !important;
+    line-height: 1.5 !important;
+  }
+  article p {
+    margin-bottom: 0.6rem !important;
+  }
+
+  /* Κάρτες: χωρίς σκιές, όχι σπασμένες ανάμεσα σε σελίδες όταν χωράνε */
+  .shadow-sm,
+  .shadow-lg {
+    box-shadow: none !important;
+  }
+  .print-block,
+  blockquote,
+  tr {
+    break-inside: avoid;
+  }
+
+  /* Πίνακες: χωρίς οριζόντιο scroll */
+  article .overflow-x-auto {
+    overflow: visible !important;
+  }
+  table {
+    font-size: 8.8pt !important;
+  }
+  th, td {
+    padding: 0.25rem 0.5rem !important;
+  }
+
+  /* Κώδικας: αναδίπλωση αντί για scroll, ώστε να μη κόβεται στο περιθώριο */
+  figure[data-rehype-pretty-code-figure] {
+    margin: 0.8rem 0;
+    break-inside: avoid;
+  }
+  pre,
+  pre[data-language] {
+    overflow: visible !important;
+    white-space: pre-wrap !important;
+    overflow-wrap: anywhere;
+    font-size: 8.4pt !important;
+    line-height: 1.4 !important;
+    padding: 0.5rem 0.75rem !important;
+  }
+
+  /* Blocks κώδικα των διαδραστικών components: ανοιχτό φόντο στο χαρτί */
+  .print-code {
+    background: #f6f8fa !important;
+    color: #1f2328 !important;
+    border: 1px solid #d0d7de;
+    border-radius: 0.4rem;
+    margin-top: 0.25rem;
+  }
+}
+
+/* Εκτύπωση ολόκληρης ενότητας (/print/[id]): εξώφυλλο και κάθε μάθημα σε νέα σελίδα */
+@media print {
+  .print-chapter {
+    break-before: page;
+  }
+  .print-cover h1 {
+    font-size: 28pt !important;
+    margin-top: 30mm !important;
+  }
+  .print-cover li {
+    break-inside: avoid;
+  }
+}
